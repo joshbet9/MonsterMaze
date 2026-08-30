@@ -1,0 +1,21 @@
+# Maven
+**/target/
+**/.mvn/timing.properties
+
+# Java
+**/*.class
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
