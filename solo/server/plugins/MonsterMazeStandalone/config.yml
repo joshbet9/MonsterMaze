@@ -1,0 +1,7 @@
+# MonsterMazeStandalone configuration (solo build)
+# Active game mode: Original, Speed, Modern, or Lagless
+# Solo players should run Modern (the official board) unless otherwise agreed.
+mode: Modern
+
+# Solo mode ON: the plugin records a run record to solo-runs/ when a solo run ends.
+solo-mode: true

@@ -1,4 +1,4 @@
-# Monster Maze — Cross-Version Tracking
+# Monster Maze ï¿½ Cross-Version Tracking
 
 This document tracks gameplay mechanics that exist across the Minecraft 1.8 and 1.21 implementations.
 
@@ -6,13 +6,13 @@ The two implementations should aim for equivalent gameplay behaviour where the o
 
 ## Status Legend
 
-- `Unknown` — not investigated
-- `Investigating` — currently being researched
-- `Implemented` — implemented in source
-- `Build Verified` — implementation builds successfully
-- `Gameplay Verified` — tested in-game
-- `Original Verified` — supported by original Mineplex source/evidence
-- `Version Specific` — intentionally differs because of Minecraft/version behaviour
+- `Unknown` ï¿½ not investigated
+- `Investigating` ï¿½ currently being researched
+- `Implemented` ï¿½ implemented in source
+- `Build Verified` ï¿½ implementation builds successfully
+- `Gameplay Verified` ï¿½ tested in-game
+- `Original Verified` ï¿½ supported by original Mineplex source/evidence
+- `Version Specific` ï¿½ intentionally differs because of Minecraft/version behaviour
 
 ---
 
@@ -36,6 +36,8 @@ The two implementations should aim for equivalent gameplay behaviour where the o
 | Player death | | | | | |
 | Scoring | | | | | |
 | Victory conditions | | | | | |
+| Kit selection | Implemented | Implemented | | Implemented | Same KitType enum both versions; JUMPER default; QOL-only kits downgrade to JUMPER when QOL disabled |
+| Kit secondaries (Body Rush / Cryo Blitz) | Build Verified | Build Verified | | Implemented | New in this session; QOL modes only. Body Builder Body Rush (right-click, 5 uses, deflect+immunity); Slowballer Cryo Blitz (Q-drop, freeze 5-block/3s, 60s CD) |
 
 ---
 
@@ -69,13 +71,13 @@ The two implementations should aim for equivalent gameplay behaviour where the o
 | Mechanic | 1.8 | 1.21 | Original Evidence | Status | Notes |
 |---|---|---|---|---|---|
 | Base player speed | | | | | |
-| Speed II behaviour | | | | | |
+| Speed II behaviour | Version Specific | Implemented | | Version Specific | 1.21 Modern only: lock-pinned players get Speed II boost (1.8 "speeding" was a vanilla -10 jump-amp side effect, dropped as unreproducible) |
 | Jump height | | | | | |
 | Air control | | | | | |
 | Gap crossing | | | | | |
 | Monster knockback | | | | | |
-| Player knockback | | | | | |
-| Collision behaviour | | | | | |
+| Player knockback | Implemented | Implemented | | Implemented | 4 dmg + knockback, 1s CD; Body Builder Body Rush grants immunity + deflecting knock instead |
+| Collision behaviour | Implemented | Implemented | | Implemented | Ghost snowmen with collision off; server-driven bump() range < 1.0; frozen mobs (Cryo Blitz) skip bump |
 
 ---
 

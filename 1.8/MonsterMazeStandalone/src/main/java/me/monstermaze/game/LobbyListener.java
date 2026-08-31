@@ -32,6 +32,20 @@ public class LobbyListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onJoin(PlayerJoinEvent event) {
         final Player player = event.getPlayer();
+        // In solo mode the local player runs everything, so op them automatically
+        // and point them at the (single) command they need.
+        if (plugin.isSoloMode()) {
+            player.setOp(true);
+            Bukkit.getScheduler().runTask(plugin, new Runnable() {
+                @Override
+                public void run() {
+                    if (!player.isOnline()) return;
+                    player.sendMessage(ChatColor.GOLD + "[Solo] You are op'd. Type "
+                            + ChatColor.WHITE + "/mm start" + ChatColor.GOLD
+                            + " to begin, then click a kit.");
+                }
+            });
+        }
         // Defer one tick so join completes cleanly
         Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override
