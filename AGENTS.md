@@ -317,7 +317,27 @@ Do not reset, revert, checkout, or discard existing user changes without explici
 
 Do not use destructive Git commands to "clean up" the repository.
 
-Do not automatically commit major changes unless explicitly requested.
+### Commit policy
+
+Commit after implementing a feature or fix **once it has been verified** (the
+affected build passes and, where possible, tests/checks have run). Committing
+finished, verified work keeps versioning and tracking meaningful. This is the
+default; no per-commit confirmation is needed when the work is tested and
+complete.
+
+Rules:
+
+- Stage only files related to the change; never commit secrets.
+- Never commit credentials (e.g. `submitter/config.ps1`, `bot/config.json`,
+  webhook URLs, bot tokens) or generated/large binaries (worlds, logs,
+  `solo-dist.zip`, the bundled runtime, spigot jar).
+- Use a clear, descriptive commit message that states what changed and why,
+  not generic messages such as "updates" or "fixes".
+- If a feature is split across related files, make one coherent commit for it.
+- Do not commit broken or half-finished work; if the build fails or tests do
+  not pass, report that instead of committing.
+- Interactive commands (`git add -p`, `git rebase -i`) and force-push remain
+  off-limits unless explicitly requested.
 
 Before substantial work, inspect:
 
@@ -378,7 +398,7 @@ Do not assume that a recent commit represents fully tested behaviour. Inspect th
 
 When making a substantial change, use a clear commit message describing the actual change rather than generic messages such as "updates" or "fixes".
 
-Do not automatically commit changes unless explicitly requested by the user or unless the agent's configured workflow specifically requires a commit.
+Per the Commit policy above, commit verified feature work by default; do not leave completed, tested changes uncommitted.
 
 ## Important Principle
 
