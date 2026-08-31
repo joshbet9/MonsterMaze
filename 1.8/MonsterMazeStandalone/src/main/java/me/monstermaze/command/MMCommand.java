@@ -28,7 +28,7 @@ public class MMCommand implements CommandExecutor {
 
         if (args.length == 0) {
             sender.sendMessage(ChatColor.GOLD + "=== Monster Maze ===");
-            sender.sendMessage(ChatColor.YELLOW + "/mm void|setcenter|start|stop|status|mode");
+            sender.sendMessage(ChatColor.YELLOW + "/mm void|setcenter|start|stop|status|mode|map");
             sender.sendMessage(ChatColor.YELLOW + "/mm kit <jumper|slowball|body|repulsor|maverick>");
             sender.sendMessage(ChatColor.YELLOW + "/mm kits " + ChatColor.GRAY + "- list kits");
             sender.sendMessage(ChatColor.YELLOW + "/mm pb " + ChatColor.GRAY + "- your bests per pattern");
@@ -36,6 +36,8 @@ public class MMCommand implements CommandExecutor {
             sender.sendMessage(ChatColor.AQUA + "Current mode: " + plugin.getMode().color
                     + plugin.getMode().id
                     + ChatColor.GRAY + " (/mm mode <original|speed|modern>)");
+            sender.sendMessage(ChatColor.AQUA + "Current map: " + plugin.getMapManager().getActiveMap()
+                    + ChatColor.GRAY + " (/mm map <name>)");
             return true;
         }
 
@@ -170,6 +172,30 @@ public class MMCommand implements CommandExecutor {
                 sender.sendMessage(ChatColor.AQUA + "State: " + ChatColor.WHITE + gm.getState());
                 sender.sendMessage(ChatColor.AQUA + "Stage: " + ChatColor.WHITE + gm.getStage());
                 sender.sendMessage(ChatColor.AQUA + "Alive: " + ChatColor.WHITE + gm.getAlivePlayers().size());
+                sender.sendMessage(ChatColor.AQUA + "Map: " + ChatColor.WHITE + plugin.getMapManager().getActiveMap());
+                break;
+            case "map":
+            case "arena":
+                if (args.length < 2) {
+                    sender.sendMessage(ChatColor.RED + "Usage: /mm map <name>");
+                    sender.sendMessage(ChatColor.GRAY + "Available: " + String.join(", ",
+                            plugin.getMapManager().knownMaps()));
+                    return true;
+                }
+                if (gm.isRunning()) {
+                    sender.sendMessage(ChatColor.RED + "Change the map when no game is running.");
+                    return true;
+                }
+                String want = args[1].toLowerCase();
+                if (!plugin.getMapManager().setActiveMap(want)) {
+                    sender.sendMessage(ChatColor.RED + "Unknown map '" + args[1] + "'. Try: "
+                            + String.join(", ", plugin.getMapManager().knownMaps()));
+                    return true;
+                }
+                plugin.getMapManager().ensureActiveWorld();
+                gm.applyMap();
+                sender.sendMessage(ChatColor.GREEN + "Map set to " + ChatColor.WHITE + want
+                        + ChatColor.GREEN + ". Lobby moved; run /mm start.");
                 break;
             default:
                 sender.sendMessage(ChatColor.RED + "Unknown subcommand. Try /mm");

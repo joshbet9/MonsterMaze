@@ -119,6 +119,26 @@ public class GameManager implements Listener {
         refreshLeaderboardBoard();
     }
 
+    /**
+     * Apply the active map: set its maze palette + mob on the generators and
+     * re-anchor the lobby at the map's default center. Safe to call when idle.
+     */
+    public void applyMap() {
+        me.monstermaze.world.MapManager maps = plugin.getMapManager();
+        mazeGenerator.setTheme(maps.activeTheme());
+        monsterManager.setMobType(maps.activeMob());
+        Location def = maps.defaultCenter();
+        if (def != null) {
+            this.center = def.clone();
+            mazeGenerator.buildLobby(center);
+            kitManager.clearSelectors();
+            kitManager.spawnSelectors(mazeGenerator.getLobbyCenter());
+            refreshLeaderboardBoard();
+        } else {
+            plugin.getLogger().severe("[MonsterMaze] No default center for map '" + maps.getActiveMap() + "'.");
+        }
+    }
+
     public Location getLobbySpawn() {
         if (mazeGenerator.getLobbyCenter() != null) {
             // Feet on the elevated lobby platform
@@ -203,6 +223,12 @@ public class GameManager implements Listener {
         // MazeGenerator needs its own center + lobby before generate
         if (mazeGenerator.getCenter() == null) {
             mazeGenerator.buildLobby(center);
+        }
+
+        // Sweep any entities lingering in the arena world (archived map chunks can
+        // surface saved mobs long after the world loads) before we regenerate.
+        if (center != null) {
+            plugin.getMapManager().clearMobs(center.getWorld());
         }
 
         cleanupEntities();
@@ -613,7 +639,9 @@ public class GameManager implements Listener {
                 if (mazeGenerator.getCenterSafeZonePaths().contains(cur)) {
                     // Real path cell: rebuild as maze block and re-enable its waypoint
                     // (the maze shows through underneath).
-                    floor.setType(Material.QUARTZ_BLOCK);
+                    me.monstermaze.maze.MazeBlockData theme = mazeGenerator.getTheme();
+                    floor.setType(theme.Top.Type);
+                    floor.setData(theme.Top.Data);
                     mazeGenerator.enableWaypoint(cur);
                 } else {
                     // Decorative/barrier center cell: falls away into the void.

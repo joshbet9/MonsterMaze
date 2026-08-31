@@ -7,3 +7,29 @@ mode: Original
 # solo launcher for crowd-sourced leaderboards. Safe to leave false on the
 # normal hosted multiplayer server.
 solo-mode: false
+
+# ---- Arena map --------------------------------------------------------------
+# The world a game runs in. Choose from the "maps:" keys below (void is the
+# classic empty-air arena). This file is protected from the auto-updater, so
+# players can pick their favourite map freely.
+map: void
+
+# Per-map settings. "world-folder" must match a world folder in the server
+# directory (shipped with the game); "void" is generated automatically.
+# Maze palette mirrors Mineplex B3/B2/B1 (bottom/middle/top), each an id+data
+# pair for the 1.8 block. "mob" is the monster type (only snowman is currently
+# implemented). "center" is the default maze anchor (auto-picked, correctable).
+maps:
+  void:
+    world-folder: mm_void
+    mob: snowman
+    center: {x: 0, y: 64, z: 0}
+    # default theme (quartz top/mid, stone base) is used when no palette given
+  volcano:
+    world-folder: mm_volcano
+    mob: snowman
+    center: {x: -3, y: 25, z: 3}
+    # volcanic palette matching the obsidian/netherrack arena
+    top:    {id: 159, data: 15}   # black stained clay (walk surface)
+    mid:    {id: 49,  data: 0}    # obsidian (support)
+    bottom: {id: 87,  data: 0}    # netherrack (base)

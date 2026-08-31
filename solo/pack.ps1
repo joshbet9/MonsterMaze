@@ -30,6 +30,11 @@ Copy-Item -Recurse -Force (Join-Path $here "submitter") (Join-Path $dist "submit
 Copy-Item -Recurse -Force (Join-Path $here "server")    (Join-Path $dist "server")
 Copy-Item -Force (Join-Path $here "HOW_TO_PLAY.txt")    (Join-Path $dist "HOW_TO_PLAY.txt")
 
+# NOTE: per-map arena worlds (WIP, not published yet) are intentionally NOT shipped.
+# See 1.8\MonsterMazeStandalone (map work-in-progress) - do not enable the plugin's
+# per-map feature in the public solo build until it is finished.
+
+
 # Auto-updater (version manifest + updater scripts + version marker)
 #
 # NOTE: version.json must have been generated first. If you have not run
@@ -56,7 +61,11 @@ $stripServer = @(
     "$dist\submitter\submitted",
     "$dist\.update-tmp", "$dist\.update-backup"
 )
-foreach ($p in $stripServer) { if (Test-Path $p) { Remove-Item -Recurse -Force $p } }
+# WIP per-map arena worlds - never ship these in the public solo build.
+foreach ($mapName in @("colombia","sandycoast","siberian","swampland","tesorohundido","volcano")) {
+    $stripServer += Join-Path "$dist\server" $mapName
+}
+foreach ($p in ($stripServer | Select-Object -Unique)) { if (Test-Path $p) { Remove-Item -Recurse -Force $p } }
 
 # Bundle the Java runtime (zips-small enough; this is the zero-friction step)
 Copy-Item -Recurse -Force $JDK8 (Join-Path $dist "runtime\jdk8")
@@ -68,10 +77,69 @@ Write-Host ""
 Write-Host "Staging complete at: $dist"
 Write-Host ""
 
-# Now zip it
+# Now zip it.
+#
+# IMPORTANT: We MUST build the zip with forward-slash (/) entry names and a valid
+# end-of-central-directory record. [ZipFile]::CreateFromDirectory on Windows writes
+# entries with BACKSLASH (\ ) separators, which is not standard ZIP and causes many
+# extractors (7-Zip and others) to error out. So we write the entries ourselves.
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = Join-Path $here "solo-dist.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory($dist, $zip, [System.IO.Compression.CompressionLevel]::Optimal, $true)
+
+$fs = [System.IO.File]::Open($zip, [System.IO.FileMode]::CreateNew)
+$archive = New-Object System.IO.Compression.ZipArchive($fs,
+    [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    # Base entry path so the zip unzips into a "solo-dist" folder.
+    $baseName = Split-Path -Leaf $dist          # "solo-dist"
+    $toZip = Join-Path $dist "."                # ensure trailing sep off root
+    $fileCount = 0
+    Get-ChildItem -LiteralPath $dist -Recurse -File | ForEach-Object {
+        $relative = $_.FullName.Substring($dist.Length).TrimStart('\','/')
+        $entryName = ($baseName + "/" + $relative).Replace('\','/')
+        $entry = $archive.CreateEntry($entryName,
+            [System.IO.Compression.CompressionLevel]::Optimal)
+        $in = $_.OpenRead()
+        try {
+            $out = $entry.Open()
+            try { $in.CopyTo($out) } finally { $out.Dispose() }
+        } finally { $in.Dispose() }
+        $fileCount++
+    }
+    Write-Host "Packed $fileCount files (forward-slash names)."
+} finally {
+    $archive.Dispose()   # flushes and writes the central directory + EOCD
+    $fs.Dispose()
+}
+
+# Verify the zip really is intact before we tell anyone to use it. A corrupt or
+# truncated zip is worse than no zip, so fail hard here if the end-of-central-directory
+# record is missing.
 $size = [math]::Round((Get-Item $zip).Length / 1MB, 1)
-Write-Host "Created $zip ($size MB) - this is what you send to players."
+$verify = [System.IO.File]::OpenRead($zip)
+try {
+    $verify.Seek(-22, [System.IO.SeekOrigin]::End) | Out-Null
+    $tail = New-Object byte[] 4
+    $verify.Read($tail, 0, 4) | Out-Null
+    $okEocd = ($tail[0] -eq 0x50) -and ($tail[1] -eq 0x4B) -and ($tail[2] -eq 0x05) -and ($tail[3] -eq 0x06)
+} finally { $verify.Dispose() }
+
+if (-not $okEocd) {
+    Write-Host "ERROR: $zip is missing its end-of-central-directory record and is CORRUPT." -ForegroundColor Red
+    Write-Host "Do NOT send this zip. Fix the packing error and re-run pack.bat." -ForegroundColor Red
+    exit 1
+}
+
+# Sample the entry-name separators to be sure we didn't ship backslash names.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$probe = [System.IO.Compression.ZipFile]::OpenRead($zip)
+$firstEntry = $probe.Entries | Select-Object -First 1 -ExpandProperty FullName
+$probe.Dispose()
+if ($firstEntry -match '\\') {
+    Write-Host "ERROR: zip contains backslash entry names - extraction will fail in some tools." -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "Verified: EOCD present, forward-slash names, $size MB - this is what you send to players."
