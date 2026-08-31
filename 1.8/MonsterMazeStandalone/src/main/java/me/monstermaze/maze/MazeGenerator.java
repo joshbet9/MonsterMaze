@@ -28,15 +28,22 @@ public class MazeGenerator {
      *  the shell-clear region cy-30..cy+80) so maze teardown never removes the lobby. */
     private static final int LOBBY_Y_OFFSET = 100;
 
-    // The arena world may contain a leftover quartz shell (floor + ceiling) from an
-    // earlier build. Its ceiling sits above the maze track and blocks the safe-pad
-    // beacon beams. Each generation we carve out this vertical band back to open air.
-    private static final int SHELL_CLEAR_BELOW = 30;
-    private static final int SHELL_CLEAR_ABOVE = 80;
+    // The arena may contain a leftover quartz shell (floor + ceiling) from an
+    // earlier build. Its ceiling sits above the maze track and blocks the
+    // safe-pad beacon beams. Each generation we carve out this vertical band
+    // back to open air. On real map worlds (e.g. a volcano plateau) carving the
+    // shell far below the maze floor would rip through solid terrain and take
+    // minutes, so we only clear a few blocks below the track plus the air space
+    // above needed for beacon beams.
+    private static final int SHELL_CLEAR_BELOW = 6;
+    private static final int SHELL_CLEAR_ABOVE = 60;
 
     private final MonsterMazePlugin plugin;
     private Location center;
     private int[][] mazeData;
+
+    /** Per-map maze palette (top/middle/bottom), defaults to the original quartz theme. */
+    private MazeBlockData theme = MazeBlockData.defaultTheme();
 
     /** Index into {@link MazeLayouts#ALL_MAZES} of the pattern loaded this game (-1 if none). */
     private int patternIndex = -1;
@@ -68,6 +75,15 @@ public class MazeGenerator {
     /** Index (0, 1, 2) of the maze pattern currently loaded, or -1 in the lobby/idle. */
     public int getPatternIndex() {
         return patternIndex;
+    }
+
+    /** Set the maze palette used for the next generation (per active map). */
+    public void setTheme(MazeBlockData theme) {
+        this.theme = theme != null ? theme : MazeBlockData.defaultTheme();
+    }
+
+    public MazeBlockData getTheme() {
+        return theme;
     }
 
     // -------------------- Lobby + cached shell --------------------
@@ -448,8 +464,8 @@ public class MazeGenerator {
             // clay decays away. The cyan clay "safe pad" starts as a full plane over the
             // whole center and is removed over time to reveal the maze beneath.
             if (isPath) {
-                trackSet(world.getBlockAt(wx, cy - 2, wz), Material.QUARTZ_BLOCK, (byte) 1);
-                trackSet(world.getBlockAt(wx, cy - 3, wz), Material.STONE, (byte) 0);
+                trackSet(world.getBlockAt(wx, cy - 2, wz), theme.Middle.Type, theme.Middle.Data);
+                trackSet(world.getBlockAt(wx, cy - 3, wz), theme.Bottom.Type, theme.Bottom.Data);
             }
 
             // Surface layer
@@ -457,7 +473,7 @@ public class MazeGenerator {
                 // Full cyan clay plane covering the center (maze hidden underneath).
                 trackSet(world.getBlockAt(wx, cy - 1, wz), Material.STAINED_CLAY, (byte) 5);
             } else if (isPath) {
-                trackSet(world.getBlockAt(wx, cy - 1, wz), Material.QUARTZ_BLOCK, (byte) 0);
+                trackSet(world.getBlockAt(wx, cy - 1, wz), theme.Top.Type, theme.Top.Data);
             }
 
             if (isPath) {
