@@ -3,29 +3,30 @@
 Monster Maze SOLO - Discord leaderboard bot.
 
 Watches the PB feed channel(s), parses each posted "new PB" embed, stores the
-best (mode, pattern, kit, player) in SQLite, and maintains a ranked standings
-message per (mode, pattern) in each mode's leaderboard channel.
+best (mode, pattern, kit, player) in SQLite, and maintains THREE tiers of pinned,
+bot-edited ranked boards per game mode:
 
-Deployment (cloud host, e.g. a free-tier VPS):
+  Tier 1  Overall mode board   (channel[x].overall)  : top stages across all patterns & kits
+  Tier 2  Per-pattern boards   (channel[x].patterns) : one board per pattern (all kits)
+  Tier 3  Per-kit boards       (channel[x].kits)     : one board per pattern x kit
+
+Boards are pinned embeds edited in place, so updates are reliable (no threads,
+which auto-archive and break editing).
+
+Setup (cloud host, e.g. a free-tier VPS):
     cd bot
     pip install -r requirements.txt
-    cp config.example.json config.json   # fill in token + channel ids
-    python monster_bot.py                # run under a process manager (systemd/tmux)
+    cp config.example.json config.json   # fill token + channel ids
+    python monster_bot.py
 
 Prereqs on Discord:
-  * A bot application (https://discord.com/developers/applications -> New Application
-    -> Bot -> copy token). Enable the **Message Content Intent** (Privileged Gateways).
-  * Invite the bot to your server with Send Messages, Embed Links, Read Messages,
-    Read Message History, and Manage Messages (to pin/edit the standings).
+  - A bot application (https://discord.com/developers/applications -> New Application
+    -> Bot -> copy token). Enable the Message Content Intent (Privileged Gateways).
+  - Invite it with: Send Messages, Embed Links, Read Messages, Read Message History,
+    Manage Messages (to pin/edit the standings).
 
-Commands (in any channel the bot can see):
-    !rebuild   rescans feed history and refreshes all standings.
-
-Files:
-    config.example.json  -> copy to config.json
-    monster_bot.py       -> the bot
-    requirements.txt     -> pip install -r requirements.txt
-    leaderboard.db       -> SQLite store (auto-created)
+Commands (any channel the bot can see):
+    !rebuild   rescans feed history and refreshes all boards.
 """
 
 import json
@@ -39,7 +40,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CFG = os.path.join(HERE, "config.json")
 DB = os.path.join(HERE, "leaderboard.db")
 
-MODES = ["modern", "speed", "lagless", "original"]
+KITS = ["Jumper", "Slowball", "Body Builder", "Repulsor", "Maverick"]
 PATTERNS = 3
 
 
@@ -53,28 +54,13 @@ def db():
     conn.execute(
         "CREATE TABLE IF NOT EXISTS runs ("
         "mode TEXT, pattern INTEGER, kit TEXT, uuid TEXT, name TEXT, "
-        "stage INTEGER, time_ms INTEGER, pattern_name TEXT, kit_name TEXT, "
+        "stage INTEGER, time_ms INTEGER, "
         "PRIMARY KEY (mode, pattern, kit, uuid))"
     )
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS standings ("
-        "mode TEXT, pattern INTEGER, kit TEXT, channel_id TEXT, msg_id TEXT, "
-        "pattern_name TEXT, kit_name TEXT, "
-        "PRIMARY KEY (mode, pattern, kit))"
+        "CREATE TABLE IF NOT EXISTS boards ("
+        "board_key TEXT PRIMARY KEY, channel_id TEXT, msg_id TEXT)"
     )
-    # Add new columns for hierarchy support
-    try:
-        conn.execute("ALTER TABLE runs ADD COLUMN pattern_name TEXT")
-        conn.execute("ALTER TABLE runs ADD COLUMN kit_name TEXT")
-    except sqlite3.OperationalError:
-        # Columns already exist
-        pass
-    try:
-        conn.execute("ALTER TABLE standings ADD COLUMN pattern_name TEXT")
-        conn.execute("ALTER TABLE standings ADD COLUMN kit_name TEXT")
-    except sqlite3.OperationalError:
-        # Columns already exist
-        pass
     return conn
 
 
@@ -102,45 +88,49 @@ def upsert_run(run):
     return True
 
 
-def board(mode, pattern, kit, top_n):
+# ---- query helpers -----------------------------------------------------
+
+def _rows(where, params, top_n):
     c = db()
     rows = c.execute(
-        "SELECT name, MAX(stage) AS best FROM runs "
-        "WHERE mode=? AND pattern=? AND kit=? "
-        "GROUP BY uuid ORDER BY best DESC, MIN(time_ms) ASC LIMIT ?",
-        (mode, pattern, kit, top_n),
+        "SELECT name, kit, MAX(stage) AS best FROM runs " + where +
+        " GROUP BY uuid ORDER BY best DESC, MIN(time_ms) ASC LIMIT ?",
+        tuple(params) + (top_n,),
     ).fetchall()
     c.close()
     return rows
 
 
-def kits_for(mode, pattern):
-    c = db()
-    rows = [r[0] for r in c.execute(
-        "SELECT DISTINCT kit FROM runs WHERE mode=? AND pattern=? ORDER BY kit",
-        (mode, pattern),
-    )]
-    c.close()
-    return rows
+def overall_board(mode, top_n):
+    return _rows("WHERE mode=?", [mode], top_n)
 
 
-def get_standings_msg(mode, pattern):
+def pattern_board(mode, pattern, top_n):
+    return _rows("WHERE mode=? AND pattern=?", [mode, pattern], top_n)
+
+
+def kit_board(mode, pattern, kit, top_n):
+    return _rows("WHERE mode=? AND pattern=? AND kit=?",
+                 [mode, pattern, kit], top_n)
+
+
+def get_board_msg(board_key):
     c = db()
     row = c.execute(
-        "SELECT channel_id, msg_id FROM standings WHERE mode=? AND pattern=?",
-        (mode, pattern),
+        "SELECT channel_id, msg_id FROM boards WHERE board_key=?",
+        (board_key,),
     ).fetchone()
     c.close()
     return row
 
 
-def set_standings_msg(mode, pattern, channel_id, msg_id):
+def set_board_msg(board_key, channel_id, msg_id):
     c = db()
     c.execute(
-        "INSERT INTO standings (mode, pattern, channel_id, msg_id) VALUES (?,?,?,?) "
-        "ON CONFLICT(mode, pattern) DO UPDATE SET channel_id=excluded.channel_id, "
+        "INSERT INTO boards (board_key, channel_id, msg_id) VALUES (?,?,?) "
+        "ON CONFLICT(board_key) DO UPDATE SET channel_id=excluded.channel_id, "
         "msg_id=excluded.msg_id",
-        (mode, pattern, channel_id, msg_id),
+        (board_key, str(channel_id), str(msg_id)),
     )
     c.commit()
     c.close()
@@ -164,12 +154,6 @@ def parse_embed(embed):
     pm = re.search(r"Maze (\d+)", pat_text)
     pattern = int(pm.group(1)) - 1 if pm else 0
 
-    # Extract string pattern name (e.g. "Maze 1")
-    pattern_name = pat_text.strip() if pat_text else ""
-    
-    # Extract kit name 
-    kit_name = kit.strip() if kit else ""
-
     time_ms = 0
     tm = re.search(r"(\d+)m (\d+)s", fields.get("time", "0m 0s"))
     if tm:
@@ -184,27 +168,47 @@ def parse_embed(embed):
     return {
         "name": name, "mode": mode.lower(), "pattern": pattern, "kit": kit,
         "stage": stage, "time_ms": time_ms, "uuid": uuid,
-        "pattern_name": pattern_name, "kit_name": kit_name
     }
 
 
-def standings_embed(mode, pattern, top_n):
-    """Build the Discord embed for one (mode, pattern), ranked per kit."""
+# ---- embed builders -----------------------------------------------------
+
+def _lines(rows):
+    lines = []
+    for i, (nm, kit, best) in enumerate(rows, 1):
+        medal = {1: ":first_place:", 2: ":second_place:",
+                 3: ":third_place:"}.get(i, f"{i}.")
+        kit_txt = f" ({kit})" if kit else ""
+        lines.append(f"{medal} **{nm}** — stage {best}{kit_txt}")
+    return lines if lines else ["No runs yet."]
+
+
+def overall_embed(mode, top_n):
+    embed = discord.Embed(
+        title=f"{mode.capitalize()} — Overall", color=0x33aa66)
+    embed.add_field(name="Top Stages (all patterns/kits)",
+                    value="\n".join(_lines(overall_board(mode, top_n))),
+                    inline=False)
+    return embed
+
+
+def pattern_embed(mode, pattern, top_n):
     embed = discord.Embed(
         title=f"{mode.capitalize()} — Maze {pattern + 1}", color=0x33aa66)
-    added = False
-    for kit in kits_for(mode, pattern):
-        rows = board(mode, pattern, kit, top_n)
-        if not rows:
-            continue
-        lines = []
-        for i, (nm, best) in enumerate(rows, 1):
-            medal = {1: ":first_place:", 2: ":second_place:",
-                     3: ":third_place:"}.get(i, f"{i}.")
-            lines.append(f"{medal} **{nm}** — stage {best}")
-        embed.add_field(name=kit, value="\n".join(lines), inline=False)
-        added = True
-    return embed if added else None
+    embed.add_field(name="Top Stages (all kits)",
+                    value="\n".join(_lines(pattern_board(mode, pattern, top_n))),
+                    inline=False)
+    return embed
+
+
+def kit_embed(mode, pattern, kit, top_n):
+    embed = discord.Embed(
+        title=f"{mode.capitalize()} — Maze {pattern + 1} — {kit}",
+        color=0x33aa66)
+    embed.add_field(name=f"Top {kit} Stages",
+                    value="\n".join(_lines(kit_board(mode, pattern, kit, top_n))),
+                    inline=False)
+    return embed
 
 
 class MonsterBot(discord.Client):
@@ -214,6 +218,7 @@ class MonsterBot(discord.Client):
         super().__init__(intents=intents)
         self.cfg = cfg
         self.top_n = int(cfg.get("top_n", 10))
+        self.modes = list(cfg.get("modes", ["modern"]))
 
     # -- helpers ----------------------------------------------------------
     async def feed_channels(self):
@@ -224,11 +229,26 @@ class MonsterBot(discord.Client):
                 out.append(ch)
         return out
 
-    def mode_channel_id(self, mode):
-        return int(self.cfg.get("mode_channels", {}).get(mode, 0) or 0)
-
     def is_feed(self, channel_id):
         return int(channel_id) in {int(c) for c in self.cfg.get("feed_channels", [])}
+
+    def mode_channels(self, mode):
+        return self.cfg.get("channels", {}).get(mode, {})
+
+    def resolve_channel(self, ref):
+        """Resolve a channel ref that is either a numeric ID or a channel name."""
+        if ref is None or ref == "":
+            return None
+        try:
+            return self.get_channel(int(ref))
+        except (ValueError, TypeError):
+            pass
+        # name lookup across all guilds the bot can see
+        for guild in self.guilds:
+            ch = discord.utils.get(guild.text_channels, name=ref)
+            if ch:
+                return ch
+        return None
 
     # -- life cycle -------------------------------------------------------
     async def on_ready(self):
@@ -239,8 +259,7 @@ class MonsterBot(discord.Client):
         except Exception as e:
             print("initial rebuild failed:", e)
 
-    async def rebuild_all(self, notify=True):
-        """Scan feed history and refresh every standings message."""
+    async def rebuild_all(self):
         seen = 0
         for ch in await self.feed_channels():
             async for msg in ch.history(limit=500):
@@ -250,9 +269,8 @@ class MonsterBot(discord.Client):
                         upsert_run(run)
                         seen += 1
         print(f"rescanned {seen} runs")
-        for mode in MODES:
-            for pattern in range(PATTERNS):
-                await self.refresh_standings(mode, pattern)
+        for mode in self.modes:
+            await self.refresh_all_boards(mode)
 
     # -- events ------------------------------------------------------------
     async def on_message(self, message):
@@ -267,44 +285,64 @@ class MonsterBot(discord.Client):
             for emb in message.embeds:
                 run = parse_embed(emb)
                 if run and upsert_run(run):
-                    await self.refresh_standings(run["mode"], run["pattern"])
+                    await self.refresh_all_boards(run["mode"])
 
-    # -- standings ---------------------------------------------------------
-    async def refresh_standings(self, mode, pattern):
-        target = self.mode_channel_id(mode)
-        if not target:
+    # -- boards ------------------------------------------------------------
+    async def refresh_all_boards(self, mode):
+        chans = self.mode_channels(mode)
+        if not chans:
             return
-        channel = self.get_channel(target)
+
+        overall_id = chans.get("overall")
+        patterns_id = chans.get("patterns")
+        kits_id = chans.get("kits")
+
+        # Tier 1: overall mode board
+        if overall_id:
+            await self._post_or_edit(
+                f"{mode}|overall", overall_id, overall_embed(mode, self.top_n),
+                f"overall {mode}")
+        # Tier 2: per-pattern boards
+        if patterns_id:
+            for p in range(PATTERNS):
+                await self._post_or_edit(
+                    f"{mode}|p{p}", patterns_id, pattern_embed(mode, p, self.top_n),
+                    f"{mode} pattern {p}")
+        # Tier 3: per-kit boards
+        if kits_id:
+            for p in range(PATTERNS):
+                for kit in KITS:
+                    await self._post_or_edit(
+                        f"{mode}|p{p}|{kit}", kits_id,
+                        kit_embed(mode, p, kit, self.top_n),
+                        f"{mode} p{p} {kit}")
+
+    async def _post_or_edit(self, board_key, channel_ref, embed, label):
+        channel = self.resolve_channel(channel_ref)
         if channel is None:
-            print(f"mode channel not found: {mode} (id {target})")
+            print(f"channel not found for board {label} (ref {channel_ref})")
             return
-        embed = standings_embed(mode, pattern, self.top_n)
-        if embed is None:
-            return
-
-        stored = get_standings_msg(mode, pattern)
+        stored = get_board_msg(board_key)
         msg = None
         if stored:
-            ch = self.get_channel(int(stored[0]))
-            if ch:
-                try:
-                    msg = await ch.fetch_message(int(stored[1]))
-                except discord.NotFound:
-                    msg = None
+            try:
+                msg = await channel.fetch_message(int(stored[1]))
+            except discord.NotFound:
+                msg = None
         if msg is not None:
             try:
                 await msg.edit(embed=embed)
-                print(f"edited standings: {mode} pattern {pattern}")
+                print(f"edited {label}")
+                return
             except discord.NotFound:
-                msg = None
-        if msg is None:
-            new_msg = await channel.send(embed=embed)
-            try:
-                await new_msg.pin()
-            except discord.HTTPException:
                 pass
-            set_standings_msg(mode, pattern, str(channel.id), str(new_msg.id))
-            print(f"posted+pinned standings: {mode} pattern {pattern}")
+        new_msg = await channel.send(embed=embed)
+        try:
+            await new_msg.pin()
+        except discord.HTTPException:
+            pass
+        set_board_msg(board_key, str(channel.id), str(new_msg.id))
+        print(f"posted+pinned {label}")
 
 
 def main():

@@ -1,16 +1,32 @@
 {
-  "_comment": "Copy this file to config.json and fill in your values. See README.md",
+  "_comment": "Copy this file to config.json and fill in your values. Channel refs can be a channel ID (number) or a unique channel name (string). See README.md",
   "token": "YOUR_BOT_TOKEN",
 
-  "feed_channels": [
-    "PUT_FEED_CHANNEL_ID_HERE"
-  ],
+  "feed_channels": ["YOUR_SOLO_RUNS_CHANNEL_ID"],
 
-  "mode_channels": {
-    "modern":   "PUT_MODERN_LEADERBOARD_CHANNEL_ID",
-    "speed":    "PUT_SPEED_LEADERBOARD_CHANNEL_ID",
-    "lagless":  "PUT_LAGLESS_LEADERBOARD_CHANNEL_ID",
-    "original": "PUT_ORIGINAL_LEADERBOARD_CHANNEL_ID"
+  "modes": ["modern", "speed", "lagless", "original"],
+
+  "channels": {
+    "modern": {
+      "overall":  "leaderboard-modern",
+      "patterns": "leaderboard-modern-mazepatterns",
+      "kits":     "leaderboard-modern-kits"
+    },
+    "speed": {
+      "overall":  "leaderboard-speed",
+      "patterns": "leaderboard-speed-mazepatterns",
+      "kits":     "leaderboard-speed-kits"
+    },
+    "lagless": {
+      "overall":  "leaderboard-lagless",
+      "patterns": "leaderboard-lagless-mazepatterns",
+      "kits":     "leaderboard-lagless-kits"
+    },
+    "original": {
+      "overall":  "leaderboard-original",
+      "patterns": "leaderboard-original-mazepatterns",
+      "kits":     "leaderboard-original-kits"
+    }
   },
 
   "top_n": 10
