@@ -55,6 +55,10 @@ public class MonsterManager {
     /** Entities launched by Repulsor – removed when grounded / timed out. */
     private final Map<LivingEntity, Long> launched = new HashMap<LivingEntity, Long>();
 
+    /** Entities frozen by Slowballer "Cryo Blitz" – value = thaw timestamp (ms epoch).
+     *  Frozen mobs stop moving but still bump/deal knockback (a standing hazard). */
+    private final Map<LivingEntity, Long> frozen = new HashMap<LivingEntity, Long>();
+
     public MonsterManager(MonsterMazePlugin plugin, GameManager game) {
         this.plugin = plugin;
         this.game = game;
@@ -91,6 +95,7 @@ public class MonsterManager {
                 move();
                 bump();
                 tickLaunched();
+                tickFrozen();
             }
         }, 1L, 1L);
     }
@@ -114,6 +119,7 @@ public class MonsterManager {
         }
         ents.clear();
         launched.clear();
+        frozen.clear();
         bumpCooldown.clear();
     }
 
@@ -182,6 +188,7 @@ public class MonsterManager {
             LivingEntity en = e.getKey();
             if (en != null && en.isValid() && pad.isOn(en)) {
                 launched.remove(en);
+                frozen.remove(en);
                 en.remove();
                 it.remove();
             }
@@ -205,6 +212,7 @@ public class MonsterManager {
             }
 
             if (launched.containsKey(ent)) continue;
+            if (frozen.containsKey(ent)) continue;
 
             if (wp.Target == null || ent.getLocation().getY() < wp.Target.getBlockY()) {
                 Location loc = maze.getClosestPath(ent.getLocation());
@@ -343,6 +351,25 @@ public class MonsterManager {
                 LivingEntity ent = mobs[i];
                 markBump(player);
 
+                // Body Builder Body Rush (QOL only): a contacting mob is deflected away like a
+                // Repulsor launch — no knockback, no damage, full immunity — and consumes one use.
+                // We deliberately do NOT fire MonsterBumpPlayerEvent here: the player is immune, so
+                // no mob-hit is registered (it would otherwise set `lastMobHit`, which Modern's
+                // tickJumpLock uses to strip the Speed II boost for 2s after a "hit").
+                me.monstermaze.kit.KitManager km = game.getKitManager();
+                if (km != null && km.isBodyRushActive(player)) {
+                    Vector away = ent.getLocation().toVector().subtract(player.getLocation().toVector());
+                    away.setY(0);
+                    if (away.lengthSquared() <= 1e-6) away = new Vector(1, 0, 0);
+                    UtilAction.velocity(ent, away.normalize(), 1, true, 0, 0.8, 2, true);
+                    launch(ent, ent.getVelocity());
+                    km.consumeBodyRushUse(player);
+                    // Impact feedback: a sharp damage-tick hit sound so the deflect feels
+                    // impactful even though Body Rush deals no damage.
+                    player.getWorld().playSound(ent.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_HURT, 1.2f, 0.8f);
+                    break;
+                }
+
                 // Anti-bonk, ping-independent: lift the player ABOVE the maze floor before applying
                 // the single velocity packet, so the client never applies ground friction to the
                 // launch and eats the horizontal knock. Catching anyone near the floor (not just
@@ -421,6 +448,7 @@ public class MonsterManager {
 
     public void launch(LivingEntity ent, Vector velocity) {
         if (!ents.containsKey(ent)) return;
+        frozen.remove(ent);
         // Kill any active navigation BEFORE flinging: a live pathfind continues to drive the
         // mob mid-air (vanilla will keep steering/stalling along the old route instead of flying
         // ballistically), which reads as "repulsor behaves differently with the mobs" and lets a
@@ -435,6 +463,36 @@ public class MonsterManager {
         return ents.keySet();
     }
 
+    /**
+     * Freeze a monster (Cryo Blitz) so it stops moving until {@code thawAt}. A frozen mob
+     * remains a standing hazard: it no longer moves, but still bumps/deals knockback to
+     * players who touch it.
+     */
+    public void freeze(LivingEntity ent, long thawAt) {
+        if (!ents.containsKey(ent)) return;
+        launched.remove(ent);
+        // On 1.21 the mobs move via the vanilla pathfinder (`Mob#getPathfinder().moveTo` from
+        // CreatureMoveFast). An in-flight path keeps steering the mob every tick on its own, so
+        // skipping `move()` alone is not enough to stop a frozen mob — cancel the active path so
+        // it halts in place until thawed (and `move()` won't set a new path while it's frozen).
+        UtilEnt.stopNavigation(ent);
+        frozen.put(ent, thawAt);
+    }
+
+    /** Thaw any frozen monster whose freeze duration has elapsed. */
+    private void tickFrozen() {
+        if (frozen.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        Iterator<Entry<LivingEntity, Long>> it = frozen.entrySet().iterator();
+        while (it.hasNext()) {
+            Entry<LivingEntity, Long> e = it.next();
+            LivingEntity ent = e.getKey();
+            if (ent == null || !ent.isValid() || now >= e.getValue()) {
+                it.remove();
+            }
+        }
+    }
+
     private void tickLaunched() {
         long now = System.currentTimeMillis();
         Iterator<Entry<LivingEntity, Long>> it = launched.entrySet().iterator();
@@ -445,6 +503,7 @@ public class MonsterManager {
 
             if (ent == null || !ent.isValid()) {
                 it.remove();
+                frozen.remove(ent);
                 ents.remove(ent);
                 continue;
             }
@@ -453,6 +512,7 @@ public class MonsterManager {
             boolean timeout = now - started > 1500;
             if (grounded || timeout) {
                 it.remove();
+                frozen.remove(ent);
                 ents.remove(ent);
                 ent.remove();
             }

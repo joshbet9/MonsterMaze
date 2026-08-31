@@ -1,4 +1,4 @@
-# Monster Maze — Mechanics Reference
+# Monster Maze ï¿½ Mechanics Reference
 
 This document records known Monster Maze gameplay behaviour independently of the implementation.
 
@@ -82,11 +82,34 @@ Notes:
 
 ## Abilities
 
-### 
+### Kit secondaries (QOL / non-Original modes only)
 
-Status: Unknown
+Status: Implemented (1.8 + 1.21), Gameplay Verified pending
 
 Notes:
+
+The kit secondary abilities only function in non-Original modes (i.e. when `game.qolEnabled()` is
+true: Modern and Classic). In Original mode no secondary item is granted and the abilities cannot
+activate.
+
+- **Body Builder ï¿½ Body Rush** (inventory item slot 0, one per game):
+  - Material: apple. Right-click activates a persistent buff.
+  - While active, every mob CONTACT deflects the mob away (same knock-away launch as Repulsor: the
+    mob flies off and is removed once it lands/times out) with NO player knockback and NO damage
+    (full bump immunity).
+  - Has `BODY_RUSH_MAX_USES = 5`; each deflected contact consumes one. Lore shows "Uses remaining:
+    N". When the counter hits 0 the buff ends and the item disappears (normal bumps resume).
+  - Implementing in `KitManager` (`onBodyRush`, `isBodyRushActive`, `consumeBodyRushUse`,
+    `bodyRushItem`) and intercepting the contact in `MonsterManager.bump()` before the normal
+    knock/damage.
+
+- **Slowballer ï¿½ Cryo Blitz** (Q-drop trigger, no item consumed):
+  - MID-GAME pressing Q (drop key) fires Cryo Blitz instead of the global drop-cancel swallowing it.
+  - Freezes every monster within `CRYO_RADIUS = 5` blocks for `CRYO_FREEZE_MS = 3000` ms
+    (frozen mobs neither move nor bump), on a `CRYO_COOLDOWN_MS = 60000` ms cooldown.
+  - Cooldown is surfaced as lore on the Slowball slot-0 snowballs ("Cryo Blitz ready in Ns").
+  - Implementing in `KitManager` (`onCryoBlitz`, `slowballItem`, `cooldownLore`) and via the
+    `MonsterManager.frozen` map (`freeze()`, `tickFrozen()`), skipped in `move()` and `bump()`.
 
 ---
 

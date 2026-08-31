@@ -1,3 +1,9 @@
 # MonsterMazeStandalone configuration
-# Active game mode: Original, Speed, or Modern
+# Active game mode: Original, Speed, Modern, or Lagless
 mode: Original
+
+# Solo mode: when true, the plugin records a run record (JSON) to the
+# solo-runs/ data folder whenever a solo run ends. Used by the standalone
+# solo launcher for crowd-sourced leaderboards. Safe to leave false on the
+# normal hosted multiplayer server.
+solo-mode: false

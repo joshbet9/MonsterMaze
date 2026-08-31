@@ -1,0 +1,79 @@
+============================================
+  MONSTER MAZE - SOLO
+  How to play (read this first!)
+============================================
+
+You need: Minecraft Java Edition, version 1.8.9.
+
+This is a single-player version of Monster Maze. You run your own
+little server on your computer, play until you die, and your score
+gets posted to the Discord leaderboard automatically.
+
+
+--------------------------------------------
+STEP 1 - Start your server
+--------------------------------------------
+  Double-click:     launcher\play.bat
+
+A black window will open. Leave it open.
+Wait until you see the word  Done  in it.
+
+
+--------------------------------------------
+STEP 2 - Join the game
+--------------------------------------------
+  1. Open Minecraft (1.8.9)
+  2. Click Multiplayer
+  3. Click Add Server
+  4. Server name:  Solo Maze
+  5. Server address:  localhost
+  6. Click Done, then click the server to join.
+
+If it says you need to accept the security check (EULA),
+that's already done for you. Just click Join.
+
+
+--------------------------------------------
+STEP 3 - Play
+--------------------------------------------
+  In the chat, type:    /mm start
+
+Then click one of the little villagers to pick a kit.
+The game puts you in Solo Mode: survive as long as you can!
+Try to reach a higher stage than everyone else.
+
+When you die, that's the end of your run.
+
+
+--------------------------------------------
+STEP 4 - Share your score
+--------------------------------------------
+  After your run, double-click:   submitter\submit.bat
+
+Your run is sent to the Discord leaderboard automatically.
+It should appear in the channel a moment later.
+
+
+--------------------------------------------
+STEP 5 - Stop (when you're done)
+--------------------------------------------
+  Double-click:   launcher\stop.bat
+  (or just close the black server window)
+
+
+--------------------------------------------
+TROUBLESHOOTING
+--------------------------------------------
+Q: "Double-clicking play.bat does nothing / it closes instantly"
+   You need Java 8. Either use the bundled runtime folder, or ask
+   whoever gave you this file for help installing Java 8.
+
+Q: The black window says something about "Done" not appearing
+   Give it a minute on the first start - it has to build the map.
+
+Q: The score didn't post to Discord
+   Run submitter\submit.bat again. If it still doesn't post, the
+   webhook may not be set up yet - tell the group owner.
+
+That's it. Have fun!
+============================================
