@@ -30,12 +30,31 @@ Copy-Item -Recurse -Force (Join-Path $here "submitter") (Join-Path $dist "submit
 Copy-Item -Recurse -Force (Join-Path $here "server")    (Join-Path $dist "server")
 Copy-Item -Force (Join-Path $here "HOW_TO_PLAY.txt")    (Join-Path $dist "HOW_TO_PLAY.txt")
 
+# Auto-updater (version manifest + updater scripts + version marker)
+#
+# NOTE: version.json must have been generated first. If you have not run
+# it, we still ship the updater with whatever manifest exists; a missing
+# manifest would make the first update check fail, so regenerate it:
+#   powershell -File .\updater_tools\make_manifest.ps1 -Version 1.0.0
+$versionJson = Join-Path $here "version.json"
+if (Test-Path $versionJson) {
+    Copy-Item -Force $versionJson   (Join-Path $dist "version.json")
+    Copy-Item -Force (Join-Path $here "update.ps1") (Join-Path $dist "update.ps1")
+    Copy-Item -Force (Join-Path $here "update.bat") (Join-Path $dist "update.bat")
+    # Installed version marker: a fresh pack is current by definition.
+    $v = (Get-Content $versionJson -Raw | ConvertFrom-Json)."install-version"
+    Set-Content -LiteralPath (Join-Path $dist "installed.version") -Value $v -Encoding ascii
+} else {
+    Write-Warning "version.json not found - updater will not ship. Run updater_tools\make_manifest.ps1 first."
+}
+
 # Strip anything that should not ship (submitter keeps submitted-archive empty)
 $stripServer = @(
     "$dist\server\world", "$dist\server\world_nether", "$dist\server\world_the_end",
     "$dist\server\mm_void", "$dist\server\logs",
     "$dist\server\plugins\MonsterMazeStandalone\solo-runs",
-    "$dist\submitter\submitted"
+    "$dist\submitter\submitted",
+    "$dist\.update-tmp", "$dist\.update-backup"
 )
 foreach ($p in $stripServer) { if (Test-Path $p) { Remove-Item -Recurse -Force $p } }
 
