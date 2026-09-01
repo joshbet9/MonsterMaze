@@ -1,0 +1,80 @@
+# Monster Maze 1.21 bundled map definitions.
+# Release-controlled: map definitions are updated with the plugin JAR.
+# User settings belong in config.yml.
+
+eyeofender:
+  world-folder: mm_void
+  mob: enderman
+  center:
+    x: 0
+    y: 64
+    z: 0
+  top: END_STONE
+  mid: END_STONE
+  bottom: END_STONE
+
+volcano:
+  world-folder: mm_volcano
+  mob: zombified_piglin
+  center:
+    x: -3
+    y: 114
+    z: 3
+  top: NETHER_BRICKS
+  mid: NETHERRACK
+  bottom: NETHER_BRICKS
+
+colombia:
+  world-folder: mm_colombia
+  mob: ocelot
+  center:
+    x: -7
+    y: 61
+    z: 5
+  top: GRASS_BLOCK
+  mid: POLISHED_GRANITE
+  bottom: OAK_PLANKS
+
+sandycoast:
+  world-folder: mm_sandycoast
+  mob: villager
+  center:
+    x: 23
+    y: 13
+    z: 15
+  top: QUARTZ_BLOCK
+  mid: QUARTZ_PILLAR
+  bottom: QUARTZ_BLOCK
+
+siberian:
+  world-folder: mm_siberian
+  mob: snowman
+  center:
+    x: 0
+    y: 7
+    z: 0
+  top: SNOW_BLOCK
+  mid: SNOW_BLOCK
+  bottom: SNOW_BLOCK
+
+swampland:
+  world-folder: mm_swampland
+  mob: zombie
+  center:
+    x: 0
+    y: 7
+    z: 0
+  top: GRASS_BLOCK
+  mid: DIRT
+  bottom: DIRT
+
+tesorohundido:
+  world-folder: mm_tesorohundido
+  mob: squid
+  center:
+    x: 0
+    y: 27
+    z: 0
+  top: STONE
+  mid: CYAN_TERRACOTTA
+  bottom: GRAY_WOOL
