@@ -5,6 +5,7 @@ import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.world.MapManager;
+import me.monstermaze.world.MapThemeApplier;
 import me.monstermaze.world.VoidWorldManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -20,6 +21,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private GameManager gameManager;
     private VoidWorldManager voidWorlds;
     private MapManager mapManager;
+    private MapThemeApplier mapThemeApplier;
     private MazeMode mode = MazeMode.ORIGINAL;
     private me.monstermaze.stats.LeaderboardManager leaderboards;
 
@@ -29,6 +31,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         saveDefaultConfig();
         this.voidWorlds = new VoidWorldManager(this);
         this.mapManager = new MapManager(this);
+        this.mapThemeApplier = new MapThemeApplier(this);
         this.leaderboards = new me.monstermaze.stats.LeaderboardManager(this);
 
         FileConfiguration cfg = getConfig();
@@ -61,15 +64,16 @@ public class MonsterMazePlugin extends JavaPlugin {
         }
 
         this.gameManager = new GameManager(this);
+        this.mapThemeApplier.start();
 
         // Lobby at the active map's configured center + kit NPCs
         gameManager.bootstrapLobby(mapCenter);
 
         new LobbyListener(this, gameManager, voidWorlds);
+        new me.monstermaze.world.MapCommandListener(this);
         getCommand("mm").setExecutor(new MMCommand(this));
 
         // Move anyone already online into the active map lobby
-        final Location finalMapCenter = mapCenter;
         Bukkit.getScheduler().runTaskLater(this, new Runnable() {
             @Override
             public void run() {
@@ -86,6 +90,7 @@ public class MonsterMazePlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (mapThemeApplier != null) mapThemeApplier.stop();
         if (gameManager != null) {
             gameManager.forceStop();
         }
