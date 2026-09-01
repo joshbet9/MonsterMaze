@@ -2,8 +2,6 @@ package me.monstermaze.stats;
 
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.game.MazeMode;
-import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 
 import java.io.File;
@@ -47,7 +45,23 @@ public class RunRecorder {
                        int stage, long elapsedMs) {
         if (!plugin.isSoloMode()) return;
         if (player == null || mode == null) return;
+        writeRecord(player, mode, pattern, kit, stage, elapsedMs);
+    }
 
+    /**
+     * Re-export an already persisted personal best as a submission record.
+     * The leaderboard file does not retain the original run time, so historical
+     * exports use timeMs=0 while preserving the authoritative mode/pattern/kit/stage.
+     */
+    public boolean recordHistorical(Player player, MazeMode mode, int pattern, String kit, int stage) {
+        if (!plugin.isSoloMode()) return false;
+        if (player == null || mode == null || pattern < 0 || stage < 1 || kit == null || kit.isEmpty()) return false;
+        writeRecord(player, mode, pattern, kit, stage, 0L);
+        return true;
+    }
+
+    private void writeRecord(Player player, MazeMode mode, int pattern, String kit,
+                              int stage, long elapsedMs) {
         if (!folder.exists()) {
             folder.mkdirs();
         }
