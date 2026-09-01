@@ -1,5 +1,6 @@
 package me.monstermaze.util;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Creature;
 import org.bukkit.entity.Entity;
@@ -12,8 +13,8 @@ import org.bukkit.entity.Mob;
  *
  * <p>The 1.8 build used a custom Snowman whose network entity registration was changed so the
  * client rendered it as the selected monster. That NMS registration trick does not have a direct
- * 1.21 equivalent. The modern equivalent is to spawn the actual vanilla entity type, then strip
- * its autonomous goals and let Monster Maze drive all movement itself.</p>
+ * 1.21 equivalent. The modern equivalent is to spawn the actual vanilla entity type, remove its
+ * vanilla goals through Paper's Mob Goal API, and let Monster Maze drive all movement itself.</p>
  */
 public final class UtilEnt {
     private UtilEnt() {}
@@ -30,7 +31,7 @@ public final class UtilEnt {
         try {
             return ((Mob) ent).getPathfinder().moveTo(target, speed);
         } catch (Throwable t) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] CreatureMoveFast failed: " + t);
+            Bukkit.getLogger().warning("[MonsterMaze] CreatureMoveFast failed: " + t);
             return false;
         }
     }
@@ -61,49 +62,24 @@ public final class UtilEnt {
             try { ((Creature) ent).setTarget(null); } catch (Throwable ignored) { }
         }
         if (ent instanceof Mob) {
-            ((Mob) ent).setAI(true);
-            ((Mob) ent).setAware(true);
-            clearVanillaGoals(ent);
-        }
-    }
-
-    public static void stopNavigation(Entity ent) {
-        if (ent == null) return;
-        try {
-            Object handle = ent.getClass().getMethod("getHandle").invoke(ent);
-            Object nav = handle.getClass().getMethod("getNavigation").invoke(handle);
-            if (nav != null) nav.getClass().getMethod("stop").invoke(nav);
-        } catch (Throwable t) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] stopNavigation failed: " + t);
-        }
-    }
-
-    private static void clearVanillaGoals(Entity ent) {
-        try {
-            Object handle = ent.getClass().getMethod("getHandle").invoke(ent);
-            for (String fieldName : new String[]{"goalSelector", "targetSelector"}) {
-                java.lang.reflect.Field field = null;
-                for (Class<?> c = handle.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
-                    try {
-                        field = c.getDeclaredField(fieldName);
-                        break;
-                    } catch (NoSuchFieldException ignore) { }
-                }
-                if (field == null) continue;
-                field.setAccessible(true);
-                Object selector = field.get(handle);
-                if (selector == null) continue;
-                for (java.lang.reflect.Field f : selector.getClass().getDeclaredFields()) {
-                    if (!java.util.Collection.class.isAssignableFrom(f.getType())
-                            && !java.util.Map.class.isAssignableFrom(f.getType())) continue;
-                    f.setAccessible(true);
-                    Object val = f.get(selector);
-                    if (val instanceof java.util.Collection) ((java.util.Collection<?>) val).clear();
-                    else if (val instanceof java.util.Map) ((java.util.Map<?, ?>) val).clear();
-                }
+            Mob mob = (Mob) ent;
+            mob.setAI(true);
+            mob.setAware(true);
+            try {
+                Bukkit.getMobGoals().removeAllGoals(mob);
+            } catch (Throwable t) {
+                Bukkit.getLogger().warning("[MonsterMaze] Failed to remove vanilla mob goals: " + t);
             }
+        }
+    }
+
+    /** Stop the current Paper pathfinder path. */
+    public static void stopNavigation(Entity ent) {
+        if (!(ent instanceof Mob)) return;
+        try {
+            ((Mob) ent).getPathfinder().stopPathfinding();
         } catch (Throwable t) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] clearVanillaGoals failed: " + t);
+            Bukkit.getLogger().warning("[MonsterMaze] stopNavigation failed: " + t);
         }
     }
 
@@ -115,7 +91,7 @@ public final class UtilEnt {
         if (loc == null || loc.getWorld() == null) return null;
         EntityType type = resolveMobType(mobType);
         if (type == null || !type.isAlive()) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] Unsupported mob type '" + mobType + "'");
+            Bukkit.getLogger().warning("[MonsterMaze] Unsupported mob type '" + mobType + "'");
             return null;
         }
         try {
@@ -128,10 +104,11 @@ public final class UtilEnt {
             living.setRemoveWhenFarAway(false);
             living.setCanPickupItems(false);
             living.setCollidable(false);
+            living.setSilent(true);
             vegetate(living);
             return living;
         } catch (Throwable t) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] spawnGhostMob '" + mobType + "' failed: " + t);
+            Bukkit.getLogger().warning("[MonsterMaze] spawnGhostMob '" + mobType + "' failed: " + t);
             return null;
         }
     }
@@ -148,7 +125,7 @@ public final class UtilEnt {
         }
     }
 
-    /** Retained only for older 1.21 callers that explicitly request the Snow Golem renderer. */
+    /** Retained for compatibility with older 1.21 callers that explicitly request Snow Golems. */
     public static org.bukkit.entity.Snowman spawnGhostSnowman(Location loc) {
         LivingEntity ent = spawnGhostMob(loc, "snowman");
         return ent instanceof org.bukkit.entity.Snowman ? (org.bukkit.entity.Snowman) ent : null;
