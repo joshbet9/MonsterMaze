@@ -1,6 +1,6 @@
 # Monster Maze bundled map definitions.
 # This file is release-controlled and is updated with the plugin JAR.
-# Do not put user settings here.
+# Do not put user settings or mob overrides here.
 
 eyeofender:
   world-folder: mm_void
@@ -38,7 +38,6 @@ volcano:
   bottom:
     id: 112
     data: 0
-  mob-override: witch
 
 colombia:
   world-folder: mm_colombia
@@ -90,7 +89,6 @@ siberian:
   bottom:
     id: 80
     data: 0
-  mob-override: creeper
 
 swampland:
   world-folder: mm_swampland
