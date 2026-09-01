@@ -5,8 +5,10 @@ import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.stats.RunRecorder;
+import me.monstermaze.world.MapCommandListener;
 import me.monstermaze.world.MapManager;
 import me.monstermaze.world.MapThemeApplier;
+import me.monstermaze.world.SoloPBCommandListener;
 import me.monstermaze.world.VoidWorldManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -17,7 +19,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 
 public class MonsterMazePlugin extends JavaPlugin {
-
     private static MonsterMazePlugin instance;
     private GameManager gameManager;
     private VoidWorldManager voidWorlds;
@@ -53,14 +54,12 @@ public class MonsterMazePlugin extends JavaPlugin {
                         saveResource("modes/" + m.id + ".txt", false);
                     }
                 }
-            } catch (Exception ignored) {
-            }
+            } catch (Exception ignored) { }
         }
 
         Location mapCenter = mapManager.defaultCenter();
         if (mapCenter == null) {
-            getLogger().warning("Active map '" + mapManager.getActiveMap()
-                    + "' has no available world; falling back to mm_void.");
+            getLogger().warning("Active map '" + mapManager.getActiveMap() + "' has no available world; falling back to mm_void.");
             voidWorlds.ensureWorld();
             mapCenter = voidWorlds.lobbySpawn();
         }
@@ -71,12 +70,12 @@ public class MonsterMazePlugin extends JavaPlugin {
         gameManager.bootstrapLobby(mapCenter);
 
         new LobbyListener(this, gameManager, voidWorlds);
-        new me.monstermaze.world.MapCommandListener(this);
+        new MapCommandListener(this);
+        new SoloPBCommandListener(this);
         getCommand("mm").setExecutor(new MMCommand(this));
 
         Bukkit.getScheduler().runTaskLater(this, new Runnable() {
-            @Override
-            public void run() {
+            @Override public void run() {
                 for (Player p : Bukkit.getOnlinePlayers()) gameManager.sendToLobby(p);
             }
         }, 20L);
