@@ -28,7 +28,7 @@ maps:
   volcano:
     world-folder: mm_volcano
     mob: snowman
-    center: {x: -3, y: 25, z: 3}
+    center: {x: -3, y: 114, z: 3}
     # volcanic palette matching the obsidian/netherrack arena
     top:    {id: 159, data: 15}   # black stained clay (walk surface)
     mid:    {id: 49,  data: 0}    # obsidian (support)
@@ -36,7 +36,7 @@ maps:
   colombia:
     world-folder: mm_colombia
     mob: snowman
-    center: {x: -7, y: 23, z: 5}
+    center: {x: -7, y: 61, z: 5}
     # jungle theme (lime/green over packed dirt)
     top:    {id: 159, data: 5}    # lime stained clay (walk surface)
     mid:    {id: 159, data: 13}   # green stained clay (support)
@@ -44,7 +44,7 @@ maps:
   sandycoast:
     world-folder: mm_sandycoast
     mob: snowman
-    center: {x: 23, y: 21, z: 15}
+    center: {x: 23, y: 13, z: 15}
     # desert/sand theme over sand + sandstone
     top:    {id: 24,  data: 0}    # sandstone (walk surface)
     mid:    {id: 24,  data: 2}    # smoothed sandstone (support)
@@ -52,7 +52,7 @@ maps:
   siberian:
     world-folder: mm_siberian
     mob: snowman
-    center: {x: -41, y: 22, z: 7}
+    center: {x: -41, y: 7, z: 7}
     # arctic theme (white over packed snow)
     top:    {id: 159, data: 0}    # white stained clay (walk surface)
     mid:    {id: 159, data: 8}    # silver clay (support)
@@ -60,7 +60,7 @@ maps:
   swampland:
     world-folder: mm_swampland
     mob: snowman
-    center: {x: 7, y: 20, z: -1}
+    center: {x: 7, y: 7, z: -1}
     # murky swamp theme over packed dirt
     top:    {id: 159, data: 13}   # green stained clay (walk surface)
     mid:    {id: 159, data: 7}    # gray clay (support)
@@ -68,7 +68,7 @@ maps:
   tesorohundido:
     world-folder: mm_tesorohundido
     mob: snowman
-    center: {x: -1, y: 22, z: 23}
+    center: {x: -1, y: 27, z: 23}
     # buried-treasure theme (gold over packed stone)
     top:    {id: 159, data: 4}    # yellow stained clay (walk surface)
     mid:    {id: 159, data: 1}    # orange clay (support)
