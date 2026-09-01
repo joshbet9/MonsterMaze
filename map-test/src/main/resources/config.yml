@@ -17,8 +17,9 @@ map: void
 # Per-map settings. "world-folder" must match a world folder in the server
 # directory (shipped with the game); "void" is generated automatically.
 # Maze palette mirrors Mineplex B3/B2/B1 (bottom/middle/top), each an id+data
-# pair for the 1.8 block. "mob" is the monster type (only snowman is currently
-# implemented). "center" is the default maze anchor (auto-picked, correctable).
+# pair for the 1.8 block. "mob" is the monster skin (snowman, zombie, squid,
+# ocelot, zombie pigman or villager - all share identical logic). "center" is
+# the default maze anchor (auto-picked, correctable).
 maps:
   void:
     world-folder: mm_void
@@ -27,49 +28,49 @@ maps:
     # default theme (quartz top/mid, stone base) is used when no palette given
   volcano:
     world-folder: mm_volcano
-    mob: snowman
+    mob: zombie pigman
     center: {x: -3, y: 114, z: 3}
-    # volcanic palette matching the obsidian/netherrack arena
-    top:    {id: 159, data: 15}   # black stained clay (walk surface)
-    mid:    {id: 49,  data: 0}    # obsidian (support)
-    bottom: {id: 87,  data: 0}    # netherrack (base)
+    # volcanic theme
+    top:    {id: 112, data: 0}    # nether brick (walk surface)
+    mid:    {id: 87,  data: 0}    # netherrack (support)
+    bottom: {id: 112, data: 0}    # nether brick (base)
   colombia:
     world-folder: mm_colombia
-    mob: snowman
+    mob: ocelot
     center: {x: -7, y: 61, z: 5}
-    # jungle theme (lime/green over packed dirt)
-    top:    {id: 159, data: 5}    # lime stained clay (walk surface)
-    mid:    {id: 159, data: 13}   # green stained clay (support)
-    bottom: {id: 3,   data: 0}    # dirt (base)
+    # jungle theme
+    top:    {id: 2,   data: 0}    # grass block (walk surface)
+    mid:    {id: 1,   data: 2}    # polished granite (support)
+    bottom: {id: 5,   data: 0}    # oak wood planks (base)
   sandycoast:
     world-folder: mm_sandycoast
-    mob: snowman
+    mob: villager
     center: {x: 23, y: 13, z: 15}
-    # desert/sand theme over sand + sandstone
-    top:    {id: 24,  data: 0}    # sandstone (walk surface)
-    mid:    {id: 24,  data: 2}    # smoothed sandstone (support)
-    bottom: {id: 12,  data: 1}    # red sand (base)
+    # desert/sand theme
+    top:    {id: 155, data: 0}    # quartz block (walk surface)
+    mid:    {id: 155, data: 2}    # quartz pillar (support)
+    bottom: {id: 155, data: 0}    # quartz block (base)
   siberian:
     world-folder: mm_siberian
     mob: snowman
-    center: {x: -41, y: 7, z: 7}
-    # arctic theme (white over packed snow)
-    top:    {id: 159, data: 0}    # white stained clay (walk surface)
-    mid:    {id: 159, data: 8}    # silver clay (support)
-    bottom: {id: 80,  data: 0}    # snow (base)
+    center: {x: 0, y: 7, z: 0}
+    # arctic theme
+    top:    {id: 80,  data: 0}    # snow block (walk surface)
+    mid:    {id: 80,  data: 0}    # snow block (support)
+    bottom: {id: 80,  data: 0}    # snow block (base)
   swampland:
     world-folder: mm_swampland
-    mob: snowman
-    center: {x: 7, y: 7, z: -1}
-    # murky swamp theme over packed dirt
-    top:    {id: 159, data: 13}   # green stained clay (walk surface)
-    mid:    {id: 159, data: 7}    # gray clay (support)
+    mob: zombie
+    center: {x: 0, y: 7, z: 0}
+    # murky swamp theme
+    top:    {id: 2,   data: 0}    # grass block (walk surface)
+    mid:    {id: 3,   data: 0}    # dirt (support)
     bottom: {id: 3,   data: 0}    # dirt (base)
   tesorohundido:
     world-folder: mm_tesorohundido
-    mob: snowman
-    center: {x: -1, y: 27, z: 23}
-    # buried-treasure theme (gold over packed stone)
-    top:    {id: 159, data: 4}    # yellow stained clay (walk surface)
-    mid:    {id: 159, data: 1}    # orange clay (support)
-    bottom: {id: 1,   data: 0}    # stone (base)
+    mob: squid
+    center: {x: 0, y: 27, z: 0}
+    # buried-treasure theme
+    top:    {id: 82,  data: 0}    # clay block (walk surface)
+    mid:    {id: 159, data: 9}    # cyan hardened clay (support)
+    bottom: {id: 35,  data: 7}    # gray wool (base)

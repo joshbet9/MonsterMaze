@@ -55,8 +55,9 @@ public class MonsterMazePlugin extends JavaPlugin {
             }
         }
 
-        // Map AddonGhostSnowman -> snowman id so the client renders maze monsters correctly.
-        UtilEnt.registerGhostSnowmanEntityType();
+        // Register ghosted maze-monster types (addon classes -> vanilla ids) so the
+        // client renders the correct skins for each map's mob type.
+        UtilEnt.registerGhostTypes();
 
         // Active map from config; load its world and apply its theme/mob.
         mapManager.loadActiveMapFromConfig();
