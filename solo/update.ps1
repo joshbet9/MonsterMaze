@@ -69,13 +69,20 @@ foreach ($u in $toUpdate) {
     New-Item -ItemType Directory -Force -Path (Split-Path $tmp) | Out-Null
 
     $guard = $u.rel.ToLowerInvariant()
-    if (@("submitter/config.ps1","bot/config.json","server/plugins/monstermazestandalone/config.yml") -contains $guard) {
+    if (@("submitter/config.ps1","bot/config.json","server/plugins/monstermazestandalone/config.yml","server/server.properties") -contains $guard) {
         Write-Host ("  Skipping protected file: {0} (preserving your settings)" -f $u.rel)
         continue
     }
 
+    # Arena worlds live under solo/maps in the source repository, but are
+    # installed under server/mm_* in the player's distribution.
+    $sourceRel = $u.rel
+    if ($sourceRel -match '^server/(mm_[^/]+)(/.*)?$') {
+        $sourceRel = 'maps/' + $Matches[1] + $Matches[2]
+    }
+
     try {
-        Invoke-WebRequest -Uri ($rawBase + $u.rel) -OutFile $tmp -TimeoutSec 120 -UseBasicParsing
+        Invoke-WebRequest -Uri ($rawBase + $sourceRel) -OutFile $tmp -TimeoutSec 120 -UseBasicParsing
         $dlHash = (Get-FileHash -LiteralPath $tmp -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($dlHash -ne $u.sha256) { throw "Hash mismatch: expected $($u.sha256), got $dlHash" }
 
