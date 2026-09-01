@@ -52,16 +52,17 @@ public class RunRecorder {
      * Re-export an already persisted personal best as a submission record.
      * The leaderboard file does not retain the original run time, so historical
      * exports use timeMs=0 while preserving the authoritative mode/pattern/kit/stage.
+     *
+     * @return true when a submission file was written successfully
      */
     public boolean recordHistorical(Player player, MazeMode mode, int pattern, String kit, int stage) {
         if (!plugin.isSoloMode()) return false;
         if (player == null || mode == null || pattern < 0 || stage < 1 || kit == null || kit.isEmpty()) return false;
-        writeRecord(player, mode, pattern, kit, stage, 0L);
-        return true;
+        return writeRecord(player, mode, pattern, kit, stage, 0L);
     }
 
-    private void writeRecord(Player player, MazeMode mode, int pattern, String kit,
-                              int stage, long elapsedMs) {
+    private boolean writeRecord(Player player, MazeMode mode, int pattern, String kit,
+                                int stage, long elapsedMs) {
         if (!folder.exists()) {
             folder.mkdirs();
         }
@@ -98,8 +99,10 @@ public class RunRecorder {
             w.close();
             plugin.getLogger().info("Solo run recorded: " + out.getName()
                     + " (mode=" + mode.id + " stage=" + stage + " time=" + elapsedMs + "ms)");
+            return true;
         } catch (IOException e) {
             plugin.getLogger().warning("Could not write solo run record: " + e.getMessage());
+            return false;
         }
     }
 
