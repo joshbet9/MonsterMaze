@@ -184,6 +184,10 @@ public void startGame() {
     startGame(null, -1);
 }
 
+public void startGame(int requestedPattern) {
+    startGame(null, requestedPattern);
+}
+
 /** @param preferCenter optional player location when /mm start is used without setcenter */
 public void startGame(Location preferCenter) {
     startGame(preferCenter, -1);
