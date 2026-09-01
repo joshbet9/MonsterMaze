@@ -49,9 +49,7 @@ public final class UtilEnt {
         }
     }
 
-    public static boolean CreatureMoveFast(Entity ent, Location target, float speed) {
-        return CreatureMoveFast(ent, target, speed, true);
-    }
+    public static boolean CreatureMoveFast(Entity ent, Location target, float speed) { return CreatureMoveFast(ent, target, speed, true); }
 
     public static boolean CreatureMoveFast(Entity ent, Location target, float speed, boolean slow) {
         if (ent == null || target == null) return false;
@@ -65,8 +63,7 @@ public final class UtilEnt {
             if (dir.lengthSquared() < 1e-6) return false;
             dir.normalize().multiply(Math.min(speed * 0.2, dir.length()));
             Location next = loc.clone().add(dir);
-            next.setYaw(loc.getYaw());
-            next.setPitch(loc.getPitch());
+            next.setYaw(loc.getYaw()); next.setPitch(loc.getPitch());
             ent.teleport(next);
             return true;
         }
@@ -75,16 +72,12 @@ public final class UtilEnt {
             Object controller = getControllerMove.invoke(handle);
             controllerMoveA.invoke(controller, target.getX(), target.getY(), target.getZ(), (double) speed);
             return true;
-        } catch (Throwable t) {
-            return false;
-        }
+        } catch (Throwable t) { return false; }
     }
 
     public static double offsetSquared(Location a, Location b) {
         if (a == null || b == null || a.getWorld() != b.getWorld()) return Double.MAX_VALUE;
-        double dx = a.getX() - b.getX();
-        double dy = a.getY() - b.getY();
-        double dz = a.getZ() - b.getZ();
+        double dx = a.getX() - b.getX(), dy = a.getY() - b.getY(), dz = a.getZ() - b.getZ();
         return dx * dx + dy * dy + dz * dz;
     }
 
@@ -93,11 +86,8 @@ public final class UtilEnt {
         if (ent.isOnGround()) return true;
         try {
             Location loc = ent.getLocation();
-            org.bukkit.block.Block below = loc.getWorld().getBlockAt(loc.getBlockX(), loc.getBlockY() - 1, loc.getBlockZ());
-            return below.getType().isSolid();
-        } catch (Throwable t) {
-            return false;
-        }
+            return loc.getWorld().getBlockAt(loc.getBlockX(), loc.getBlockY() - 1, loc.getBlockZ()).getType().isSolid();
+        } catch (Throwable t) { return false; }
     }
 
     public static void vegetate(Entity ent) {
@@ -107,11 +97,8 @@ public final class UtilEnt {
         if (!available) return;
         try {
             Object handle = getHandle.invoke(ent);
-            clearGoals(handle, "goalSelector");
-            clearGoals(handle, "targetSelector");
-        } catch (Throwable t) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] vegetate NMS failed: " + t.getMessage());
-        }
+            clearGoals(handle, "goalSelector"); clearGoals(handle, "targetSelector");
+        } catch (Throwable t) { org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] vegetate NMS failed: " + t.getMessage()); }
     }
 
     private static void clearGoals(Object entity, String selectorField) {
@@ -146,8 +133,7 @@ public final class UtilEnt {
             for (Field f : entityTypes.getDeclaredFields()) {
                 if (!Map.class.isAssignableFrom(f.getType())) continue;
                 f.setAccessible(true);
-                Object value;
-                try { value = f.get(null); } catch (Throwable ignored) { continue; }
+                Object value; try { value = f.get(null); } catch (Throwable ignored) { continue; }
                 if (!(value instanceof Map)) continue;
                 Map map = (Map) value;
                 try {
@@ -155,9 +141,7 @@ public final class UtilEnt {
                     if (map.get(snowmanClass) instanceof String && classToName == null) classToName = map;
                 } catch (Throwable ignored) { }
             }
-        } catch (Throwable t) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] resolveEntityTypeMaps failed: " + t.getMessage());
-        }
+        } catch (Throwable t) { org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] resolveEntityTypeMaps failed: " + t.getMessage()); }
     }
 
     public static void registerGhostType(String mobType) {
@@ -168,9 +152,7 @@ public final class UtilEnt {
         try {
             classToId.put(AddonGhostSnowman.class, mob.entityId);
             if (classToName != null) classToName.put(AddonGhostSnowman.class, mob.registryName);
-        } catch (Throwable t) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] registerGhostType '" + mob.id + "' failed: " + t);
-        }
+        } catch (Throwable t) { org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] registerGhostType '" + mob.id + "' failed: " + t); }
     }
 
     public static void registerGhostTypes() { registerGhostType("snowman"); }
@@ -193,7 +175,8 @@ public final class UtilEnt {
     }
 
     /** Backwards-compatible API used by the existing 1.8 MonsterManager. */
-    public static LivingEntity spawnGhostSnowman(Location loc) {
-        return spawnGhostMob(loc, selectedGhostMobType);
+    public static Snowman spawnGhostSnowman(Location loc) {
+        LivingEntity ent = spawnGhostMob(loc, selectedGhostMobType);
+        return ent instanceof Snowman ? (Snowman) ent : null;
     }
 }
