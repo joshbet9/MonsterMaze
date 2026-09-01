@@ -183,7 +183,8 @@ public class ArenaListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onFood(FoodLevelChangeEvent event) {
         if (!(event.getEntity() instanceof Player)) return;
-        if (!inVoidWorld(event.getEntity().getWorld())) return;
+        Location center = game.getCenter();
+        if (center == null || event.getEntity().getWorld() != center.getWorld()) return;
         event.setCancelled(true);
         Player p = (Player) event.getEntity();
         p.setFoodLevel(20);
@@ -220,7 +221,7 @@ public class ArenaListener implements Listener {
         }
         if (inVoidWorld(event.getPlayer().getWorld()) && game.getState() != GameState.IDLE) {
             event.setCancelled(true);
-        }
+            }
     }
 
     /** True when the world is the active arena map world. */
