@@ -100,7 +100,18 @@ public class MapManager {
     private byte data(ConfigurationSection s) { return s != null && s.contains("data") ? (byte) s.getInt("data", 0) : -1; }
     private Material mat(ConfigurationSection s) { if (s == null) return null; String name = s.getString("material", ""); if (name != null && !name.isEmpty()) { Material named = Material.matchMaterial(name); if (named != null) return named; } int id = s.getInt("id", -1); return id >= 0 ? Material.getMaterial(id) : null; }
 
-    public String mob(String map) { ConfigurationSection s = section(map); return s != null && s.isString("mob") ? s.getString("mob") : "snowman"; }
+    public String mob(String map) {
+        ConfigurationSection s = section(map);
+        if (s == null || !s.isString("mob")) return "snowman";
+        String configured = s.getString("mob");
+        if (configured == null || configured.trim().isEmpty()) return "snowman";
+        MobTypes.MobType byId = MobTypes.byId(configured.trim());
+        if (byId != null) return byId.id;
+        for (MobTypes.MobType type : MobTypes.all()) {
+            if (type.display.equalsIgnoreCase(configured.trim())) return type.id;
+        }
+        return configured.trim().toLowerCase();
+    }
     public String activeMob() {
         String selected = selectedMob(getActiveMap());
         UtilEnt.setSelectedGhostMobType(selected);
