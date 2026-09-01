@@ -55,13 +55,13 @@ public class MapManager {
             plugin.getLogger().severe("maps.yml is missing from the plugin JAR.");
         }
 
-        // Compatibility fallback for a malformed/older plugin build: use legacy
+        // Compatibility fallback for an older/malformed plugin build: use legacy
         // config map definitions if they are present, otherwise the map list is empty.
         ConfigurationSection legacy = plugin.getConfig().getConfigurationSection("maps");
         if (legacy != null) {
             plugin.getLogger().warning("Falling back to legacy config.yml map definitions.");
             FileConfiguration fallback = new YamlConfiguration();
-            fallback.createSection("maps", legacy.getValues(true));
+            fallback.set("maps", legacy.getValues(false));
             return fallback;
         }
         return new YamlConfiguration();
@@ -106,19 +106,14 @@ public class MapManager {
     public String getActiveMap() { return activeMap == null ? DEFAULT_MAP : activeMap; }
 
     public List<String> knownMaps() {
-        ConfigurationSection maps = mapConfig.getConfigurationSection("");
-        if (maps == null) maps = mapConfig.getConfigurationSection("maps");
-        if (maps == null) return new ArrayList<String>();
-        Set<String> names = new LinkedHashSet<String>(maps.getKeys(false));
+        Set<String> names = new LinkedHashSet<String>(mapConfig.getKeys(false));
         names.remove("void");
         if (!names.contains(DEFAULT_MAP)) names.add(DEFAULT_MAP);
         return new ArrayList<String>(names);
     }
 
     public boolean isKnown(String map) {
-        ConfigurationSection maps = mapConfig.getConfigurationSection("");
-        if (maps == null) maps = mapConfig.getConfigurationSection("maps");
-        return map != null && maps != null && maps.contains(map);
+        return map != null && mapConfig.contains(map);
     }
 
     public boolean setActiveMap(String map) {
@@ -130,9 +125,7 @@ public class MapManager {
     }
 
     private ConfigurationSection section(String map) {
-        ConfigurationSection maps = mapConfig.getConfigurationSection("");
-        if (maps == null) maps = mapConfig.getConfigurationSection("maps");
-        return maps == null ? null : maps.getConfigurationSection(map);
+        return mapConfig.getConfigurationSection(map);
     }
 
     public World ensureActiveWorld() {
