@@ -2,19 +2,38 @@
 # and double-click to play.
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repoRoot = Split-Path -Parent $here
 $dist = Join-Path $here "solo-dist"
 $JDK8 = "C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium\jdk-8.0.502.7-hotspot"
 $SPIGOT = "C:\monstermaze_test\spigot-1.8.8.jar"
 $maps = Join-Path $here "maps"
+$sourceProject = Join-Path $repoRoot "1.8\MonsterMazeStandalone"
+$sourceJar = Join-Path $sourceProject "target\MonsterMazeStandalone.jar"
+$soloJar = Join-Path $here "server\plugins\MonsterMazeStandalone.jar"
+$maven = "mvn.cmd"
 
 if (-not (Test-Path (Join-Path $JDK8 "bin\java.exe"))) { Write-Host "JDK8 not found at $JDK8"; exit 1 }
 if (-not (Test-Path $SPIGOT)) { Write-Host "spigot jar not found at $SPIGOT"; exit 1 }
 if (-not (Test-Path $maps)) { Write-Host "Canonical maps directory not found at $maps"; exit 1 }
+if (-not (Test-Path (Join-Path $sourceProject "pom.xml"))) { Write-Host "1.8 source project not found at $sourceProject"; exit 1 }
 
 $requiredMaps = @("mm_colombia","mm_sandycoast","mm_siberian","mm_swampland","mm_tesorohundido","mm_void","mm_volcano")
 foreach ($map in $requiredMaps) {
     if (-not (Test-Path (Join-Path $maps $map))) { throw "Required map missing: $map" }
 }
+
+# Always build the plugin from the canonical 1.8 source before packaging.
+Write-Host "Building 1.8 MonsterMazeStandalone from $sourceProject ..."
+Push-Location $sourceProject
+try {
+    & $maven clean package -DskipTests
+    if ($LASTEXITCODE -ne 0) { throw "Maven build failed with exit code $LASTEXITCODE." }
+} finally { Pop-Location }
+
+if (-not (Test-Path $sourceJar)) { throw "Build succeeded but plugin JAR was not produced: $sourceJar" }
+New-Item -ItemType Directory -Force -Path (Split-Path $soloJar) | Out-Null
+Copy-Item -Force $sourceJar $soloJar
+Write-Host "Copied fresh plugin JAR to solo/server/plugins/MonsterMazeStandalone.jar"
 
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 Copy-Item -Recurse -Force (Join-Path $here "launcher") (Join-Path $dist "launcher")
@@ -25,17 +44,6 @@ Copy-Item -Force (Join-Path $here "HOW_TO_PLAY.txt") (Join-Path $dist "HOW_TO_PL
 # Canonical tested arena worlds. These are application assets, not runtime worlds.
 foreach ($map in $requiredMaps) {
     Copy-Item -Recurse -Force (Join-Path $maps $map) (Join-Path $dist "server\$map")
-}
-
-$versionJson = Join-Path $here "version.json"
-if (Test-Path $versionJson) {
-    Copy-Item -Force $versionJson (Join-Path $dist "version.json")
-    Copy-Item -Force (Join-Path $here "update.ps1") (Join-Path $dist "update.ps1")
-    Copy-Item -Force (Join-Path $here "update.bat") (Join-Path $dist "update.bat")
-    $v = (Get-Content $versionJson -Raw | ConvertFrom-Json)."install-version"
-    Set-Content -LiteralPath (Join-Path $dist "installed.version") -Value $v -Encoding ascii
-} else {
-    Write-Warning "version.json not found - regenerate it with updater_tools\make_manifest.ps1."
 }
 
 # Strip generated/runtime state, but deliberately KEEP the canonical mm_* arena maps.
@@ -50,6 +58,24 @@ foreach ($p in ($strip | Select-Object -Unique)) { if (Test-Path $p) { Remove-It
 
 Copy-Item -Recurse -Force $JDK8 (Join-Path $dist "runtime\jdk8")
 Copy-Item -Force $SPIGOT (Join-Path $dist "server\spigot-1.8.8.jar")
+
+# Regenerate the updater manifest from the final Solo files + canonical maps.
+# This guarantees the published JAR hash matches the JAR actually packaged.
+$manifestTool = Join-Path $here "updater_tools\make_manifest.ps1"
+$versionFile = Join-Path $here "version.json"
+if (-not (Test-Path $manifestTool)) { throw "Manifest tool not found: $manifestTool" }
+if (-not (Test-Path $versionFile)) { throw "version.json not found: $versionFile" }
+$versionData = Get-Content $versionFile -Raw | ConvertFrom-Json
+$releaseVersion = [string]$versionData."install-version"
+$releaseNote = [string]$versionData.note
+if (-not $releaseVersion) { throw "version.json is missing install-version." }
+& powershell -NoProfile -ExecutionPolicy Bypass -File $manifestTool -Version $releaseVersion -Note $releaseNote
+if ($LASTEXITCODE -ne 0) { throw "Manifest generation failed with exit code $LASTEXITCODE." }
+
+Copy-Item -Force $versionFile (Join-Path $dist "version.json")
+Copy-Item -Force (Join-Path $here "update.ps1") (Join-Path $dist "update.ps1")
+Copy-Item -Force (Join-Path $here "update.bat") (Join-Path $dist "update.bat")
+Set-Content -LiteralPath (Join-Path $dist "installed.version") -Value $releaseVersion -Encoding ascii
 
 Write-Host "Staging complete at: $dist"
 
