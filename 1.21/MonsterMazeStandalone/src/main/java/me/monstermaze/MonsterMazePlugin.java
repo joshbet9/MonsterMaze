@@ -1,6 +1,9 @@
 package me.monstermaze;
 
+import me.monstermaze.command.MMDebugCommand;
 import me.monstermaze.command.MMCommand;
+import me.monstermaze.command.MMUtilityCommandListener;
+import me.monstermaze.game.BuildBypassListener;
 import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
 import me.monstermaze.game.MazeMode;
@@ -75,6 +78,8 @@ public class MonsterMazePlugin extends JavaPlugin {
         new LobbyListener(this, gameManager, voidWorlds);
         new MapCommandListener(this);
         new SoloPBCommandListener(this);
+        new BuildBypassListener(this);
+        new MMUtilityCommandListener(this);
         getCommand("mm").setExecutor(new MMCommand(this));
 
         Bukkit.getScheduler().runTaskLater(this, new Runnable() {
