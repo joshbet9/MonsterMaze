@@ -2,7 +2,8 @@
 # Map definitions are bundled in maps.yml and are updated with the plugin release.
 
 mode: Original
-map: colombia
+solo-mode: false
+map: eyeofender
 mob-overrides:
   volcano: witch
   siberian: creeper
