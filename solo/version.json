@@ -1,7 +1,7 @@
 {
-    "install-version":  "1.0.2",
-    "note":  "Test Solo updater with packaged maps and current 1.8 plugin",
-    "updated":  "2026-09-01 19:53 UTC+10:00",
+    "install-version":  "1.0.3",
+    "note":  "Solo release: separated map definitions from user configuration and fixed player hunger",
+    "updated":  "2026-09-01 21:26 UTC+10:00",
     "files":  {
                   "launcher/play.bat":  {
                                             "sha256":  "7de3fbba965033cde03e16fbae8f7c4ca75dc85b4703454649b692e9f4da3a70",
@@ -24,8 +24,8 @@
                                                "size":  3562
                                            },
                   "server/plugins/MonsterMazeStandalone.jar":  {
-                                                                   "sha256":  "b7cf20209c3a3cf8ad923981940075ff4773e9290bedf28ceb05f51de0801d8e",
-                                                                   "size":  176553
+                                                                   "sha256":  "1d08449ed9649a868b54310702f8f43802ef19d799116677f3cd99116d25609c",
+                                                                   "size":  180195
                                                                },
                   "server/bukkit.yml":  {
                                             "sha256":  "21b96c77f0489646e394465b67c3d2dbbe56951fd405a394ce97461b5c948bc0",
