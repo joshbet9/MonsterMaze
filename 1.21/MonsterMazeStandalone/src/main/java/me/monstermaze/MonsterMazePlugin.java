@@ -4,6 +4,7 @@ import me.monstermaze.command.MMCommand;
 import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
 import me.monstermaze.game.MazeMode;
+import me.monstermaze.stats.RunRecorder;
 import me.monstermaze.world.MapManager;
 import me.monstermaze.world.MapThemeApplier;
 import me.monstermaze.world.VoidWorldManager;
@@ -24,6 +25,8 @@ public class MonsterMazePlugin extends JavaPlugin {
     private MapThemeApplier mapThemeApplier;
     private MazeMode mode = MazeMode.ORIGINAL;
     private me.monstermaze.stats.LeaderboardManager leaderboards;
+    private boolean soloMode;
+    private RunRecorder runRecorder;
 
     @Override
     public void onEnable() {
@@ -33,13 +36,14 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.mapManager = new MapManager(this);
         this.mapThemeApplier = new MapThemeApplier(this);
         this.leaderboards = new me.monstermaze.stats.LeaderboardManager(this);
+        this.runRecorder = new RunRecorder(this);
 
         FileConfiguration cfg = getConfig();
         MazeMode stored = MazeMode.byName(cfg.getString("mode", "Original"));
         if (stored == null) stored = MazeMode.ORIGINAL;
         this.mode = stored;
+        this.soloMode = cfg.getBoolean("solo-mode", false);
 
-        // Extract per-mode change documents (txt) into the data folder.
         for (MazeMode m : MazeMode.values()) {
             try {
                 if (getResource("modes/" + m.id + ".txt") != null) {
@@ -53,8 +57,6 @@ public class MonsterMazePlugin extends JavaPlugin {
             }
         }
 
-        // The active map determines the arena world. Eye of Ender uses mm_void;
-        // the other maps load their staged Mineplex world folder.
         Location mapCenter = mapManager.defaultCenter();
         if (mapCenter == null) {
             getLogger().warning("Active map '" + mapManager.getActiveMap()
@@ -64,16 +66,15 @@ public class MonsterMazePlugin extends JavaPlugin {
         }
 
         this.gameManager = new GameManager(this);
+        this.gameManager.applyMap();
         this.mapThemeApplier.start();
 
-        // Lobby at the active map's configured center + kit NPCs
         gameManager.bootstrapLobby(mapCenter);
 
         new LobbyListener(this, gameManager, voidWorlds);
         new me.monstermaze.world.MapCommandListener(this);
         getCommand("mm").setExecutor(new MMCommand(this));
 
-        // Move anyone already online into the active map lobby
         Bukkit.getScheduler().runTaskLater(this, new Runnable() {
             @Override
             public void run() {
@@ -85,31 +86,21 @@ public class MonsterMazePlugin extends JavaPlugin {
 
         getLogger().info("MonsterMazeStandalone enabled.");
         getLogger().info("Active map: " + mapManager.getActiveMap());
+        getLogger().info("Solo mode: " + soloMode);
         getLogger().info("Players join into the active map lobby. Admin: /mm start");
     }
 
     @Override
     public void onDisable() {
         if (mapThemeApplier != null) mapThemeApplier.stop();
-        if (gameManager != null) {
-            gameManager.forceStop();
-        }
+        if (gameManager != null) gameManager.forceStop();
         getLogger().info("MonsterMazeStandalone disabled.");
     }
 
-    public static MonsterMazePlugin getInstance() {
-        return instance;
-    }
+    public static MonsterMazePlugin getInstance() { return instance; }
+    public GameManager getGameManager() { return gameManager; }
+    public MazeMode getMode() { return mode; }
 
-    public GameManager getGameManager() {
-        return gameManager;
-    }
-
-    public MazeMode getMode() {
-        return mode;
-    }
-
-    /** Set and persist the active game mode. Returns the effective mode (null input -> Original). */
     public MazeMode setMode(MazeMode newMode) {
         if (newMode == null) newMode = MazeMode.ORIGINAL;
         this.mode = newMode;
@@ -118,15 +109,9 @@ public class MonsterMazePlugin extends JavaPlugin {
         return newMode;
     }
 
-    public VoidWorldManager getVoidWorlds() {
-        return voidWorlds;
-    }
-
-    public MapManager getMapManager() {
-        return mapManager;
-    }
-
-    public me.monstermaze.stats.LeaderboardManager getLeaderboards() {
-        return leaderboards;
-    }
+    public VoidWorldManager getVoidWorlds() { return voidWorlds; }
+    public MapManager getMapManager() { return mapManager; }
+    public me.monstermaze.stats.LeaderboardManager getLeaderboards() { return leaderboards; }
+    public boolean isSoloMode() { return soloMode; }
+    public RunRecorder getRunRecorder() { return runRecorder; }
 }
