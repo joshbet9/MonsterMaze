@@ -1,3 +1,8 @@
-# MonsterMazeStandalone configuration
-# Active game mode: Original, Speed, or Modern
+# MonsterMazeStandalone user configuration.
+# Map definitions are bundled in maps.yml and are updated with the plugin release.
+
 mode: Original
+map: colombia
+mob-overrides:
+  volcano: witch
+  siberian: creeper
