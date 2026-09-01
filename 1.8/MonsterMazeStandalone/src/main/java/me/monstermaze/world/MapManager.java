@@ -3,6 +3,7 @@ package me.monstermaze.world;
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.maze.MazeBlockData;
 import me.monstermaze.util.MobTypes;
+import me.monstermaze.util.UtilEnt;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -42,19 +43,11 @@ public class MapManager {
         if (maps == null) maps = plugin.getConfig().createSection("maps");
         ConfigurationSection eye = maps.getConfigurationSection(DEFAULT_MAP);
         if (eye == null) eye = maps.createSection(DEFAULT_MAP);
-        // Eye of Ender deliberately uses the existing empty-air world, but its
-        // three maze layers must always be End Stone regardless of an older config.
         eye.set("world-folder", "mm_void");
         eye.set("mob", "enderman");
-        eye.set("top.material", "END_STONE");
-        eye.set("top.id", 121);
-        eye.set("top.data", 0);
-        eye.set("mid.material", "END_STONE");
-        eye.set("mid.id", 121);
-        eye.set("mid.data", 0);
-        eye.set("bottom.material", "END_STONE");
-        eye.set("bottom.id", 121);
-        eye.set("bottom.data", 0);
+        eye.set("top.material", "END_STONE"); eye.set("top.id", 121); eye.set("top.data", 0);
+        eye.set("mid.material", "END_STONE"); eye.set("mid.id", 121); eye.set("mid.data", 0);
+        eye.set("bottom.material", "END_STONE"); eye.set("bottom.id", 121); eye.set("bottom.data", 0);
         if (!eye.contains("center.x")) eye.set("center.x", 0);
         if (!eye.contains("center.y")) eye.set("center.y", 64);
         if (!eye.contains("center.z")) eye.set("center.z", 0);
@@ -66,8 +59,7 @@ public class MapManager {
         ensureEyeOfEnderConfig();
         ConfigurationSection maps = plugin.getConfig().getConfigurationSection("maps");
         if (maps == null) return new ArrayList<String>();
-        Set<String> names = new LinkedHashSet<String>(maps.getKeys(false));
-        names.remove("void");
+        Set<String> names = new LinkedHashSet<String>(maps.getKeys(false)); names.remove("void");
         if (!names.contains(DEFAULT_MAP)) names.add(DEFAULT_MAP);
         return new ArrayList<String>(names);
     }
@@ -109,7 +101,11 @@ public class MapManager {
     private Material mat(ConfigurationSection s) { if (s == null) return null; String name = s.getString("material", ""); if (name != null && !name.isEmpty()) { Material named = Material.matchMaterial(name); if (named != null) return named; } int id = s.getInt("id", -1); return id >= 0 ? Material.getMaterial(id) : null; }
 
     public String mob(String map) { ConfigurationSection s = section(map); return s != null && s.isString("mob") ? s.getString("mob") : "snowman"; }
-    public String activeMob() { return selectedMob(getActiveMap()); }
+    public String activeMob() {
+        String selected = selectedMob(getActiveMap());
+        UtilEnt.setSelectedGhostMobType(selected);
+        return selected;
+    }
     public String selectedMob(String map) { ConfigurationSection s = section(map); if (s == null) return "snowman"; String override = s.getString("mob-override", ""); return override == null || override.isEmpty() ? mob(map) : override; }
     public void setMobOverride(String map, String mobType) {
         ConfigurationSection s = section(map); if (s == null) return;
