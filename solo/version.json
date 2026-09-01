@@ -1,55 +1,8 @@
 {
     "files":  {
-                  "server/plugins/MonsterMazeStandalone.jar":  {
-                                                                   "sha256":  "24f7235c50f13384b54dafd0a4893504626b9ae9de9768c383d94dba9663d29d",
-                                                                   "size":  156094
-                                                               },
-                  "submitter/submit.ps1":  {
-                                               "sha256":  "cd257314b579804e752fceea6728a25e02b11eeefae18ccc033079ad901623f3",
-                                               "size":  3562
-                                           },
-                  "launcher/stop.bat":  {
-                                            "sha256":  "b0568170e30d8f615d023cfc6807db8d934817d3fc9038169f6815d9cdf49ac5",
-                                            "size":  950
-                                        },
-                  "submitter/submit.bat":  {
-                                               "sha256":  "70b071735c9a0eeaf92c268ec24bf0a853db80642ed4bbef4d839fa70d2a3eff",
-                                               "size":  191
-                                           },
-                  "server/eula.txt":  {
-                                          "sha256":  "ee27072e4a23e088522f740ddaab0c7c4145c186969e90a86254faa3a5ec5ce6",
-                                          "size":  10
-                                      },
-                  "server/bukkit.yml":  {
-                                            "sha256":  "21b96c77f0489646e394465b67c3d2dbbe56951fd405a394ce97461b5c948bc0",
-                                            "size":  1182
-                                        },
-                  "launcher/config.bat":  {
-                                              "sha256":  "7e0cf32650756a863ff027eced6d618ea35f6b6e77836e8ceb54932f9255873e",
-                                              "size":  333
-                                          },
-                  "README.md":  {
-                                    "sha256":  "66801ad402dd363b2c3b5aadcd3b23f88d1d43e03cbff47c3e797e8dab8edbf2",
-                                    "size":  7899
-                                },
-                  "server/server.properties":  {
-                                                   "sha256":  "40d746bd09141b013980ddf0051f018bbafb364914e03c90c6f70d09345bef97",
-                                                   "size":  810
-                                               },
-                  "server/spigot.yml":  {
-                                            "sha256":  "022f904ed48f165edd3f60855de6bd058e7e80cf4602c57886c60090686fbfd8",
-                                            "size":  3254
-                                        },
-                  "launcher/play.bat":  {
-                                            "sha256":  "7de3fbba965033cde03e16fbae8f7c4ca75dc85b4703454649b692e9f4da3a70",
-                                            "size":  2626
-                                        },
-                  "HOW_TO_PLAY.txt":  {
-                                          "sha256":  "d38fd1de38efe7fccc7566f6f2f2778c4252c104aab0428be40ff12c1fa6926a",
-                                          "size":  3280
-                                      }
+
               },
-    "install-version":  "1.0.0",
-    "note":  "Initial auto-update release (auto-checks updates on launch).",
-    "updated":  "2026-08-31 12:36 UTC+10:00"
+    "install-version":  "1.0.1",
+    "note":  "Add the seven tested Monster Maze arena maps",
+    "updated":  "2026-09-01 18:56 UTC+10:00"
 }
