@@ -66,9 +66,8 @@ public class MonsterMazePlugin extends JavaPlugin {
         }
 
         this.gameManager = new GameManager(this);
-        this.gameManager.applyMap();
+        this.gameManager.getMonsterManager().setMobType(mapManager.activeMob());
         this.mapThemeApplier.start();
-
         gameManager.bootstrapLobby(mapCenter);
 
         new LobbyListener(this, gameManager, voidWorlds);
@@ -78,9 +77,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         Bukkit.getScheduler().runTaskLater(this, new Runnable() {
             @Override
             public void run() {
-                for (Player p : Bukkit.getOnlinePlayers()) {
-                    gameManager.sendToLobby(p);
-                }
+                for (Player p : Bukkit.getOnlinePlayers()) gameManager.sendToLobby(p);
             }
         }, 20L);
 
