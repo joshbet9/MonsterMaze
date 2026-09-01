@@ -180,24 +180,28 @@ public class GameManager implements Listener {
 
     // -------------------- Start / Stop --------------------
 
-    public void startGame() {
-        startGame(null);
-    }
+public void startGame() {
+    startGame(null, -1);
+}
 
-    /** @param preferCenter optional player location when /mm start is used without setcenter */
-    public void startGame(Location preferCenter) {
-        if (state != GameState.IDLE && state != GameState.ENDING) return;
+/** @param preferCenter optional player location when /mm start is used without setcenter */
+public void startGame(Location preferCenter) {
+    startGame(preferCenter, -1);
+}
 
-        if (center == null) {
-            if (preferCenter != null) {
-                center = preferCenter.clone();
-            } else if (!Bukkit.getOnlinePlayers().isEmpty()) {
-                center = Bukkit.getOnlinePlayers().iterator().next().getLocation();
-            } else {
-                broadcast(ChatColor.RED + "[MonsterMaze] No center set. Stand somewhere and /mm setcenter");
-                return;
-            }
+public void startGame(Location preferCenter, int requestedPattern) {
+    if (state != GameState.IDLE && state != GameState.ENDING) return;
+
+    if (center == null) {
+        if (preferCenter != null) {
+            center = preferCenter.clone();
+        } else if (!Bukkit.getOnlinePlayers().isEmpty()) {
+            center = Bukkit.getOnlinePlayers().iterator().next().getLocation();
+        } else {
+            broadcast(ChatColor.RED + "[MonsterMaze] No center set. Stand somewhere and /mm setcenter");
+            return;
         }
+    }
 
         // MazeGenerator needs its own center + lobby before generate
         if (mazeGenerator.getCenter() == null) {
@@ -226,7 +230,7 @@ public class GameManager implements Listener {
         broadcast(ChatColor.YELLOW + "Generating maze... (server stays responsive)");
 
         // Chunked generation — continues when maze is ready
-        mazeGenerator.generateMazeAsync(new Runnable() {
+        mazeGenerator.generateMazeAsync(requestedPattern, new Runnable() {
             @Override
             public void run() {
                 if (state != GameState.STARTING) return;
