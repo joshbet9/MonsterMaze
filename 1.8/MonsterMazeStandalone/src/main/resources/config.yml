@@ -17,7 +17,7 @@ maps:
     bottom: {id: 121, data: 0}
   volcano:
     world-folder: mm_volcano
-    mob: zombie pigman
+    mob: Zombie Pigman
     center: {x: -3, y: 114, z: 3}
     top:    {id: 112, data: 0}
     mid:    {id: 87,  data: 0}
@@ -42,7 +42,7 @@ maps:
     center: {x: 0, y: 7, z: 0}
     top:    {id: 80,  data: 0}
     mid:    {id: 80,  data: 0}
-    bottom: {id: 80, data: 0}
+    bottom: {id: 80,  data: 0}
   swampland:
     world-folder: mm_swampland
     mob: zombie
