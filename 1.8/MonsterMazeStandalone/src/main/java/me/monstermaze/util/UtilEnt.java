@@ -9,6 +9,7 @@ import org.bukkit.craftbukkit.v1_8_R3.CraftWorld;
 import org.bukkit.entity.Creature;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Snowman;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 
 import java.lang.reflect.Field;
@@ -201,5 +202,11 @@ public final class UtilEnt {
             org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] spawnGhostMob '" + mobType + "' failed: " + t.getMessage());
             return null;
         }
+    }
+
+    /** Backwards-compatible 1.8 API used by MonsterManager while all default mobs use Snowman. */
+    public static Snowman spawnGhostSnowman(Location loc) {
+        LivingEntity ent = spawnGhostMob(loc, "snowman");
+        return ent instanceof Snowman ? (Snowman) ent : null;
     }
 }
