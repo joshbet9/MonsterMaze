@@ -17,8 +17,22 @@ $UPDATEABLE = @(
     "HOW_TO_PLAY.txt", "README.md"
 )
 
-# Canonical arena maps are application assets. Include every file recursively so
-# a changed map can be delivered by the normal hash-based updater.
+function Add-ManifestFile([hashtable]$files, [string]$manifestPath, [string]$sourcePath) {
+    if (-not (Test-Path -LiteralPath $sourcePath)) { throw "Updateable file missing: $sourcePath" }
+    $norm = $manifestPath -replace "\\", "/"
+    $files[$norm] = @{
+        sha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        size = (Get-Item -LiteralPath $sourcePath).Length
+    }
+}
+
+$files = [ordered]@{}
+foreach ($rel in $UPDATEABLE) {
+    Add-ManifestFile $files $rel (Join-Path $soloRoot $rel)
+}
+
+# Canonical arena maps live in solo/maps, but are installed under server/mm_*.
+# Hash the canonical source directly so the manifest can be generated before pack.ps1.
 $mapsRoot = Join-Path $soloRoot "maps"
 if (-not (Test-Path $mapsRoot)) { throw "Canonical maps directory missing: $mapsRoot" }
 $mapNames = @("mm_colombia","mm_sandycoast","mm_siberian","mm_swampland","mm_tesorohundido","mm_void","mm_volcano")
@@ -26,22 +40,9 @@ foreach ($map in $mapNames) {
     $mapRoot = Join-Path $mapsRoot $map
     if (-not (Test-Path $mapRoot)) { throw "Required map missing: $map" }
     Get-ChildItem -LiteralPath $mapRoot -Recurse -File | ForEach-Object {
-        $rel = $_.FullName.Substring($mapsRoot.Length).TrimStart('\','/')
-        $UPDATEABLE += "server\$rel"
+        $relative = $_.FullName.Substring($mapsRoot.Length).TrimStart('\','/')
+        Add-ManifestFile $files ("server\$relative") $_.FullName
     }
-}
-
-function Get-Sha256([string]$path) {
-    $full = Join-Path $soloRoot $path
-    if (-not (Test-Path -LiteralPath $full)) { throw "Updateable file missing: $path" }
-    return (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant()
-}
-
-$files = [ordered]@{}
-foreach ($rel in ($UPDATEABLE | Select-Object -Unique)) {
-    $full = Join-Path $soloRoot $rel
-    $norm = $rel -replace "\\", "/"
-    $files[$norm] = @{ sha256 = Get-Sha256 $rel; size = (Get-Item -LiteralPath $full).Length }
 }
 
 $manifest = @{
