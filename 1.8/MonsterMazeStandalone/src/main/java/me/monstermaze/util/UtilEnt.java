@@ -20,11 +20,16 @@ import java.util.Map;
 public final class UtilEnt {
     private UtilEnt() {}
 
+    private static String selectedGhostMobType = "snowman";
     private static Method getHandle;
     private static Method getControllerMove;
     private static Method controllerMoveA;
     private static boolean resolved;
     private static boolean available;
+
+    public static void setSelectedGhostMobType(String mobType) {
+        selectedGhostMobType = mobType == null || mobType.trim().isEmpty() ? "snowman" : mobType.trim().toLowerCase();
+    }
 
     private static void resolve() {
         if (resolved) return;
@@ -53,7 +58,6 @@ public final class UtilEnt {
         double distSq = offsetSquared(ent.getLocation(), target);
         if (distSq < 0.01) return false;
         if (distSq < 4) speed = Math.min(speed, 1f);
-
         resolve();
         if (!available) {
             Location loc = ent.getLocation();
@@ -66,7 +70,6 @@ public final class UtilEnt {
             ent.teleport(next);
             return true;
         }
-
         try {
             Object handle = getHandle.invoke(ent);
             Object controller = getControllerMove.invoke(handle);
@@ -97,14 +100,9 @@ public final class UtilEnt {
         }
     }
 
-    /** Disable vanilla AI/pathfinder goals; Monster Maze drives movement itself. */
     public static void vegetate(Entity ent) {
         if (ent == null) return;
-        try {
-            if (ent instanceof Creature) ((Creature) ent).setTarget(null);
-        } catch (Throwable ignored) {
-        }
-
+        try { if (ent instanceof Creature) ((Creature) ent).setTarget(null); } catch (Throwable ignored) { }
         resolve();
         if (!available) return;
         try {
@@ -119,11 +117,7 @@ public final class UtilEnt {
     private static void clearGoals(Object entity, String selectorField) {
         Field field = null;
         for (Class<?> c = entity.getClass(); c != null; c = c.getSuperclass()) {
-            try {
-                field = c.getDeclaredField(selectorField);
-                break;
-            } catch (NoSuchFieldException ignored) {
-            }
+            try { field = c.getDeclaredField(selectorField); break; } catch (NoSuchFieldException ignored) { }
         }
         if (field == null) return;
         field.setAccessible(true);
@@ -136,8 +130,7 @@ public final class UtilEnt {
                 Object value = f.get(selector);
                 if (value instanceof java.util.Collection) ((java.util.Collection) value).clear();
             }
-        } catch (Throwable ignored) {
-        }
+        } catch (Throwable ignored) { }
     }
 
     private static Map<Class, Integer> classToId;
@@ -167,7 +160,6 @@ public final class UtilEnt {
         }
     }
 
-    /** Register the one Snowman-backed maze entity under a Minecraft 1.8.8 client entity ID. */
     public static void registerGhostType(String mobType) {
         resolveEntityTypeMaps();
         if (classToId == null) return;
@@ -181,12 +173,8 @@ public final class UtilEnt {
         }
     }
 
-    /** Restore the safe default mapping during plugin startup. */
-    public static void registerGhostTypes() {
-        registerGhostType("snowman");
-    }
+    public static void registerGhostTypes() { registerGhostType("snowman"); }
 
-    /** Spawn a Snowman-backed monster regardless of its selected visual skin. */
     public static LivingEntity spawnGhostMob(Location loc, String mobType) {
         if (loc == null || loc.getWorld() == null) return null;
         try {
@@ -204,9 +192,8 @@ public final class UtilEnt {
         }
     }
 
-    /** Backwards-compatible 1.8 API used by MonsterManager while all default mobs use Snowman. */
-    public static Snowman spawnGhostSnowman(Location loc) {
-        LivingEntity ent = spawnGhostMob(loc, "snowman");
-        return ent instanceof Snowman ? (Snowman) ent : null;
+    /** Backwards-compatible API used by the existing 1.8 MonsterManager. */
+    public static LivingEntity spawnGhostSnowman(Location loc) {
+        return spawnGhostMob(loc, selectedGhostMobType);
     }
 }
