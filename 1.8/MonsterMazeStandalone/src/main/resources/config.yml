@@ -1,59 +1,14 @@
-# MonsterMazeStandalone configuration
+# MonsterMazeStandalone user configuration.
+# These settings belong to the player installation and are preserved by the Solo updater.
+# Map definitions are bundled in maps.yml and are updated with the plugin release.
+
 mode: Original
 solo-mode: false
 
-# Active map. Eye of Ender replaces the old Void test map.
+# Active map selected by the player/admin. Persisted across restarts.
 map: eyeofender
 
-# Per-map settings. Eye of Ender uses the generated empty-air world.
-# All three maze layers use End Stone and its monsters use the enderman skin.
-maps:
-  eyeofender:
-    world-folder: mm_void
-    mob: enderman
-    center: {x: 0, y: 64, z: 0}
-    top:    {id: 121, data: 0}
-    mid:    {id: 121, data: 0}
-    bottom: {id: 121, data: 0}
-  volcano:
-    world-folder: mm_volcano
-    mob: Zombie Pigman
-    center: {x: -3, y: 114, z: 3}
-    top:    {id: 112, data: 0}
-    mid:    {id: 87,  data: 0}
-    bottom: {id: 112, data: 0}
-  colombia:
-    world-folder: mm_colombia
-    mob: ocelot
-    center: {x: -7, y: 61, z: 5}
-    top:    {id: 2,   data: 0}
-    mid:    {id: 1,   data: 2}
-    bottom: {id: 5,   data: 0}
-  sandycoast:
-    world-folder: mm_sandycoast
-    mob: villager
-    center: {x: 23, y: 13, z: 15}
-    top:    {id: 155, data: 0}
-    mid:    {id: 155, data: 2}
-    bottom: {id: 155, data: 0}
-  siberian:
-    world-folder: mm_siberian
-    mob: snowman
-    center: {x: 0, y: 7, z: 0}
-    top:    {id: 80,  data: 0}
-    mid:    {id: 80,  data: 0}
-    bottom: {id: 80,  data: 0}
-  swampland:
-    world-folder: mm_swampland
-    mob: zombie
-    center: {x: 0, y: 7, z: 0}
-    top:    {id: 2,   data: 0}
-    mid:    {id: 3,   data: 0}
-    bottom: {id: 3,   data: 0}
-  tesorohundido:
-    world-folder: mm_tesorohundido
-    mob: squid
-    center: {x: 0, y: 27, z: 0}
-    top:    {id: 82,  data: 0}
-    mid:    {id: 159, data: 9}
-    bottom: {id: 35,  data: 7}
+# Optional per-map mob overrides selected by the player/admin.
+# Example:
+# mob-overrides:
+#   siberian: creeper
