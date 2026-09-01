@@ -7,6 +7,7 @@ import me.monstermaze.game.GameState;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.kit.KitType;
 import me.monstermaze.stats.LeaderboardManager;
+import me.monstermaze.stats.RunRecorder;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -29,6 +30,7 @@ public class MMCommand implements CommandExecutor {
             sender.sendMessage(ChatColor.YELLOW + "/mm kit <jumper|slowball|body|repulsor|maverick>");
             sender.sendMessage(ChatColor.YELLOW + "/mm kits " + ChatColor.GRAY + "- list kits");
             sender.sendMessage(ChatColor.YELLOW + "/mm pb " + ChatColor.GRAY + "- your bests per pattern");
+            sender.sendMessage(ChatColor.YELLOW + "/mm exportpbs " + ChatColor.GRAY + "- export all stored PBs for submission");
             sender.sendMessage(ChatColor.YELLOW + "/mm lb [1|2|3] " + ChatColor.GRAY + "- leaderboard");
             sender.sendMessage(ChatColor.AQUA + "Current mode: " + plugin.getMode().color + plugin.getMode().id + ChatColor.GRAY + " (/mm mode <original|speed|modern>)");
             sender.sendMessage(ChatColor.AQUA + "Current map: " + plugin.getMapManager().getActiveMap() + ChatColor.GRAY + " (/mm map <name>)");
@@ -56,6 +58,12 @@ public class MMCommand implements CommandExecutor {
             if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Players only."); return true; }
             Player p = (Player) sender;
             if (sub.equals("pb")) showPB(p); else showLeaderboard(p, args);
+            return true;
+        }
+
+        if (sub.equals("exportpbs") || sub.equals("exportpb") || sub.equals("export")) {
+            if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Players only."); return true; }
+            exportPBs((Player) sender);
             return true;
         }
 
@@ -121,6 +129,33 @@ public class MMCommand implements CommandExecutor {
         for (KitType k : KitType.available(qol)) p.sendMessage(ChatColor.GRAY + " - " + k.display + ChatColor.DARK_GRAY + " (/mm kit " + k.name().toLowerCase() + ")");
     }
     private String formatPattern(int pattern) { return pattern < 0 ? "random" : "Maze " + (pattern + 1); }
+    private void exportPBs(Player p) {
+        if (!plugin.isSoloMode()) {
+            p.sendMessage(ChatColor.RED + "PB export is only available in Solo Mode.");
+            return;
+        }
+
+        LeaderboardManager lb = plugin.getLeaderboards();
+        RunRecorder recorder = plugin.getRunRecorder();
+        int exported = 0;
+
+        for (MazeMode mode : MazeMode.values()) {
+            for (int pat = 0; pat < LeaderboardManager.PATTERN_COUNT; pat++) {
+                for (KitType kit : KitType.values()) {
+                    int stage = lb.getKitPB(mode, pat, p.getUniqueId(), kit.id);
+                    if (stage < 1) continue;
+                    if (recorder.recordHistorical(p, mode, pat, kit.id, stage)) exported++;
+                }
+            }
+        }
+
+        if (exported == 0) {
+            p.sendMessage(ChatColor.YELLOW + "No stored personal bests found to export.");
+        } else {
+            p.sendMessage(ChatColor.GREEN + "Exported " + exported + " stored personal best(s) for submission.");
+            p.sendMessage(ChatColor.GRAY + "Run the Solo submitter to send them to Discord.");
+        }
+    }
     private void showPB(Player p) {
         LeaderboardManager lb = plugin.getLeaderboards(); MazeMode mode = plugin.getMode();
         p.sendMessage(ChatColor.GOLD + "=== Personal Bests (" + mode.color + mode.id + ChatColor.GOLD + ") ==="); boolean any = false;
