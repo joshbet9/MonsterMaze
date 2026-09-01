@@ -2,6 +2,7 @@ package me.monstermaze.world;
 
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.maze.MazeBlockData;
+import me.monstermaze.util.MobTypes;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -9,236 +10,115 @@ import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 
-/**
- * Manages the arena map (the world a Monster Maze game runs in) and its per-map
- * theme settings — maze palette, mob type and the default center anchor.
- *
- * <p>Two kinds of worlds are supported:
- * <ul>
- *   <li>{@code void} — the procedurally-generated empty world used by original
- *       releases (maze floats in open air).</li>
- *   <li>a named {@code world-folder} — a shipped Mineplex-style arena world
- *       folder (e.g. {@code mm_volcano}) loaded as-is; the maze is generated on
- *       top of it.</li>
- * </ul>
- *
- * <p>Per-map settings live in {@code config.yml} (protected from the updater).
- * The maze palette mirrors Mineplex {@code B1/B2/B3} (top/middle/bottom). This
- * class is read-only on config value; the active map is switchable via
- * {@code /mm map <name>} and persisted.
- */
+/** Manages the active Monster Maze arena map and its per-map theme settings. */
 public class MapManager {
-
-    private static final String DEFAULT_MAP = "void";
-
+    private static final String DEFAULT_MAP = "eyeofender";
+    private static final Random RANDOM = new Random();
     private final MonsterMazePlugin plugin;
     private final VoidWorldManager voidWorlds;
     private String activeMap;
+    public MapManager(MonsterMazePlugin plugin, VoidWorldManager voidWorlds) { this.plugin = plugin; this.voidWorlds = voidWorlds; }
 
-    public MapManager(MonsterMazePlugin plugin, VoidWorldManager voidWorlds) {
-        this.plugin = plugin;
-        this.voidWorlds = voidWorlds;
-    }
-
-    // -------------------- Active map --------------------
-
-    /** Reload the active map key from config (defaults to "void"). */
     public void loadActiveMapFromConfig() {
+        ensureEyeOfEnderConfig();
         String map = plugin.getConfig().getString("map", DEFAULT_MAP);
+        if ("void".equalsIgnoreCase(map)) map = DEFAULT_MAP;
         if (!isKnown(map)) map = DEFAULT_MAP;
-        this.activeMap = map;
-    }
-
-    public String getActiveMap() {
-        return activeMap == null ? DEFAULT_MAP : activeMap;
-    }
-
-    public List<String> knownMaps() {
-        ConfigurationSection maps = plugin.getConfig().getConfigurationSection("maps");
-        if (maps == null) return new ArrayList<String>();
-        return new ArrayList<String>(maps.getKeys(false));
-    }
-
-    public boolean isKnown(String map) {
-        if (map == null) return false;
-        ConfigurationSection maps = plugin.getConfig().getConfigurationSection("maps");
-        return maps != null && maps.contains(map);
-    }
-
-    /** Set the active map, persisting to config. Returns false if unknown. */
-    public boolean setActiveMap(String map) {
-        if (!isKnown(map)) return false;
-        this.activeMap = map;
+        activeMap = map;
         plugin.getConfig().set("map", map);
         plugin.saveConfig();
-        return true;
     }
 
-    private ConfigurationSection section(String map) {
+    private void ensureEyeOfEnderConfig() {
         ConfigurationSection maps = plugin.getConfig().getConfigurationSection("maps");
-        if (maps == null) return null;
-        return maps.getConfigurationSection(map);
+        if (maps == null) maps = plugin.getConfig().createSection("maps");
+        ConfigurationSection eye = maps.getConfigurationSection(DEFAULT_MAP);
+        if (eye == null) eye = maps.createSection(DEFAULT_MAP);
+        // Eye of Ender deliberately uses the existing empty-air world, but its
+        // three maze layers must always be End Stone regardless of an older config.
+        eye.set("world-folder", "mm_void");
+        eye.set("mob", "enderman");
+        eye.set("top.material", "END_STONE");
+        eye.set("top.id", 121);
+        eye.set("top.data", 0);
+        eye.set("mid.material", "END_STONE");
+        eye.set("mid.id", 121);
+        eye.set("mid.data", 0);
+        eye.set("bottom.material", "END_STONE");
+        eye.set("bottom.id", 121);
+        eye.set("bottom.data", 0);
+        if (!eye.contains("center.x")) eye.set("center.x", 0);
+        if (!eye.contains("center.y")) eye.set("center.y", 64);
+        if (!eye.contains("center.z")) eye.set("center.z", 0);
+        if (maps.contains("void")) maps.set("void", null);
     }
 
-    // -------------------- World --------------------
-
-    /** The world the active map should be played in; null if it failed to load. */
-    public World ensureActiveWorld() {
-        String map = getActiveMap();
-        if (map.equals("void")) {
-            return voidWorlds.ensureWorld();
-        }
-        String folder = worldFolder(map);
-        if (folder == null) {
-            return null;
-        }
-        return ensureMapWorld(folder);
+    public String getActiveMap() { return activeMap == null ? DEFAULT_MAP : activeMap; }
+    public List<String> knownMaps() {
+        ensureEyeOfEnderConfig();
+        ConfigurationSection maps = plugin.getConfig().getConfigurationSection("maps");
+        if (maps == null) return new ArrayList<String>();
+        Set<String> names = new LinkedHashSet<String>(maps.getKeys(false));
+        names.remove("void");
+        if (!names.contains(DEFAULT_MAP)) names.add(DEFAULT_MAP);
+        return new ArrayList<String>(names);
     }
+    public boolean isKnown(String map) { ConfigurationSection maps = plugin.getConfig().getConfigurationSection("maps"); return map != null && maps != null && maps.contains(map); }
+    public boolean setActiveMap(String map) { if (!isKnown(map)) return false; activeMap = map; plugin.getConfig().set("map", map); plugin.saveConfig(); return true; }
+    private ConfigurationSection section(String map) { ConfigurationSection maps = plugin.getConfig().getConfigurationSection("maps"); return maps == null ? null : maps.getConfigurationSection(map); }
 
-    private String worldFolder(String map) {
-        ConfigurationSection s = section(map);
-        if (s == null) return null;
-        String folder = s.getString("world-folder");
-        return (folder == null || folder.isEmpty()) ? null : folder;
-    }
-
-    /** Load an existing world folder (shipped arena world) as-is; creates it if absent. */
+    public World ensureActiveWorld() { String map = getActiveMap(); if (map.equalsIgnoreCase(DEFAULT_MAP)) return voidWorlds.ensureWorld(); String folder = worldFolder(map); return folder == null ? null : ensureMapWorld(folder); }
+    private String worldFolder(String map) { ConfigurationSection s = section(map); if (s == null) return null; String folder = s.getString("world-folder"); return folder == null || folder.isEmpty() ? null : folder; }
     private World ensureMapWorld(String folder) {
-        World existing = Bukkit.getWorld(folder);
-        if (existing != null) {
-            return existing;
-        }
-        WorldCreator creator = new WorldCreator(folder);
-        creator.generateStructures(false);
-        creator.environment(World.Environment.NORMAL);
+        World existing = Bukkit.getWorld(folder); if (existing != null) return existing;
+        WorldCreator creator = new WorldCreator(folder); creator.generateStructures(false); creator.environment(World.Environment.NORMAL);
         try {
             World world = creator.createWorld();
             if (world != null) {
-                world.setGameRuleValue("doMobSpawning", "false");
-                world.setGameRuleValue("doDaylightCycle", "false");
-                world.setGameRuleValue("doWeatherCycle", "false");
-                world.setGameRuleValue("keepInventory", "true");
-                world.setTime(6000);
-                world.setStorm(false);
-                world.setThundering(false);
-                world.setSpawnFlags(false, false);
-                // Arena worlds must never spawn mobs naturally (the only monsters are the
-                // plugin's ghost maze mobs). Archived maps ship with saved entities (e.g.
-                // zombie pigmen baked into the chunks on the live Mineplex server), so zero
-                // the spawn limits and clear any that already loaded.
-                world.setMonsterSpawnLimit(0);
-                world.setAnimalSpawnLimit(0);
-                world.setAmbientSpawnLimit(0);
-                world.setWaterAnimalSpawnLimit(0);
-                clearMobs(world);
-                plugin.getLogger().info("Loaded arena world '" + folder + "'.");
-            } else {
-                plugin.getLogger().severe("Failed to load arena world '" + folder + "'.");
-            }
+                world.setGameRuleValue("doMobSpawning", "false"); world.setGameRuleValue("doDaylightCycle", "false"); world.setGameRuleValue("doWeatherCycle", "false"); world.setGameRuleValue("keepInventory", "true"); world.setTime(6000); world.setStorm(false); world.setThundering(false); world.setSpawnFlags(false, false); world.setMonsterSpawnLimit(0); world.setAnimalSpawnLimit(0); world.setAmbientSpawnLimit(0); world.setWaterAnimalSpawnLimit(0); clearMobs(world); plugin.getLogger().info("Loaded arena world '" + folder + "'.");
+            } else plugin.getLogger().severe("Failed to load arena world '" + folder + "'.");
             return world;
-        } catch (Exception ex) {
-            plugin.getLogger().severe("Could not load arena world '" + folder + "': " + ex.getMessage());
-            return null;
-        }
+        } catch (Exception ex) { plugin.getLogger().severe("Could not load arena world '" + folder + "': " + ex.getMessage()); return null; }
     }
+    public void clearMobs(World world) { if (world == null) return; int removed = 0; for (Entity e : world.getEntities()) { if (e instanceof Player) continue; e.remove(); removed++; } if (removed > 0) plugin.getLogger().info("Cleared " + removed + " lingering entities from arena world '" + world.getName() + "'."); }
 
-    /**
-     * Remove every entity from an arena world except online players. Archived map
-     * worlds ship with entities baked into their chunks (e.g. zombie pigmen saved on
-     * the live Mineplex server), and lazily-loaded chunks can surface more long after
-     * the world first loads, so this is called both at world load and before each game.
-     */
-    public void clearMobs(World world) {
-        if (world == null) return;
-        int removed = 0;
-        for (Entity e : world.getEntities()) {
-            if (e instanceof Player) continue;
-            e.remove();
-            removed++;
-        }
-        if (removed > 0) {
-            plugin.getLogger().info("Cleared " + removed + " lingering entities from arena world '" + world.getName() + "'.");
-        }
-    }
-
-    /** The default center (maze anchor) for the active map, or null if unset. */
-    public Location defaultCenter() {
-        return defaultCenter(getActiveMap());
-    }
-
+    public Location defaultCenter() { return defaultCenter(getActiveMap()); }
     public Location defaultCenter(String map) {
-        ConfigurationSection s = section(map);
-        World world;
-        if (map.equals("void")) {
-            world = voidWorlds.ensureWorld();
-        } else {
-            String folder = worldFolder(map);
-            world = folder == null ? null : ensureMapWorld(folder);
-        }
+        ConfigurationSection s = section(map); World world;
+        if (map.equalsIgnoreCase(DEFAULT_MAP)) world = voidWorlds.ensureWorld(); else { String folder = worldFolder(map); world = folder == null ? null : ensureMapWorld(folder); }
         if (world == null) return null;
-        if (s != null && s.contains("center")) {
-            ConfigurationSection c = s.getConfigurationSection("center");
-            int x = c.getInt("x", 0);
-            int y = c.getInt("y", 64);
-            int z = c.getInt("z", 0);
-            return new Location(world, x + 0.5, y, z + 0.5);
-        }
-        // Void default: original spawn platform
+        if (s != null && s.contains("center")) { ConfigurationSection c = s.getConfigurationSection("center"); return new Location(world, c.getInt("x", 0) + 0.5, c.getInt("y", 64), c.getInt("z", 0) + 0.5); }
         return new Location(world, 0.5, 64, 0.5);
     }
 
-    // -------------------- Maze palette --------------------
-    /** Per-map maze palette, falling back to the original quartz theme. */
     public MazeBlockData theme(String map) {
-        MazeBlockData fallback = MazeBlockData.defaultTheme();
-        ConfigurationSection s = section(map);
-        if (s == null) return fallback;
-        Material top = mat(s.getConfigurationSection("top"));
-        Material mid = mat(s.getConfigurationSection("mid"));
-        Material bottom = mat(s.getConfigurationSection("bottom"));
-        return MazeBlockData.from(
-                top, s.getConfigurationSection("top") != null ? (byte) s.getInt("top.data", 0) : -1,
-                mid, s.getConfigurationSection("mid") != null ? (byte) s.getInt("mid.data", 0) : -1,
-                bottom, s.getConfigurationSection("bottom") != null ? (byte) s.getInt("bottom.data", 0) : -1,
-                fallback);
+        MazeBlockData fallback = MazeBlockData.defaultTheme(); ConfigurationSection s = section(map); if (s == null) return fallback;
+        Material top = mat(s.getConfigurationSection("top")); Material mid = mat(s.getConfigurationSection("mid")); Material bottom = mat(s.getConfigurationSection("bottom"));
+        return MazeBlockData.from(top, data(s.getConfigurationSection("top")), mid, data(s.getConfigurationSection("mid")), bottom, data(s.getConfigurationSection("bottom")), fallback);
     }
+    public MazeBlockData activeTheme() { return theme(getActiveMap()); }
+    private byte data(ConfigurationSection s) { return s != null && s.contains("data") ? (byte) s.getInt("data", 0) : -1; }
+    private Material mat(ConfigurationSection s) { if (s == null) return null; String name = s.getString("material", ""); if (name != null && !name.isEmpty()) { Material named = Material.matchMaterial(name); if (named != null) return named; } int id = s.getInt("id", -1); return id >= 0 ? Material.getMaterial(id) : null; }
 
-    public MazeBlockData activeTheme() {
-        return theme(getActiveMap());
+    public String mob(String map) { ConfigurationSection s = section(map); return s != null && s.isString("mob") ? s.getString("mob") : "snowman"; }
+    public String activeMob() { return selectedMob(getActiveMap()); }
+    public String selectedMob(String map) { ConfigurationSection s = section(map); if (s == null) return "snowman"; String override = s.getString("mob-override", ""); return override == null || override.isEmpty() ? mob(map) : override; }
+    public void setMobOverride(String map, String mobType) {
+        ConfigurationSection s = section(map); if (s == null) return;
+        if (mobType == null || mobType.trim().isEmpty()) s.set("mob-override", null);
+        else if ("random".equalsIgnoreCase(mobType.trim())) { List<MobTypes.MobType> mobs = new ArrayList<MobTypes.MobType>(); for (MobTypes.MobType mob : MobTypes.all()) if (!"random".equalsIgnoreCase(mob.id)) mobs.add(mob); if (!mobs.isEmpty()) s.set("mob-override", mobs.get(RANDOM.nextInt(mobs.size())).id); }
+        else { MobTypes.MobType valid = MobTypes.byId(mobType.trim()); if (valid != null && !"random".equalsIgnoreCase(valid.id)) s.set("mob-override", valid.id); else if (valid == null) s.set("mob-override", mobType.trim().toLowerCase()); }
+        plugin.saveConfig();
     }
-
-    private Material mat(ConfigurationSection s) {
-        if (s == null) return null;
-        int id = s.getInt("id", -1);
-        return id >= 0 ? Material.getMaterial(id) : null;
-    }
-
-    // -------------------- Mob --------------------
-
-    /** Per-map mob entity type name (default "snowman"). Phase 1: only snowman is implemented. */
-    public String mob(String map) {
-        ConfigurationSection s = section(map);
-        if (s != null && s.isString("mob")) {
-            return s.getString("mob");
-        }
-        return "snowman";
-    }
-
-    public String activeMob() {
-        return mob(getActiveMap());
-    }
-
-    public Set<String> mobTypes() {
-        Set<String> out = new LinkedHashSet<String>();
-        for (String m : knownMaps()) out.add(mob(m));
-        return out;
-    }
+    public void setActiveMobOverride(String mobType) { setMobOverride(getActiveMap(), mobType); }
+    public boolean hasMobOverride(String map) { ConfigurationSection s = section(map); String o = s == null ? "" : s.getString("mob-override", ""); return o != null && !o.isEmpty(); }
+    public Set<String> mobTypes() { Set<String> out = new LinkedHashSet<String>(); for (String m : knownMaps()) out.add(mob(m)); return out; }
 }
