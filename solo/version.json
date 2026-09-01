@@ -1,37 +1,40 @@
 {
+    "install-version":  "1.0.3",
+    "note":  "Solo release: separated map definitions from user configuration and fixed player hunger",
+    "updated":  "2026-09-01 21:26 UTC+10:00",
     "files":  {
-                  "server/plugins/MonsterMazeStandalone.jar":  {
-                                                                   "sha256":  "24f7235c50f13384b54dafd0a4893504626b9ae9de9768c383d94dba9663d29d",
-                                                                   "size":  156094
-                                                               },
-                  "submitter/submit.ps1":  {
-                                               "sha256":  "cd257314b579804e752fceea6728a25e02b11eeefae18ccc033079ad901623f3",
-                                               "size":  3562
-                                           },
+                  "launcher/play.bat":  {
+                                            "sha256":  "7de3fbba965033cde03e16fbae8f7c4ca75dc85b4703454649b692e9f4da3a70",
+                                            "size":  2626
+                                        },
                   "launcher/stop.bat":  {
                                             "sha256":  "b0568170e30d8f615d023cfc6807db8d934817d3fc9038169f6815d9cdf49ac5",
                                             "size":  950
-                                        },
-                  "submitter/submit.bat":  {
-                                               "sha256":  "70b071735c9a0eeaf92c268ec24bf0a853db80642ed4bbef4d839fa70d2a3eff",
-                                               "size":  191
-                                           },
-                  "server/eula.txt":  {
-                                          "sha256":  "ee27072e4a23e088522f740ddaab0c7c4145c186969e90a86254faa3a5ec5ce6",
-                                          "size":  10
-                                      },
-                  "server/bukkit.yml":  {
-                                            "sha256":  "21b96c77f0489646e394465b67c3d2dbbe56951fd405a394ce97461b5c948bc0",
-                                            "size":  1182
                                         },
                   "launcher/config.bat":  {
                                               "sha256":  "7e0cf32650756a863ff027eced6d618ea35f6b6e77836e8ceb54932f9255873e",
                                               "size":  333
                                           },
-                  "README.md":  {
-                                    "sha256":  "66801ad402dd363b2c3b5aadcd3b23f88d1d43e03cbff47c3e797e8dab8edbf2",
-                                    "size":  7899
-                                },
+                  "submitter/submit.bat":  {
+                                               "sha256":  "70b071735c9a0eeaf92c268ec24bf0a853db80642ed4bbef4d839fa70d2a3eff",
+                                               "size":  191
+                                           },
+                  "submitter/submit.ps1":  {
+                                               "sha256":  "cd257314b579804e752fceea6728a25e02b11eeefae18ccc033079ad901623f3",
+                                               "size":  3562
+                                           },
+                  "server/plugins/MonsterMazeStandalone.jar":  {
+                                                                   "sha256":  "1d08449ed9649a868b54310702f8f43802ef19d799116677f3cd99116d25609c",
+                                                                   "size":  180195
+                                                               },
+                  "server/bukkit.yml":  {
+                                            "sha256":  "21b96c77f0489646e394465b67c3d2dbbe56951fd405a394ce97461b5c948bc0",
+                                            "size":  1182
+                                        },
+                  "server/eula.txt":  {
+                                          "sha256":  "ee27072e4a23e088522f740ddaab0c7c4145c186969e90a86254faa3a5ec5ce6",
+                                          "size":  10
+                                      },
                   "server/server.properties":  {
                                                    "sha256":  "40d746bd09141b013980ddf0051f018bbafb364914e03c90c6f70d09345bef97",
                                                    "size":  810
@@ -40,16 +43,245 @@
                                             "sha256":  "022f904ed48f165edd3f60855de6bd058e7e80cf4602c57886c60090686fbfd8",
                                             "size":  3254
                                         },
-                  "launcher/play.bat":  {
-                                            "sha256":  "7de3fbba965033cde03e16fbae8f7c4ca75dc85b4703454649b692e9f4da3a70",
-                                            "size":  2626
-                                        },
                   "HOW_TO_PLAY.txt":  {
                                           "sha256":  "d38fd1de38efe7fccc7566f6f2f2778c4252c104aab0428be40ff12c1fa6926a",
                                           "size":  3280
-                                      }
-              },
-    "install-version":  "1.0.0",
-    "note":  "Initial auto-update release (auto-checks updates on launch).",
-    "updated":  "2026-08-31 12:36 UTC+10:00"
+                                      },
+                  "README.md":  {
+                                    "sha256":  "66801ad402dd363b2c3b5aadcd3b23f88d1d43e03cbff47c3e797e8dab8edbf2",
+                                    "size":  7899
+                                },
+                  "server/mm_colombia/level.dat":  {
+                                                       "sha256":  "12723855599f2df99999bee9540c94ad38eff7de3d0af2113c402668f88b3cdf",
+                                                       "size":  647
+                                                   },
+                  "server/mm_colombia/level.dat_old":  {
+                                                           "sha256":  "7dba00ee1bd44ffd43bafbc10663850cc55f4faae88f3d1e4e892da664675238",
+                                                           "size":  650
+                                                       },
+                  "server/mm_colombia/WorldDownloader.txt":  {
+                                                                 "sha256":  "08a502158038f8c2163781028e6060e374486d17b97a49821f58cdd8689845c8",
+                                                                 "size":  251
+                                                             },
+                  "server/mm_colombia/data/villages.dat":  {
+                                                               "sha256":  "307504fb851d7a01cab9ec9124af030cf9e548ce413edd84462a9b47daf2a414",
+                                                               "size":  56
+                                                           },
+                  "server/mm_colombia/region/r.-1.-1.mca":  {
+                                                                "sha256":  "c2ff24a440c8798a93f4cf0e84a8e16cc4e8bf5d64fe3484758f08e780228c90",
+                                                                "size":  753664
+                                                            },
+                  "server/mm_colombia/region/r.-1.0.mca":  {
+                                                               "sha256":  "ed0489fcd574563fe99dcdd8ab24e9137db812dcdcbfc255ce54e2147e812825",
+                                                               "size":  790528
+                                                           },
+                  "server/mm_colombia/region/r.0.-1.mca":  {
+                                                               "sha256":  "b78eec62abd8eb1afb0124b71eb4b3aed0cbb177d5177893b3eb1ca5a09b1cb7",
+                                                               "size":  700416
+                                                           },
+                  "server/mm_colombia/region/r.0.0.mca":  {
+                                                              "sha256":  "e4212854c25c1fea9b6aeb72ac3c2eedd4a4d0fe0c80ec3f7a334144f35948d7",
+                                                              "size":  737280
+                                                          },
+                  "server/mm_sandycoast/level.dat":  {
+                                                         "sha256":  "47e8348fba37868515e01d9c093eb3d28a67222a57e9cdc012938029bc2b7b4c",
+                                                         "size":  647
+                                                     },
+                  "server/mm_sandycoast/level.dat_old":  {
+                                                             "sha256":  "c900b07c32a5d1fe3206290612502def3f66ec3325cbf18faedffe58b4dfa219",
+                                                             "size":  649
+                                                         },
+                  "server/mm_sandycoast/WorldDownloader.txt":  {
+                                                                   "sha256":  "6605d76ab16253ceffb05996ae0adee6d772d21aa6e7f469eb90201f0ed2866f",
+                                                                   "size":  251
+                                                               },
+                  "server/mm_sandycoast/data/villages.dat":  {
+                                                                 "sha256":  "57057e91c8c69766315cfd4ab693346b1119e8d01e1f9de5eb924158b5ac873e",
+                                                                 "size":  56
+                                                             },
+                  "server/mm_sandycoast/region/r.-1.-1.mca":  {
+                                                                  "sha256":  "746be619bbebda9ca5a8a05b924c692af3cb5b25b8b6057c2da1dcff9324e16a",
+                                                                  "size":  684032
+                                                              },
+                  "server/mm_sandycoast/region/r.-1.0.mca":  {
+                                                                 "sha256":  "2a0e883fde8690646106a74615396298a1ad5ee55392cd9f274c141c808bbf1a",
+                                                                 "size":  901120
+                                                             },
+                  "server/mm_sandycoast/region/r.0.-1.mca":  {
+                                                                 "sha256":  "e352963112705f967e688347e6658f69a6d70f1026f89863250b923eace84d62",
+                                                                 "size":  983040
+                                                             },
+                  "server/mm_sandycoast/region/r.0.0.mca":  {
+                                                                "sha256":  "e0f3ec387d330e5177c9d941b433ed79560cd8fdc1d5ff68c475e138abe54dae",
+                                                                "size":  1134592
+                                                            },
+                  "server/mm_siberian/level.dat":  {
+                                                       "sha256":  "dcb1ce6b6875d9b7e7ef29d747bc832218f02c0453a87c0e0dd1a4cd76edaaf1",
+                                                       "size":  653
+                                                   },
+                  "server/mm_siberian/level.dat_old":  {
+                                                           "sha256":  "2947962d8899654351a12e513efa43009b5fe34a6ad82522c1baed6bd8167a90",
+                                                           "size":  651
+                                                       },
+                  "server/mm_siberian/WorldDownloader.txt":  {
+                                                                 "sha256":  "14658ce23be096e61d95ed52795f055f31f36b36145d8f757e74bc912225f20e",
+                                                                 "size":  251
+                                                             },
+                  "server/mm_siberian/data/villages.dat":  {
+                                                               "sha256":  "5e89b10d033526d729fd8b3910da9735864f9f346cb1dd992e3ae07203990b96",
+                                                               "size":  56
+                                                           },
+                  "server/mm_siberian/region/r.-1.-1.mca":  {
+                                                                "sha256":  "1838da398f2a146436c7da2d31391dcdee11900a3decb35892dbb35cf2284d9b",
+                                                                "size":  917504
+                                                            },
+                  "server/mm_siberian/region/r.-1.0.mca":  {
+                                                               "sha256":  "97658d6f88f7ce77ca6092af5191cef15fcdb86df1a0868ec4135c7c8e8f6426",
+                                                               "size":  978944
+                                                           },
+                  "server/mm_siberian/region/r.0.-1.mca":  {
+                                                               "sha256":  "f157590054470232b7fef1399b60ac892b917d7ea7659a8edb3deea957d51a08",
+                                                               "size":  819200
+                                                           },
+                  "server/mm_siberian/region/r.0.0.mca":  {
+                                                              "sha256":  "180481d4cca4380a602a61120450dc99711719cc53bee64c2749245eef6e2f93",
+                                                              "size":  753664
+                                                          },
+                  "server/mm_swampland/level.dat":  {
+                                                        "sha256":  "31241f412a5b4252ad17e5a206f9cd9a9eda5c217b67b892cbbea930861e0f8f",
+                                                        "size":  654
+                                                    },
+                  "server/mm_swampland/level.dat_old":  {
+                                                            "sha256":  "48b5a3e018588c442fb72cdbd7af117ce93a469917aef606d046582ad67943a5",
+                                                            "size":  654
+                                                        },
+                  "server/mm_swampland/WorldDownloader.txt":  {
+                                                                  "sha256":  "8c261b6abaf82dc19b441dff2c5185d51451c059916d7f9d03a67388e1b47534",
+                                                                  "size":  251
+                                                              },
+                  "server/mm_swampland/data/villages.dat":  {
+                                                                "sha256":  "984a230baa6638ce17e5c4d5a561321465e502967cf35cbaae80efd94427b52a",
+                                                                "size":  56
+                                                            },
+                  "server/mm_swampland/region/r.-1.-1.mca":  {
+                                                                 "sha256":  "0d09727d18fbdcef89a99dabedbe0142a0437f03f825b54bd14affe507ff72bf",
+                                                                 "size":  720896
+                                                             },
+                  "server/mm_swampland/region/r.-1.0.mca":  {
+                                                                "sha256":  "a85033c5ce0fc1cbe229881d82050e4591b54293f7119e8c9e5ab58d2c858018",
+                                                                "size":  811008
+                                                            },
+                  "server/mm_swampland/region/r.0.-1.mca":  {
+                                                                "sha256":  "407dc64b09d5368f58e644c3fd6c773fd09c4be8331272f3e895cba38488b50c",
+                                                                "size":  929792
+                                                            },
+                  "server/mm_swampland/region/r.0.0.mca":  {
+                                                               "sha256":  "a8e7478beb1cde6ae0eef5fb43c5a46b0c5cee753f2dc3e0b2d971438f354dfe",
+                                                               "size":  897024
+                                                           },
+                  "server/mm_tesorohundido/level.dat":  {
+                                                            "sha256":  "075ccfe0b02249d344f3787c67e633c542e728e4e44573621fb83b33bba08bce",
+                                                            "size":  644
+                                                        },
+                  "server/mm_tesorohundido/level.dat_old":  {
+                                                                "sha256":  "0f1afdca816b5b23256d4fc79dda99b490658e9971b6fbfa2081450e678a0bfe",
+                                                                "size":  648
+                                                            },
+                  "server/mm_tesorohundido/WorldDownloader.txt":  {
+                                                                      "sha256":  "ea18930217805830caa774d9f12939b7fb5f124dc903845ca6a26240316db0ec",
+                                                                      "size":  251
+                                                                  },
+                  "server/mm_tesorohundido/data/villages.dat":  {
+                                                                    "sha256":  "306292f3e698f311bd1a94107f670cdf9d34ba2b2103bf5b617b45f428003b2f",
+                                                                    "size":  56
+                                                                },
+                  "server/mm_tesorohundido/region/r.-1.-1.mca":  {
+                                                                     "sha256":  "989dd64067c714179cf0526fee26ff6aa1c678f729ff44f2963f1014ac5e88a5",
+                                                                     "size":  745472
+                                                                 },
+                  "server/mm_tesorohundido/region/r.-1.0.mca":  {
+                                                                    "sha256":  "be5d47d8b03a81a8398b76145582332cd9d7b994cf5f8889834d35a6392676e7",
+                                                                    "size":  798720
+                                                                },
+                  "server/mm_tesorohundido/region/r.0.-1.mca":  {
+                                                                    "sha256":  "3cf2890f3636da1af74ced4c9b02afba3df584b44303c6e123602ad64136ca23",
+                                                                    "size":  700416
+                                                                },
+                  "server/mm_tesorohundido/region/r.0.0.mca":  {
+                                                                   "sha256":  "cacabd287e36d739b0f3d0e7c6a7f5dee04c0363614cd0df661bfc4439cf6578",
+                                                                   "size":  745472
+                                                               },
+                  "server/mm_void/level.dat":  {
+                                                   "sha256":  "a1619195a3253d5a833900778c8c500fe5b074d5594b5549202af201a054847f",
+                                                   "size":  625
+                                               },
+                  "server/mm_void/level.dat_old":  {
+                                                       "sha256":  "2d079c4268081f98c8558f50981a9cc294c9af118b29e3971b2ecef0217358d0",
+                                                       "size":  624
+                                                   },
+                  "server/mm_void/data/villages.dat":  {
+                                                           "sha256":  "b8ccbd1aba20c22dc69b55ac64a452d854ca3a36e12a36b4ad1ffd77bccf0d0f",
+                                                           "size":  56
+                                                       },
+                  "server/mm_void/region/r.-1.-1.mca":  {
+                                                            "sha256":  "c54f164c88e3ac6edf1a4183352252053bfe69a240bd01875fecd327105ce03f",
+                                                            "size":  741376
+                                                        },
+                  "server/mm_void/region/r.-1.0.mca":  {
+                                                           "sha256":  "71d8b87df170dc447ab6be2c15e1a7d4d81e8ab5bad46e4975faa44aa42292b6",
+                                                           "size":  790528
+                                                       },
+                  "server/mm_void/region/r.0.-1.mca":  {
+                                                           "sha256":  "1091d62ee61a4b8433ce41d65bdcb169fa68207e28abc6ba37c8531e343bb715",
+                                                           "size":  741376
+                                                       },
+                  "server/mm_void/region/r.0.0.mca":  {
+                                                          "sha256":  "dd950ff042219d51b3a94b144dd33d7f7d1e9277cf388f19b1acc5d56560f71f",
+                                                          "size":  790528
+                                                      },
+                  "server/mm_void/region/r.1.1.mca":  {
+                                                          "sha256":  "7d78035544e38d9a846955d2224496b7199f9a0a37fc65d36e0415b364db97de",
+                                                          "size":  598016
+                                                      },
+                  "server/mm_void/region/r.1.2.mca":  {
+                                                          "sha256":  "be8ead964ffc61db23902fcc6132b7fd30bfea723f89e473d639135d2a661b04",
+                                                          "size":  598016
+                                                      },
+                  "server/mm_void/region/r.2.1.mca":  {
+                                                          "sha256":  "b281aa6ea233e59f98fab0dc5897b3cce18b2cdd4c545944e710c25bfac71a1d",
+                                                          "size":  499712
+                                                      },
+                  "server/mm_void/region/r.2.2.mca":  {
+                                                          "sha256":  "95bd3899d02a23445c0195c3ee12346eb5e57a049f7e7364bbab19a4dfbc7ceb",
+                                                          "size":  487424
+                                                      },
+                  "server/mm_volcano/level.dat":  {
+                                                      "sha256":  "f0ed55b47d27bfff8bd4411c27dcddbf30ba40e40bcf885d29f8688366dab3f7",
+                                                      "size":  654
+                                                  },
+                  "server/mm_volcano/level.dat_old":  {
+                                                          "sha256":  "f8693c7a343ef9ec938b66b9e29bc7cc88f43b90da6703ab065ee6bf14070553",
+                                                          "size":  653
+                                                      },
+                  "server/mm_volcano/data/villages.dat":  {
+                                                              "sha256":  "9faf5457e7d518003919c71cb51a6d84a8879d79a60d8f6092c7f3326762f49f",
+                                                              "size":  56
+                                                          },
+                  "server/mm_volcano/region/r.-1.-1.mca":  {
+                                                               "sha256":  "678ca65a6592414a533ede0e622944aa3d5f22ae6a2ca50ce99658c43cab2888",
+                                                               "size":  970752
+                                                           },
+                  "server/mm_volcano/region/r.-1.0.mca":  {
+                                                              "sha256":  "eed27565f056bcaee1377617ac2f13876b83321926fe3a90c538ea54afc7b707",
+                                                              "size":  933888
+                                                          },
+                  "server/mm_volcano/region/r.0.-1.mca":  {
+                                                              "sha256":  "2c6c64d747032e8fbd8c4a6c3db602aadb1ef8ab88dca0a0077e5a89222cfc20",
+                                                              "size":  884736
+                                                          },
+                  "server/mm_volcano/region/r.0.0.mca":  {
+                                                             "sha256":  "5ceec659fa7fe5879b1e86cdda5abfb3c6cbfb4337b0343fc290a98f1d5c5bcc",
+                                                             "size":  921600
+                                                         }
+              }
 }
