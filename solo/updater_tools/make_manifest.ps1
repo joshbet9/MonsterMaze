@@ -17,10 +17,10 @@ $UPDATEABLE = @(
     "HOW_TO_PLAY.txt", "README.md"
 )
 
-function Add-ManifestFile([hashtable]$files, [string]$manifestPath, [string]$sourcePath) {
+function Add-ManifestFile([System.Collections.IDictionary]$files, [string]$manifestPath, [string]$sourcePath) {
     if (-not (Test-Path -LiteralPath $sourcePath)) { throw "Updateable file missing: $sourcePath" }
     $norm = $manifestPath -replace "\\", "/"
-    $files[$norm] = @{
+    $files[$norm] = [ordered]@{
         sha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
         size = (Get-Item -LiteralPath $sourcePath).Length
     }
@@ -45,7 +45,7 @@ foreach ($map in $mapNames) {
     }
 }
 
-$manifest = @{
+$manifest = [ordered]@{
     "install-version" = $Version
     "note" = $Note
     "updated" = (Get-Date -Format "yyyy-MM-dd HH:mm 'UTC'K")
@@ -53,5 +53,5 @@ $manifest = @{
 }
 $out = Join-Path $soloRoot "version.json"
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($out, ($manifest | ConvertTo-Json -Depth 6), $utf8NoBom)
+[System.IO.File]::WriteAllText($out, ($manifest | ConvertTo-Json -Depth 10), $utf8NoBom)
 Write-Host "Wrote $out (install-version=$Version, $($files.Count) files)"
