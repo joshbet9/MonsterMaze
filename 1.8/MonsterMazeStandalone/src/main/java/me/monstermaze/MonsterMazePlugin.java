@@ -1,6 +1,8 @@
 package me.monstermaze;
 
 import me.monstermaze.command.MMCommand;
+import me.monstermaze.command.MMDebugCommand;
+import me.monstermaze.game.BuildBypassListener;
 import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
 import me.monstermaze.game.MazeMode;
@@ -9,7 +11,6 @@ import me.monstermaze.util.UtilEnt;
 import me.monstermaze.world.MapManager;
 import me.monstermaze.world.VoidWorldManager;
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -17,7 +18,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 
 public class MonsterMazePlugin extends JavaPlugin {
-
     private static MonsterMazePlugin instance;
     private GameManager gameManager;
     private VoidWorldManager voidWorlds;
@@ -40,93 +40,46 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.mode = stored;
         this.soloMode = cfg.getBoolean("solo-mode", false);
         this.runRecorder = new me.monstermaze.stats.RunRecorder(this);
-
-        // Extract per-mode change documents (txt) into the data folder.
         for (MazeMode m : MazeMode.values()) {
             try {
                 if (getResource("modes/" + m.id + ".txt") != null) {
                     File dest = new File(getDataFolder(), "modes/" + m.id + ".txt");
-                    if (!dest.exists()) {
-                        dest.getParentFile().mkdirs();
-                        saveResource("modes/" + m.id + ".txt", false);
-                    }
+                    if (!dest.exists()) { dest.getParentFile().mkdirs(); saveResource("modes/" + m.id + ".txt", false); }
                 }
-            } catch (Exception ignored) {
-            }
+            } catch (Exception ignored) { }
         }
-
-        // Map AddonGhostSnowman -> snowman id so the client renders maze monsters correctly.
-        UtilEnt.registerGhostSnowmanEntityType();
-
-        // Active map from config; load its world and apply its theme/mob.
+        UtilEnt.registerGhostTypes();
         mapManager.loadActiveMapFromConfig();
         mapManager.ensureActiveWorld();
         this.gameManager = new GameManager(this);
         gameManager.applyMap();
-
         new LobbyListener(this, gameManager, voidWorlds);
+        new BuildBypassListener(this);
         getCommand("mm").setExecutor(new MMCommand(this));
-
-        // Move anyone already online into the active map's lobby
+        getCommand("mmdebug").setExecutor(new MMDebugCommand(this));
         Bukkit.getScheduler().runTaskLater(this, new Runnable() {
-            @Override
-            public void run() {
-                for (Player p : Bukkit.getOnlinePlayers()) {
-                    gameManager.sendToLobby(p);
-                }
+            @Override public void run() {
+                for (Player p : Bukkit.getOnlinePlayers()) gameManager.sendToLobby(p);
             }
         }, 20L);
-
         getLogger().info("MonsterMazeStandalone enabled ('" + mapManager.getActiveMap() + "' map).");
         getLogger().info("Players join into the lobby. Admin: /mm start");
     }
 
-    @Override
-    public void onDisable() {
-        if (gameManager != null) {
-            gameManager.forceStop();
-        }
+    @Override public void onDisable() {
+        if (gameManager != null) gameManager.forceStop();
         getLogger().info("MonsterMazeStandalone disabled.");
     }
-
-    public static MonsterMazePlugin getInstance() {
-        return instance;
-    }
-
-    public GameManager getGameManager() {
-        return gameManager;
-    }
-
-    public MazeMode getMode() {
-        return mode;
-    }
-
-    /** Set and persist the active game mode. Returns the effective mode (null input -> Original). */
+    public static MonsterMazePlugin getInstance() { return instance; }
+    public GameManager getGameManager() { return gameManager; }
+    public MazeMode getMode() { return mode; }
     public MazeMode setMode(MazeMode newMode) {
         if (newMode == null) newMode = MazeMode.ORIGINAL;
-        this.mode = newMode;
-        getConfig().set("mode", newMode.id);
-        saveConfig();
-        return newMode;
+        this.mode = newMode; getConfig().set("mode", newMode.id); saveConfig(); return newMode;
     }
-
-    public VoidWorldManager getVoidWorlds() {
-        return voidWorlds;
-    }
-
-    public MapManager getMapManager() {
-        return mapManager;
-    }
-
-    public me.monstermaze.stats.LeaderboardManager getLeaderboards() {
-        return leaderboards;
-    }
-
-    public boolean isSoloMode() {
-        return soloMode;
-    }
-
-    public me.monstermaze.stats.RunRecorder getRunRecorder() {
-        return runRecorder;
-    }
+    public VoidWorldManager getVoidWorlds() { return voidWorlds; }
+    public MapManager getMapManager() { return mapManager; }
+    public me.monstermaze.stats.LeaderboardManager getLeaderboards() { return leaderboards; }
+    public boolean isSoloMode() { return soloMode; }
+    public me.monstermaze.stats.RunRecorder getRunRecorder() { return runRecorder; }
 }

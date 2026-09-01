@@ -52,8 +52,6 @@ public class MonsterManager {
     private BukkitTask tickTask;
     private BukkitTask spawnTask;
 
-    /** PERF: monsters re-decide navigation at 10Hz; actual movement stays 20Hz and smooth. */
-    private int moveTick;
 
     /** Entities launched by Repulsor – removed when grounded / timed out. */
     private final Map<LivingEntity, Long> launched = new HashMap<LivingEntity, Long>();
@@ -225,8 +223,6 @@ public class MonsterManager {
 
     private void move() {
         if (maze == null) return;
-        moveTick++;
-        if ((moveTick & 1) == 0) return; // PERF: re-decide navigation at 10Hz only
 
         Iterator<Entry<LivingEntity, MazeMobWaypoint>> it = ents.entrySet().iterator();
         while (it.hasNext()) {

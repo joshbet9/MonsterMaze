@@ -7,6 +7,10 @@ commands:
   mm:
     description: Monster Maze commands
     usage: /mm <start|stop|setcenter|status|kit|kits>
+  mmdebug:
+    description: Monster Maze map-test diagnostics
+    usage: /mmdebug [mobs]
+    permission: monstermaze.admin
 permissions:
   monstermaze.admin:
     description: Allows control of Monster Maze
