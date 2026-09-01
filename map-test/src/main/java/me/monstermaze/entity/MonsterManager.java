@@ -17,7 +17,6 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Snowman;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
@@ -43,7 +42,7 @@ public class MonsterManager {
     private final GameManager game;
     private MazeGenerator maze;
 
-    /** Configured per-map monster (Phase 1: only "snowman" is implemented). */
+    /** Configured per-map mob skin (e.g. snowman, zombie, squid). All mobs share identical logic. */
     private String mobType = "snowman";
 
     private final Map<LivingEntity, MazeMobWaypoint> ents = new HashMap<LivingEntity, MazeMobWaypoint>();
@@ -78,13 +77,9 @@ public class MonsterManager {
         this.speedMultiplier = multiplier;
     }
 
-    /** Set the configured monster type for the active map. Phase 1 implements "snowman" only. */
+    /** Set the configured monster skin for the active map. All mob types share identical logic. */
     public void setMobType(String type) {
         this.mobType = type != null && !type.isEmpty() ? type : "snowman";
-        if (!"snowman".equalsIgnoreCase(this.mobType)) {
-            plugin.getLogger().warning("[MonsterMaze] Map mob '" + this.mobType
-                    + "' is not implemented yet; using ghost snowman for now.");
-        }
     }
 
     public void start(MazeGenerator maze) {
@@ -172,7 +167,7 @@ public class MonsterManager {
     }
 
     private boolean spawnOne(Location loc) {
-        Snowman ent = UtilEnt.spawnGhostSnowman(loc);
+        LivingEntity ent = UtilEnt.spawnGhostMob(loc, mobType);
         if (ent == null) return false;
         ent.setRemoveWhenFarAway(false);
         ent.setCanPickupItems(false);
@@ -194,7 +189,7 @@ public class MonsterManager {
 
         for (int i = 0; i < count; i++) {
             Location loc = pool.get(random.nextInt(pool.size())).clone();
-            Snowman ent = UtilEnt.spawnGhostSnowman(loc);
+            LivingEntity ent = UtilEnt.spawnGhostMob(loc, mobType);
             if (ent == null) continue;
             ent.setRemoveWhenFarAway(false);
             ent.setCanPickupItems(false);

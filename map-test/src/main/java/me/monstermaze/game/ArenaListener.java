@@ -213,6 +213,10 @@ public class ArenaListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
+        if (isMapWorld(event.getPlayer().getWorld())) {
+            event.setCancelled(true);
+            return;
+        }
         if (inVoidWorld(event.getPlayer().getWorld()) && game.getState() != GameState.IDLE) {
             event.setCancelled(true);
         }
@@ -220,8 +224,23 @@ public class ArenaListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
+        if (isMapWorld(event.getPlayer().getWorld())) {
+            event.setCancelled(true);
+            return;
+        }
         if (inVoidWorld(event.getPlayer().getWorld()) && game.getState() != GameState.IDLE) {
             event.setCancelled(true);
+        }
+    }
+
+    /** True when the world is the active arena map world (maze blocks must never be edited). */
+    private boolean isMapWorld(World w) {
+        if (w == null) return false;
+        try {
+            World active = me.monstermaze.world.MapManager.class.cast(plugin.getMapManager()).ensureActiveWorld();
+            return active != null && active == w;
+        } catch (Throwable t) {
+            return false;
         }
     }
 

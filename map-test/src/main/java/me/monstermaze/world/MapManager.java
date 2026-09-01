@@ -223,7 +223,7 @@ public class MapManager {
 
     // -------------------- Mob --------------------
 
-    /** Per-map mob entity type name (default "snowman"). Phase 1: only snowman is implemented. */
+    /** Per-map mob skin. All mob types share identical logic; the skin is config-driven. */
     public String mob(String map) {
         ConfigurationSection s = section(map);
         if (s != null && s.isString("mob")) {

@@ -1,14 +1,23 @@
 package me.monstermaze.util;
 
+import me.monstermaze.nms.AddonGhostOcelot;
+import me.monstermaze.nms.AddonGhostPigZombie;
 import me.monstermaze.nms.AddonGhostSnowman;
+import me.monstermaze.nms.AddonGhostSquid;
+import me.monstermaze.nms.AddonGhostVillager;
+import me.monstermaze.nms.AddonGhostZombie;
+import net.minecraft.server.v1_8_R3.EntityInsentient;
+import net.minecraft.server.v1_8_R3.GenericAttributes;
+import net.minecraft.server.v1_8_R3.World;
 import net.minecraft.server.v1_8_R3.WorldServer;
 import org.bukkit.Location;
 import org.bukkit.craftbukkit.v1_8_R3.CraftWorld;
 import org.bukkit.entity.Creature;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.Snowman;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
 
@@ -20,7 +29,7 @@ import java.util.Map;
  *     return CreatureMoveFast(ent, target, speed, true);
  * }
  * public static boolean CreatureMoveFast(Entity ent, Location target, float speed, boolean slow) {
- *     if (!(ent instanceof Creature)) return false;
+        // Creature-gate-removed
  *     if (UtilMath.offsetSquared(ent.getLocation(), target) &lt; 0.01) return false;
  *     if (UtilMath.offsetSquared(ent.getLocation(), target) &lt; 4) speed = Math.min(speed, 1f);
  *     EntityCreature ec = ((CraftCreature)ent).getHandle();
@@ -48,7 +57,7 @@ public final class UtilEnt {
             Class<?> entityCreature = Class.forName("net.minecraft.server." + ver + ".EntityCreature");
             getControllerMove = entityCreature.getMethod("getControllerMove");
             Class<?> controllerMove = Class.forName("net.minecraft.server." + ver + ".ControllerMove");
-            // a(double, double, double, double) — speed is double in NMS
+            // a(double, double, double, double) â€” speed is double in NMS
             controllerMoveA = controllerMove.getMethod("a", double.class, double.class, double.class, double.class);
             available = true;
         } catch (Throwable t) {
@@ -62,7 +71,7 @@ public final class UtilEnt {
     }
 
     public static boolean CreatureMoveFast(Entity ent, Location target, float speed, boolean slow) {
-        if (!(ent instanceof Creature)) return false;
+        // Creature-gate-removed
 
         double distSq = offsetSquared(ent.getLocation(), target);
         if (distSq < 0.01) return false;
@@ -102,7 +111,7 @@ public final class UtilEnt {
 
     /** Clear pathfinding target / stop. Optional helper. */
     /**
-     * Mineplex UtilEnt.isGrounded – standing on solid ground (not just isOnGround edge cases).
+     * Mineplex UtilEnt.isGrounded â€“ standing on solid ground (not just isOnGround edge cases).
      */
     public static boolean isGrounded(Entity ent) {
         if (ent == null) return false;
@@ -126,7 +135,7 @@ public final class UtilEnt {
      */
     public static void vegetate(Entity ent) {
         if (ent == null) return;
-        if (ent instanceof Creature) {
+        // Creature-gate-removed
             try {
                 ((Creature) ent).setTarget(null);
             } catch (Throwable ignored) {
@@ -181,30 +190,29 @@ public final class UtilEnt {
         }
     }
 
+    private static Map<Class, Integer> classToId;
+    private static Map<Integer, Class> idToClass;
+    private static Map<String, Class> nameToClass;
+    private static Map<Class, String> classToName;
+    private static Map<String, Integer> nameToId;
+    private static boolean typeMapsResolved;
+
     /**
-     * Register {@link AddonGhostSnowman} so the client renders it as a snowman.
-     *
-     * <p>{@code PacketPlayOutSpawnEntityLiving} sends {@code EntityTypes.a(entity.getClass())}
-     * (class -&gt; id) as the type id. The client only knows vanilla numeric ids, so we map
-     * {@code AddonGhostSnowman} back to the parent {@code Snowman} id (97). Maps are located by
-     * probing each private {@code Map} field with the known vanilla "EntitySnowman" key/value,
-     * which is far more robust than matching obfuscated generic types.</p>
+     * Locate the vanilla {@code EntityTypes} registry maps once by probing each private
+     * {@code Map} field with the known vanilla {@code EntitySnowman} key/value pairs. This
+     * is far more robust than matching obfuscated generic types and matches how the snowman
+     * was originally registered.
      */
-    @SuppressWarnings("unchecked")
-    public static void registerGhostSnowmanEntityType() {
+    private static void resolveEntityTypeMaps() {
+        if (typeMapsResolved) return;
+        typeMapsResolved = true;
         try {
             Class<?> entityTypes = Class.forName("net.minecraft.server.v1_8_R3.EntityTypes");
             Class<?> snowmanClass = Class.forName("net.minecraft.server.v1_8_R3.EntitySnowman");
             int snowmanId = 97;
 
-            Map<Class, Integer> classToId = null;
-            Map<Integer, Class> idToClass = null;
-            Map<String, Class> nameToClass = null;
-            Map<Class, String> classToName = null;
-            Map<String, Integer> nameToId = null;
-
-            for (java.lang.reflect.Field f : entityTypes.getDeclaredFields()) {
-                if (!java.util.Map.class.isAssignableFrom(f.getType())) continue;
+            for (Field f : entityTypes.getDeclaredFields()) {
+                if (!Map.class.isAssignableFrom(f.getType())) continue;
                 f.setAccessible(true);
                 Object v;
                 try {
@@ -212,59 +220,103 @@ public final class UtilEnt {
                 } catch (Exception e) {
                     continue;
                 }
-                if (!(v instanceof java.util.Map)) continue;
-                java.util.Map m = (java.util.Map) v;
+                if (!(v instanceof Map)) continue;
+                Map m = (Map) v;
                 try {
-                    if (m.get(snowmanClass) instanceof Integer && classToId == null)
-                        classToId = (Map<Class, Integer>) m;
-                    if (m.get(Integer.valueOf(snowmanId)) == snowmanClass && idToClass == null)
-                        idToClass = (Map<Integer, Class>) m;
-                    if (m.get("SnowMan") == snowmanClass && nameToClass == null)
-                        nameToClass = (Map<String, Class>) m;
-                    if (m.get(snowmanClass) instanceof String && classToName == null)
-                        classToName = (Map<Class, String>) m;
-                    if (m.get("SnowMan") instanceof Integer && nameToId == null)
-                        nameToId = (Map<String, Integer>) m;
+                    if (m.get(snowmanClass) instanceof Integer && classToId == null) classToId = (Map) m;
+                    if (m.get(Integer.valueOf(snowmanId)) == snowmanClass && idToClass == null) idToClass = (Map) m;
+                    if (m.get("SnowMan") == snowmanClass && nameToClass == null) nameToClass = (Map) m;
+                    if (m.get(snowmanClass) instanceof String && classToName == null) classToName = (Map) m;
+                    if (m.get("SnowMan") instanceof Integer && nameToId == null) nameToId = (Map) m;
                 } catch (Exception ignored) {
                 }
             }
-
-            if (idToClass != null) idToClass.put(snowmanId, (Class) AddonGhostSnowman.class);
-            if (classToId != null) classToId.put((Class) AddonGhostSnowman.class, snowmanId);
-            if (classToName != null) classToName.put((Class) AddonGhostSnowman.class, "Snowman");
-            if (nameToClass != null) nameToClass.put("Snowman", (Class) AddonGhostSnowman.class);
-            if (nameToId != null) nameToId.put("Snowman", snowmanId);
-
-            org.bukkit.Bukkit.getLogger().info("[MonsterMaze] ghost snowman mapped to entity type id " + snowmanId);
         } catch (Throwable t) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] registerGhostSnowmanEntityType failed: " + t);
+            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] resolveEntityTypeMaps failed: " + t);
         }
     }
 
+    /** Remap one vanilla mob id/name pair to the given ghost class so clients render it. */
+    public static void registerGhostType(Class<?> ghostClass, int id, String name) {
+        resolveEntityTypeMaps();
+        if (idToClass == null || classToId == null) return;
+        try {
+            idToClass.put(id, ghostClass);
+            classToId.put(ghostClass, id);
+            if (nameToClass != null) nameToClass.put(name, ghostClass);
+            if (classToName != null) classToName.put(ghostClass, name);
+            if (nameToId != null) nameToId.put(name, id);
+            org.bukkit.Bukkit.getLogger().info("[MonsterMaze] ghost '" + name + "' mapped to entity type id " + id);
+        } catch (Throwable t) {
+            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] registerGhostType '" + name + "' failed: " + t);
+        }
+    }
+
+    /** Register every ghosted maze-monster type so the client renders the correct skins. */
+    public static void registerGhostTypes() {
+        registerGhostType(AddonGhostSnowman.class, 97, "SnowMan");
+        registerGhostType(AddonGhostZombie.class, 54, "Zombie");
+        registerGhostType(AddonGhostSquid.class, 94, "Squid");
+        registerGhostType(AddonGhostOcelot.class, 98, "Ozelot");
+        registerGhostType(AddonGhostPigZombie.class, 57, "PigZombie");
+        registerGhostType(AddonGhostVillager.class, 120, "Villager");
+    }
+
     /**
-     * Spawn a ghosted maze monster: {@link AddonGhostSnowman} (its {@code ae()} returns false,
-     * so it never shoves or is shoved by other mobs) spawned through the proper CUSTOM pipeline
-     * so it renders and is server-tracking like any vanilla mob.
+     * Uniform movement-speed attribute for every maze mob, so ocelots/villagers/squid/etc.
+     * move at the same pace as the baseline snowman regardless of their native (much higher)
+     * base speed. {@code CreatureMoveFast} drives via the NMS ControllerMove, which multiplies
+     * by this attribute, so normalising it here keeps all mob types behaving identically.
      */
-    public static Snowman spawnGhostSnowman(Location loc) {
+    private static final double UNIFORM_MOB_SPEED = 0.2D;
+
+    /**
+     * Spawn a ghosted maze monster of the given configured mob type. The ghost subclass
+     * {@code ae()} returns false, so it never shoves or is shoved by other mobs, while it
+     * still obeys blocks, gravity and the waypoint {@link #CreatureMoveFast} driving. All
+     * mob types use identical logic â€” the configured type is purely a skin.
+     */
+    public static LivingEntity spawnGhostMob(Location loc, String mobType) {
         if (loc == null || loc.getWorld() == null) return null;
+        Class<? extends EntityInsentient> ghost = ghostClassFor(mobType);
+        if (ghost == null) return null;
         try {
             WorldServer nmsWorld = ((CraftWorld) loc.getWorld()).getHandle();
-            AddonGhostSnowman handle = new AddonGhostSnowman(nmsWorld);
+            EntityInsentient handle = ghost.getConstructor(World.class).newInstance(nmsWorld);
             handle.setPositionRotation(loc.getX(), loc.getY(), loc.getZ(), loc.getYaw(), loc.getPitch());
-            // Spawn through the CUSTOM pipeline so onCreatureSpawn allows it. In Spigot this
-            // already registers the entity with the EntityTracker (so a spawn packet is sent);
-            // do NOT call tracker.track() again afterwards or it throws "already tracked".
+            // Uniform movement speed so all mob skins traverse the maze at the same pace.
+            try {
+                handle.getAttributeInstance(GenericAttributes.MOVEMENT_SPEED).setValue(UNIFORM_MOB_SPEED);
+            } catch (Throwable ignored) {
+            }
+            // Spawn through the CUSTOM pipeline so onCreatureSpawn allows it.
             if (!nmsWorld.addEntity(handle, CreatureSpawnEvent.SpawnReason.CUSTOM)) {
-                org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] spawnGhostSnowman: addEntity returned false");
                 return null;
             }
-            Snowman ent = (Snowman) handle.getBukkitEntity();
+            LivingEntity ent = (LivingEntity) handle.getBukkitEntity();
             ent.setRemoveWhenFarAway(false);
+            // Prevent daylight-burning mobs (e.g. zombies) from igniting at round start.
+            ent.addPotionEffect(new org.bukkit.potion.PotionEffect(
+                    org.bukkit.potion.PotionEffectType.FIRE_RESISTANCE,
+                    Integer.MAX_VALUE, 0, false, false));
             return ent;
         } catch (Throwable t) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] spawnGhostSnowman failed: " + t.getMessage());
+            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] spawnGhostMob '" + mobType + "' failed: " + t.getMessage());
             return null;
         }
+    }
+
+    /** Map a configured mob name to its ghost NMS class. Unknown values fall back to snowman. */
+    private static Class<? extends EntityInsentient> ghostClassFor(String mobType) {
+        if (mobType == null) mobType = "";
+        String t = mobType.trim().toLowerCase().replace(" ", "_");
+        if (t.equals("zombie")) return AddonGhostZombie.class;
+        if (t.equals("squid")) return AddonGhostSquid.class;
+        if (t.equals("ocelot") || t.equals("cat")) return AddonGhostOcelot.class;
+        if (t.equals("zombie_pigman") || t.equals("pigman") || t.equals("pig_zombie")) {
+            return AddonGhostPigZombie.class;
+        }
+        if (t.equals("villager")) return AddonGhostVillager.class;
+        return AddonGhostSnowman.class;
     }
 }
