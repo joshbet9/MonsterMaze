@@ -13,7 +13,6 @@ import org.bukkit.event.server.ServerCommandEvent;
 
 /** Adds /mm map and /mm maps without changing the existing command executor. */
 public final class MapCommandListener implements Listener {
-
     private final MonsterMazePlugin plugin;
 
     public MapCommandListener(MonsterMazePlugin plugin) {
@@ -39,7 +38,6 @@ public final class MapCommandListener implements Listener {
         if (args.length < 2 || (!args[1].equalsIgnoreCase("map") && !args[1].equalsIgnoreCase("maps"))) return false;
 
         MapManager maps = plugin.getMapManager();
-
         if (args[1].equalsIgnoreCase("maps")) {
             sender.sendMessage(ChatColor.GOLD + "=== Monster Maze Maps ===");
             for (String map : maps.knownMaps()) {
@@ -56,12 +54,10 @@ public final class MapCommandListener implements Listener {
             sender.sendMessage(ChatColor.GRAY + "Available: " + String.join(", ", maps.knownMaps()));
             return true;
         }
-
         if (!sender.hasPermission("monstermaze.admin")) {
             sender.sendMessage(ChatColor.RED + "No permission.");
             return true;
         }
-
         if (plugin.getGameManager().getState() != GameState.IDLE
                 && plugin.getGameManager().getState() != GameState.ENDING) {
             sender.sendMessage(ChatColor.RED + "Change maps when no game is running.");
@@ -82,6 +78,7 @@ public final class MapCommandListener implements Listener {
             return true;
         }
 
+        plugin.getGameManager().getMonsterManager().setMobType(maps.activeMob());
         plugin.getGameManager().setCenter(center);
         sender.sendMessage(ChatColor.GREEN + "Active map set to " + map + ".");
         sender.sendMessage(ChatColor.GRAY + "World: " + center.getWorld().getName()
