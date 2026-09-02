@@ -41,11 +41,12 @@ public final class MonsterEntityController {
         entity.setFallDistance(0);
 
         if (entity instanceof Mob) {
-            // AI is disabled, but AWARE stays enabled so externally-controlled movement is not
-            // suppressed by entity implementations such as Villager.
+            // Keep the vanilla entity ticking so external velocity/physics works. Awareness is
+            // disabled and all vanilla goals are removed by UtilEnt. This gives us the important
+            // combination for Monster Maze: no autonomous AI, but pushed/launched mobs still move.
             Mob mob = (Mob) entity;
-            mob.setAI(false);
-            mob.setAware(true);
+            mob.setAI(true);
+            mob.setAware(false);
         }
         if (entity instanceof Zombie) {
             Zombie zombie = (Zombie) entity;
@@ -65,8 +66,10 @@ public final class MonsterEntityController {
         entity.setVisualFire(false);
         if (entity instanceof Mob) {
             Mob mob = (Mob) entity;
-            mob.setAI(false);
-            mob.setAware(true);
+            // Do not setAI(false): on modern Paper that can suppress externally-applied
+            // velocity. setAware(false) prevents autonomous behaviour while preserving physics.
+            mob.setAI(true);
+            mob.setAware(false);
         }
         if (entity instanceof Zombie) {
             Zombie zombie = (Zombie) entity;
