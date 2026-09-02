@@ -9,7 +9,7 @@ public enum KitType {
                     ChatColor.GRAY + "You can jump " + ChatColor.YELLOW + "5 Times" + ChatColor.GRAY + ".",
                     ChatColor.GRAY + "Vanilla jumps while you have charges."
             }),
-    SLOWBALL("Slowball", ChatColor.AQUA + "Slowball", Material.SNOW_BALL,
+    SLOWBALL("Slowball", ChatColor.AQUA + "Slowballer", Material.SNOW_BALL,
             new String[]{
                     ChatColor.GRAY + "Throw snowballs to " + ChatColor.AQUA + "Slow" + ChatColor.GRAY + " players.",
                     ChatColor.GRAY + "Regenerates up to 16 every 2 seconds."
