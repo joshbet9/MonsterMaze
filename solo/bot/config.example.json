@@ -1,7 +1,7 @@
 {
   "_comment": "Copy this file to config.json and fill in your values. Channel refs can be Discord channel IDs or unique channel names.",
   "token": "YOUR_BOT_TOKEN",
-  "feed_channels": ["YOUR_SOLO_RUNS_CHANNEL_ID"],
+  "feed_channels": ["solo-runs"],
   "modes": ["modern", "speed", "lagless", "original"],
   "platform_modes": {
     "1.8": ["modern", "speed", "lagless", "original"],
@@ -9,14 +9,14 @@
   },
   "channels": {
     "1.8": {
-      "overall": "1.8-leaderboard-overall",
-      "mazepattern": "1.8-leaderboard-mazepattern",
-      "kits": "1.8-leaderboard-kits"
+      "overall": "leaderboard-overall",
+      "mazepattern": "leaderboard-mazepattern",
+      "kits": "leaderboard-kits"
     },
     "1.21": {
-      "overall": "1.21-leaderboard-overall",
-      "mazepattern": "1.21-leaderboard-mazepattern",
-      "kits": "1.21-leaderboard-kits"
+      "overall": "modern-leaderboard-overall",
+      "mazepattern": "modern-leaderboard-mazepattern",
+      "kits": "modern-leaderboard-kits"
     }
   },
   "top_n": 10,
