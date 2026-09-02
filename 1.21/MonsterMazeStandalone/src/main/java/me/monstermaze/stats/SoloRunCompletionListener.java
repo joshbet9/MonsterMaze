@@ -65,12 +65,40 @@ public final class SoloRunCompletionListener implements Listener {
             @Override public void run() {
                 RunInfo info = runs.remove(player.getUniqueId());
                 if (info == null) return;
-                long liveStart = plugin.getGameManager().getGameLiveTime();
-                long elapsed = liveStart > 0 ? Math.max(0L, System.currentTimeMillis() - liveStart) : 0L;
-                plugin.getRunRecorder().record(player, plugin.getMode(), info.pattern,
-                        info.kit, plugin.getGameManager().getStage(), elapsed);
+                record(player, info);
             }
         });
+    }
+
+    /**
+     * Detects Monster Maze's own elimination path. GameManager removes the player from
+     * its alive set and changes the game to ENDING without firing PlayerDeathEvent.
+     */
+    private void checkForElimination() {
+        if (!plugin.isSoloMode() || runs.isEmpty()) return;
+        GameState state = plugin.getGameManager().getState();
+        if (state != GameState.LIVE && state != GameState.ENDING) return;
+
+        Player player = null;
+        for (UUID uuid : new java.util.HashSet<UUID>(runs.keySet())) {
+            Player candidate = Bukkit.getPlayer(uuid);
+            if (candidate != null && !plugin.getGameManager().getAlivePlayers().contains(candidate)) {
+                player = candidate;
+                break;
+            }
+        }
+        if (player == null) return;
+
+        RunInfo info = runs.remove(player.getUniqueId());
+        if (info != null) record(player, info);
+    }
+
+    private void record(final Player player, final RunInfo info) {
+        if (player == null || info == null) return;
+        long liveStart = plugin.getGameManager().getGameLiveTime();
+        long elapsed = liveStart > 0 ? Math.max(0L, System.currentTimeMillis() - liveStart) : 0L;
+        plugin.getRunRecorder().record(player, plugin.getMode(), info.pattern, info.kit,
+                plugin.getGameManager().getStage(), elapsed);
     }
 
     public void shutdown() {
