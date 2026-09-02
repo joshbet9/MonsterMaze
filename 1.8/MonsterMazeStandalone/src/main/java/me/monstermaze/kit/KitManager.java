@@ -778,7 +778,7 @@ public class KitManager implements Listener {
         Bukkit.getPluginManager().callEvent(new AbilityUseEvent(player));
     }
 
-    private void cryoVisual(Player player) { player.playSound(player.getLocation(), Sound.GLASS_BREAK, 1.0f, .7f); player.getWorld().playEffect(player.getLocation(), Effect.SNOWBALL_BREAK, 0); }
+    private void cryoVisual(Player player) { player.playSound(player.getLocation(), Sound.CLICK, 1.0f, .7f); player.getWorld().playEffect(player.getLocation(), Effect.SNOWBALL_BREAK, 0); }
 
     private ItemStack slowballItem(UUID playerId, int amount) {
         ItemStack item = new ItemStack(Material.SNOW_BALL, Math.max(1, amount));
