@@ -1,0 +1,61 @@
+MONSTER MAZE SOLO — MINECRAFT 1.21
+====================================
+
+This package runs Monster Maze locally on Paper 1.21.11.
+You do not need to install the Monster Maze plugin separately.
+
+REQUIREMENTS
+------------
+- Minecraft Java Edition 1.21.11
+- Windows 7/8/10/11
+- A valid Minecraft account
+
+The release includes Java 21 for the local server. You do not normally need
+to install Java yourself.
+
+STARTING SOLO
+-------------
+1. Extract the entire package to a folder.
+2. Double-click launcher\play.bat.
+3. Wait for the server window to say that it is ready.
+4. Open Minecraft 1.21.11.
+5. Multiplayer -> Add Server.
+6. Use `localhost` as the server address.
+7. Join the server.
+8. Run `/mm start`.
+9. Choose your kit and play.
+
+The shipped mm_* worlds are the canonical Monster Maze map assets. Do not
+rename or move those folders.
+
+ENDING A RUN
+------------
+Death ends the Solo run. The plugin records completed/new PB information in
+the local server/plugins/MonsterMazeStandalone/solo-runs folder.
+
+SUBMITTING A SCORE
+------------------
+1. Configure submitter\config.ps1 from config.ps1.example with the Discord
+   Solo-runs webhook.
+2. Double-click submitter\submit.bat.
+3. Successfully posted runs are moved into submitter\submitted.
+
+UPDATES
+-------
+launcher\play.bat automatically checks for updates before starting the server.
+You can also double-click update.bat manually.
+If GitHub is unavailable, the server still starts; updates are optional.
+Your submitter config and server.properties are preserved by the updater.
+
+STOPPING THE SERVER
+-------------------
+Double-click launcher\stop.bat when you are finished.
+
+TROUBLESHOOTING
+---------------
+- If the launcher says Java 21 is missing, make sure runtime\jdk21 exists or
+  set JAVA_BIN in launcher\config.bat.
+- If localhost refuses the connection, wait for the server to finish starting.
+- If a map says it is not installed, make sure the corresponding mm_* folder
+  is directly inside the server folder.
+- Do not run the updater while the server is running.
