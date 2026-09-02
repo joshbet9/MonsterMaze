@@ -1,5 +1,6 @@
 package me.monstermaze.world;
 
+import com.destroystokyo.paper.event.entity.PreCreatureSpawnEvent;
 import me.monstermaze.MonsterMazePlugin;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
@@ -39,9 +40,6 @@ public final class MapWorldSafetyListener implements Listener {
             purgeLoadedChunks(world);
         }
 
-        // Run every tick. This is intentionally aggressive: a converted Nether map can contain
-        // thousands of saved zombie-pigmen which become Zombified Piglins in 1.21. They must be
-        // removed before they get several ticks of AI/entity processing.
         this.enforcementTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override public void run() {
                 for (World world : Bukkit.getWorlds()) {
@@ -73,10 +71,6 @@ public final class MapWorldSafetyListener implements Listener {
         world.setStorm(false);
         world.setThundering(false);
         world.setTime(6000L);
-
-        // Monster Maze monsters are explicitly spawned with CUSTOM spawn reason and do not need
-        // vanilla difficulty/AI. Keep map worlds Peaceful permanently so Zombified Piglin natural
-        // spawning can never activate between our purge passes.
         world.setDifficulty(Difficulty.PEACEFUL);
     }
 
@@ -93,6 +87,29 @@ public final class MapWorldSafetyListener implements Listener {
         }
     }
 
+    /**
+     * Paper's pre-spawn hook exists specifically to avoid the CPU/allocation cost of creating
+     * entities that a plugin will immediately cancel. This is important for Volcano: its 1.21
+     * Nether world legitimately sees NETHER_BRICKS/NETHERRACK, and zombified piglins can naturally
+     * spawn on most Nether blocks. The old CreatureSpawnEvent-only guard was too late for a dense
+     * Nether spawn attempt. Monster Maze never wants natural/spawner creatures in map worlds.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPreCreatureSpawn(PreCreatureSpawnEvent event) {
+        if (!isManagedWorld(event.getSpawnLocation().getWorld())) return;
+        if (event.getReason() == CreatureSpawnEvent.SpawnReason.CUSTOM) return;
+        event.setCancelled(true);
+        event.setShouldAbortSpawn(true);
+    }
+
+    /** Backup for spawn paths that do not emit Paper's pre-spawn event. */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onCreatureSpawn(CreatureSpawnEvent event) {
+        if (!isManagedWorld(event.getLocation().getWorld())) return;
+        if (event.getSpawnReason() == CreatureSpawnEvent.SpawnReason.CUSTOM) return;
+        event.setCancelled(true);
+    }
+
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onWorldLoad(WorldLoadEvent event) {
         if (!isManagedWorld(event.getWorld())) return;
@@ -105,13 +122,6 @@ public final class MapWorldSafetyListener implements Listener {
         if (!isManagedWorld(event.getWorld())) return;
         configureWorld(event.getWorld());
         purgeChunk(event.getChunk());
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onCreatureSpawn(CreatureSpawnEvent event) {
-        if (!isManagedWorld(event.getLocation().getWorld())) return;
-        if (event.getSpawnReason() == CreatureSpawnEvent.SpawnReason.CUSTOM) return;
-        event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
