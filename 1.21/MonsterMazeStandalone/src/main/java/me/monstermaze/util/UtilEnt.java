@@ -15,7 +15,6 @@ import org.bukkit.util.Vector;
 public final class UtilEnt {
     private UtilEnt() {}
 
-    /** Entity-type-independent Monster Maze movement. */
     public static boolean CreatureMoveFast(Entity ent, Location target, float speed) {
         return CreatureMoveFast(ent, target, speed, true);
     }
@@ -32,8 +31,6 @@ public final class UtilEnt {
         double distance = delta.length();
         if (distance < 1.0E-6) return false;
 
-        // Monster Maze owns movement; this is deliberately independent of vanilla mob AI.
-        // The step is scaled from the same controller speed used by the working 1.8 port.
         double step = Math.min(speed * 0.175D, distance);
         Vector movement = delta.normalize().multiply(step);
         Location next = loc.clone().add(movement);
@@ -64,10 +61,6 @@ public final class UtilEnt {
         }
     }
 
-    /**
-     * Remove vanilla goals while deliberately leaving the entity's movement/physics system alive.
-     * This mirrors the 1.8 ghost entities: Monster Maze supplies all routing itself.
-     */
     public static void vegetate(Entity ent) {
         if (ent == null) return;
         if (ent instanceof Creature) {
@@ -86,29 +79,17 @@ public final class UtilEnt {
         catch (Throwable t) { Bukkit.getLogger().warning("[MonsterMaze] stopNavigation failed: " + t); }
     }
 
-    /**
-     * Spawn a Monster Maze ghost using the exact physical architecture of the working 1.8 port:
-     * every maze monster is a Snow Golem underneath. The configured mob type is retained only as
-     * a logical/client skin identifier. This prevents native Enderman, Piglin, Ocelot, Squid, etc.
-     * AI and spawning behaviour from leaking into the game.
-     */
+    /** Every Monster Maze mob is physically a Snow Golem; mobType is client-facing only. */
     public static LivingEntity spawnGhostMob(Location loc, String mobType) {
         if (loc == null || loc.getWorld() == null) return null;
         try {
-            Entity entity = loc.getWorld().spawnEntity(
-                    loc,
-                    EntityType.SNOW_GOLEM,
-                    CreatureSpawnEvent.SpawnReason.CUSTOM);
+            Entity entity = loc.getWorld().spawnEntity(loc, EntityType.SNOW_GOLEM, CreatureSpawnEvent.SpawnReason.CUSTOM);
             if (!(entity instanceof LivingEntity)) {
                 entity.remove();
                 return null;
             }
-
             LivingEntity living = (LivingEntity) entity;
-            living.setMetadata(MonsterEntityController.MONSTER_SKIN_METADATA,
-                    new org.bukkit.metadata.FixedMetadataValue(
-                            me.monstermaze.MonsterMazePlugin.getInstance(),
-                            normalizeSkin(mobType)));
+            MonsterEntityController.setSkin(living, normalizeSkin(mobType));
             vegetate(living);
             MonsterEntityController.configure(living);
             return living;
@@ -118,9 +99,8 @@ public final class UtilEnt {
         }
     }
 
-    /** Return the logical vanilla mob name used as the client skin/disguise. */
     private static String normalizeSkin(String mobType) {
-        String id = mobType == null ? "" : mobType.trim().toLowerCase();
+        String id = mobType == null ? "" : mobType.trim().toLowerCase(java.util.Locale.ROOT);
         if (id.isEmpty() || "snow_golem".equals(id)) return "snowman";
         if ("pig_zombie".equals(id) || "zombie_pigman".equals(id)) return "zombified_piglin";
         if ("eye_of_ender".equals(id)) return "eyeofender";
