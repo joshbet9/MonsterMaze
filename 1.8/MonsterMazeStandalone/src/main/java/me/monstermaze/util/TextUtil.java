@@ -54,23 +54,9 @@ public final class TextUtil {
     }
 
     public static void actionBar(Player player, String message) {
-        try {
-            String ver = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
-            Class<?> chatSerializer = Class.forName("net.minecraft.server." + ver + ".IChatBaseComponent$ChatSerializer");
-            Object comp = chatSerializer.getMethod("a", String.class)
-                    .invoke(null, "{\"text\":\"" + escape(message) + "\"}");
-            Class<?> packetClass = Class.forName("net.minecraft.server." + ver + ".PacketPlayOutChat");
-            Constructor<?> cons = packetClass.getConstructor(
-                    Class.forName("net.minecraft.server." + ver + ".IChatBaseComponent"), byte.class);
-            Object packet = cons.newInstance(comp, (byte) 2);
-            Object handle = Class.forName("org.bukkit.craftbukkit." + ver + ".entity.CraftPlayer")
-                    .getMethod("getHandle").invoke(player);
-            Object conn = handle.getClass().getField("playerConnection").get(handle);
-            conn.getClass().getMethod("sendPacket", Class.forName("net.minecraft.server." + ver + ".Packet"))
-                    .invoke(conn, packet);
-        } catch (Throwable t) {
-            // fallback: nothing spammy
-        }
+        // TEMPORARY DIAGNOSTIC: disable 1.8 action-bar packet sending entirely.
+        // This isolates the expensive reflective NMS action-bar path used by the per-tick kit UI.
+        return;
     }
 
     private static String escape(String s) {
