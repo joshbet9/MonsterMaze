@@ -8,26 +8,52 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
+import org.bukkit.util.Vector;
 
 /** Paper 1.21 entity utilities used by Monster Maze. */
 public final class UtilEnt {
     private UtilEnt() {}
 
+    /**
+     * Monster Maze movement is deliberately entity-type independent.
+     *
+     * The original 1.8 implementation spawned the same Snowman ghost for every monster skin and
+     * drove it through ControllerMove with speed 1.4f. The 1.21 implementation must not delegate
+     * movement to each vanilla mob's Navigation implementation: those navigators have different
+     * collision/pathing rules and can leave some renderer mobs stationary or make them behave
+     * differently. Instead we reproduce the old ControllerMove fallback mathematically: horizontal
+     * direction toward the target, speed * 0.2 blocks/tick, every tick.
+     */
     public static boolean CreatureMoveFast(Entity ent, Location target, float speed) {
         return CreatureMoveFast(ent, target, speed, true);
     }
 
     public static boolean CreatureMoveFast(Entity ent, Location target, float speed, boolean slow) {
-        if (!(ent instanceof Mob)) return false;
+        if (ent == null || target == null || ent.getWorld() != target.getWorld()) return false;
         double distSq = offsetSquared(ent.getLocation(), target);
         if (distSq < 0.01) return false;
         if (distSq < 4) speed = Math.min(speed, 1f);
-        try {
-            return ((Mob) ent).getPathfinder().moveTo(target, speed);
-        } catch (Throwable t) {
-            Bukkit.getLogger().warning("[MonsterMaze] CreatureMoveFast failed: " + t);
+
+        Location loc = ent.getLocation();
+        Vector delta = target.toVector().subtract(loc.toVector());
+        // CreatureMoveFast in Monster Maze is horizontal maze travel. Do not let a vanilla mob's
+        // navigation decide how to climb/fall; the maze waypoint Y is already authoritative.
+        delta.setY(0);
+        if (delta.lengthSquared() < 1.0E-6) {
+            ent.setVelocity(new Vector(0, ent.getVelocity().getY(), 0));
             return false;
         }
+
+        double step = Math.min(speed * 0.2D, Math.sqrt(delta.getX() * delta.getX() + delta.getZ() * delta.getZ()));
+        Vector velocity = delta.normalize().multiply(step);
+        // Preserve the entity's vertical physics while taking complete ownership of horizontal
+        // movement, exactly as the old Snowman ControllerMove did for the maze.
+        velocity.setY(ent.getVelocity().getY());
+        ent.setVelocity(velocity);
+
+        float yaw = (float) Math.toDegrees(Math.atan2(-velocity.getX(), velocity.getZ()));
+        ent.setRotation(yaw, ent.getLocation().getPitch());
+        return true;
     }
 
     public static double offsetSquared(Location a, Location b) {
