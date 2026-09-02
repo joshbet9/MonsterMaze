@@ -22,7 +22,7 @@ All gameplay QOL fixes (shared with Modern):
     removed - players gain no jump ability.
   - Mob knockback is always the same horizontal velocity regardless of how/where
     you are hit (side hits are no longer softer than head-on hits).
-  - Slowball now slows OTHER PLAYERS, not monsters (matches intended source kit).
+  - Slowballer now slows OTHER PLAYERS, not monsters (matches intended source kit).
     In QOL mode it also skips a player who was just hit by a mob (1s grace) or who
     is above the exact floor y-level (e.g. mid-jump).
   - Off-centre safe pads fixed: on-pad detection uses a symmetric 5x5 box that
