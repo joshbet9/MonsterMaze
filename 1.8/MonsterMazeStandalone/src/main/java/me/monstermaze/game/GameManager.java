@@ -67,6 +67,7 @@ public class GameManager implements Listener {
     private int curSafe = 1;
     private int phaseTimer = 60;
     private int phaseTimerStart = 60;
+    private long phaseDeadlineMs;
     private int centerSafeZoneDecay = 11;
     private boolean firstClaimedThisPhase;
     private boolean soloMode;
@@ -99,9 +100,7 @@ public class GameManager implements Listener {
     public int getStage() { return curSafe; }
     public void setCenter(Location loc) {
         this.center = loc.clone();
-        // Empty world + small pre-game lobby box only
         mazeGenerator.buildLobby(center);
-        // Kit NPCs in lobby while idle
         if (state == GameState.IDLE) {
             kitManager.clearSelectors();
             kitManager.spawnSelectors(mazeGenerator.getLobbyCenter());
@@ -109,7 +108,6 @@ public class GameManager implements Listener {
         }
     }
 
-    /** Call on enable: void spawn becomes lobby center. */
     public void bootstrapLobby(Location voidSpawn) {
         if (voidSpawn == null) return;
         this.center = voidSpawn.clone();
@@ -119,10 +117,6 @@ public class GameManager implements Listener {
         refreshLeaderboardBoard();
     }
 
-    /**
-     * Apply the active map: set its maze palette + mob on the generators and
-     * re-anchor the lobby at the map's default center. Safe to call when idle.
-     */
     public void applyMap() {
         me.monstermaze.world.MapManager maps = plugin.getMapManager();
         mazeGenerator.setTheme(maps.activeTheme());
@@ -141,7 +135,6 @@ public class GameManager implements Listener {
 
     public Location getLobbySpawn() {
         if (mazeGenerator.getLobbyCenter() != null) {
-            // Feet on the elevated lobby platform
             return mazeGenerator.getLobbyCenter().add(0, 1, 0);
         }
         if (center != null) {
@@ -151,22 +144,17 @@ public class GameManager implements Listener {
     }
 
     public void sendToLobby(Player player) {
-        if (center == null) {
-            // Should have been bootstrapped; last resort
-            return;
-        }
+        if (center == null) return;
         if (state == GameState.IDLE || state == GameState.ENDING) {
             player.teleport(getLobbySpawn());
             player.setGameMode(GameMode.SURVIVAL);
             kitManager.resetPlayerState(player);
             player.getInventory().clear();
-            // Ensure NPCs exist
             if (state == GameState.IDLE) {
                 kitManager.spawnSelectors(mazeGenerator.getLobbyCenter());
             }
             player.sendMessage(ChatColor.GOLD + "Monster Maze lobby");
             player.sendMessage(ChatColor.YELLOW + "Pick a kit (villagers or /mm kit), then an admin runs /mm start");
-            // Open kit GUI shortly after TP
             final Player p = player;
             Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
                 @Override public void run() {
@@ -183,7 +171,6 @@ public class GameManager implements Listener {
     public MazeGenerator getMazeGenerator() { return mazeGenerator; }
     public long getGameLiveTime() { return liveStartMs; }
 
-    /** Index (0/1/2) of the maze pattern loaded for the current game, or -1 if not live. */
     public int getPatternIndex() {
         return state == GameState.LIVE || state == GameState.STARTING
                 ? mazeGenerator.getPatternIndex()
@@ -194,18 +181,14 @@ public class GameManager implements Listener {
         return mode;
     }
 
-    /** True for any mode that receives gameplay QOL fixes (everything except Original). */
     public boolean qolEnabled() {
         return mode != MazeMode.ORIGINAL;
     }
-
-    // -------------------- Start / Stop --------------------
 
     public void startGame() {
         startGame(null);
     }
 
-    /** @param preferCenter optional player location when /mm start is used without setcenter */
     public void startGame(Location preferCenter) {
         if (state != GameState.IDLE && state != GameState.ENDING) return;
 
@@ -220,13 +203,10 @@ public class GameManager implements Listener {
             }
         }
 
-        // MazeGenerator needs its own center + lobby before generate
         if (mazeGenerator.getCenter() == null) {
             mazeGenerator.buildLobby(center);
         }
 
-        // Sweep any entities lingering in the arena world (archived map chunks can
-        // surface saved mobs long after the world loads) before we regenerate.
         if (center != null) {
             plugin.getMapManager().clearMobs(center.getWorld());
         }
@@ -238,13 +218,13 @@ public class GameManager implements Listener {
         curSafe = 1;
         phaseTimer = 60;
         phaseTimerStart = 60;
+        phaseDeadlineMs = 0;
         centerSafeZoneDecay = 11;
         firstClaimedThisPhase = false;
         soloMode = false;
         runEndRecordedGuard = true;
         stats.reset();
 
-        // Sync active mode from the plugin's persisted config each game.
         this.mode = plugin.getMode();
         phaseTimer = stageTimer(1);
         phaseTimerStart = phaseTimer;
@@ -253,7 +233,6 @@ public class GameManager implements Listener {
         broadcast(ChatColor.GOLD + "" + ChatColor.BOLD + "=== Monster Maze ===");
         broadcast(ChatColor.YELLOW + "Generating maze... (server stays responsive)");
 
-        // Chunked generation — continues when maze is ready
         mazeGenerator.generateMazeAsync(new Runnable() {
             @Override
             public void run() {
@@ -286,10 +265,8 @@ public class GameManager implements Listener {
                 safePad = nextSafePad;
                 nextSafePad = null;
 
-                // Point every alive player's compass at the active safe pad / beacon from spawn.
                 updateCompasses();
 
-                // --- FIX: INITIALIZE & APPLY SCOREBOARD UPFRONT (Issue #5) ---
                 scoreboard.create();
                 int pattern = getPatternIndex();
                 for (Player p : getAlivePlayers()) {
@@ -306,17 +283,9 @@ public class GameManager implements Listener {
                             getMode().color + getMode().id, pbText);
                 }
                 scoreboard.apply(getAlivePlayers());
-                // -------------------------------------------------------------
 
-                // Spawn maze monsters now (behind the containment glass) so players see them
-                // during the countdown; their movement only begins once the game goes LIVE
-                // (MonsterManager.move() is gated on live state, and dropContainment() runs
-                // at the top of beginLive() so the glass is gone before they start advancing).
                 monsterManager.start(mazeGenerator);
 
-                // Lock jumping during the STARTING countdown too (pre-glass-fall): only the
-                // Jumper kit can move around the spawn; everyone else is grounded. The LIVE
-                // mainTask calls tickJumpLock() once the game starts, so we stop this one then.
                 startingTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
                     @Override public void run() {
                         if (state != GameState.STARTING) return;
@@ -342,6 +311,7 @@ public class GameManager implements Listener {
         state = GameState.LIVE;
         if (startingTask != null) { startingTask.cancel(); startingTask = null; }
         liveStartMs = System.currentTimeMillis();
+        phaseDeadlineMs = liveStartMs + (phaseTimer * 1000L);
         mazeGenerator.dropContainment();
         kitManager.clearSelectors();
         leaderboardBoard.clear();
@@ -372,8 +342,6 @@ public class GameManager implements Listener {
                 kitManager.tickJumperFlight();
                 kitManager.tickJumpLock();
 
-                // PERF: the scoreboard/KB/pad info only changes on stage/phase transitions
-                // (and the PB lookup is per player), so update it 2x/s instead of 20x/s.
                 if ((liveTick % 10) == 1) {
                     int pattern = getPatternIndex();
                     int aliveCount = aliveNow.size();
@@ -412,8 +380,6 @@ public class GameManager implements Listener {
             p.setExp(0); p.setLevel(0);
             kitManager.resetPlayerState(p);
             p.setGameMode(GameMode.SURVIVAL);
-            
-            // Restore visibility for all players in lobby
             for (Player target : Bukkit.getOnlinePlayers()) {
                 p.showPlayer(target);
             }
@@ -426,7 +392,6 @@ public class GameManager implements Listener {
         alive.clear();
         spectators.clear();
         state = GameState.IDLE;
-        // Restore lobby kit NPCs
         if (center != null) {
             kitManager.spawnSelectors(mazeGenerator.getLobbyCenter());
             refreshLeaderboardBoard();
@@ -437,7 +402,6 @@ public class GameManager implements Listener {
         broadcast(ChatColor.GREEN + "Back in lobby. Pick a kit, then /mm start");
     }
 
-    /** Rebuild + redraw the lobby leaderboard hologram. Safe to call outside a live game. */
     private void refreshLeaderboardBoard() {
         if (mazeGenerator.getLobbyCenter() != null) {
             leaderboardBoard.place(mazeGenerator.getLobbyCenter());
@@ -447,7 +411,6 @@ public class GameManager implements Listener {
         }
     }
 
-    /** Public hook to redraw the lobby board (e.g. after a mode change). */
     public void rerenderLeaderboardBoard() {
         if (state == GameState.IDLE || state == GameState.ENDING) {
             refreshLeaderboardBoard();
@@ -459,8 +422,6 @@ public class GameManager implements Listener {
         destroyAllPads();
     }
 
-    // -------------------- Safe pad pipeline (original-style) --------------------
-
     private List<Location> avoidPadLocations() {
         List<Location> avoid = new ArrayList<Location>();
         if (safePad != null) avoid.add(safePad.getLocation());
@@ -469,15 +430,11 @@ public class GameManager implements Listener {
         return avoid;
     }
 
-    /** Build next pad (preview). */
     public void spawnSafePad() {
         Location next = mazeGenerator.randomPadLocation(avoidPadLocations());
         nextSafePad = new SafePad(next, qolEnabled());
         mazeGenerator.disablePadArea(next);
-
-        // Remove mobs standing on the new pad
         monsterManager.removeMonstersOn(nextSafePad);
-
         Bukkit.getPluginManager().callEvent(new SafepadBuildEvent());
     }
 
@@ -499,10 +456,6 @@ public class GameManager implements Listener {
         }
     }
 
-    /** Timer length (seconds) for a given stage, depending on the active mode.
-     *  Original: 60 -> 15 floor (minus 2s per prior stage).
-     *  Modern:  35 -> 15 floor, reached by stage 10.
-     */
     private int stageTimer(int stage) {
         if (mode == MazeMode.MODERN || mode == MazeMode.LAGLESS) {
             return Math.max(15, 35 - ((stage - 1) * 20 / 9));
@@ -510,68 +463,74 @@ public class GameManager implements Listener {
         return Math.max(15, 60 - ((stage - 1) * 2));
     }
 
+    /**
+     * Update the phase timer from a wall-clock deadline rather than assuming
+     * that a Bukkit 20-tick task actually runs once per real second.
+     */
     private void decrementPhaseTime() {
-        if (safePad == null) return;
-        if (phaseTimer == -1) return;
+        if (safePad == null || phaseDeadlineMs <= 0) return;
 
-        phaseTimer--;
+        long now = System.currentTimeMillis();
+        long remainingMs = phaseDeadlineMs - now;
+        int remaining = remainingMs <= 0 ? 0 : (int) ((remainingMs + 999L) / 1000L);
 
-        if (phaseTimer == 20 || phaseTimer == 15 || phaseTimer == 10
-                || phaseTimer == 5 || phaseTimer == 4) {
-            TextUtil.titleAll("", ChatColor.GREEN + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
-        }
-        if (phaseTimer == 3) {
-            TextUtil.titleAll("", ChatColor.YELLOW + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
-        }
-        if (phaseTimer == 2) {
-            TextUtil.titleAll("", ChatColor.GOLD + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
-            spawnSafePad(); // next pad appears
-        }
-        if (phaseTimer == 1) {
-            TextUtil.titleAll("", ChatColor.RED + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
-        }
-
-        if (phaseTimer == 0) {
-            for (Player p : getAlivePlayers()) {
-                // Survival requires being ON the pad right now. (See note: the older
-                // playersOnPad "ever touched" check wrongly let players who stepped on the
-                // pad then walked off it survive the round end.)
-                boolean onPad = safePad != null && safePad.isOn(p);
-
-                if (onPad) {
-                    TextUtil.title(p, "", ChatColor.YELLOW + "" + ChatColor.BOLD + "Get to the Next Safe Pad!", 5, 40, 5);
-                } else {
-                    TextUtil.title(p, "", ChatColor.RED + "" + ChatColor.BOLD + "You weren't on the Safe Pad!", 5, 40, 5);
-                    p.sendMessage(ChatColor.RED + "You weren't on the Safe Pad!");
-                    eliminate(p, ChatColor.RED + p.getName() + " missed the Safe Pad!");
-                }
+        if (remaining > 0) {
+            if (remaining < phaseTimer) {
+                phaseTimer = remaining;
+                showPhaseWarning(phaseTimer);
             }
+            return;
+        }
 
-            if (getMode() == MazeMode.LAGLESS) {
-                // Fixed 500 pool: no per-stage spawns. Difficulty comes from a speed step every
-                // 5 stages (1.0 -> 1.2 -> 1.4 -> ...), first bump entering stage 6.
-                int enteringStage = curSafe + 1;
-                int steps = (enteringStage - 1) / 5;
-                monsterManager.setSpeedMultiplier(1.0f + 0.2f * steps);
+        phaseTimer = 0;
+        for (Player p : getAlivePlayers()) {
+            boolean onPad = safePad != null && safePad.isOn(p);
+
+            if (onPad) {
+                TextUtil.title(p, "", ChatColor.YELLOW + "" + ChatColor.BOLD + "Get to the Next Safe Pad!", 5, 40, 5);
             } else {
-                monsterManager.spawnMore(getMode() == MazeMode.MODERN ? 30 : 15);
+                TextUtil.title(p, "", ChatColor.RED + "" + ChatColor.BOLD + "You weren't on the Safe Pad!", 5, 40, 5);
+                p.sendMessage(ChatColor.RED + "You weren't on the Safe Pad!");
+                eliminate(p, ChatColor.RED + p.getName() + " missed the Safe Pad!");
             }
-            stopSafePad();
-            playersOnPad.clear();
-            firstClaimedThisPhase = false;
+        }
 
-            phaseTimerStart = stageTimer(curSafe + 1);
-            phaseTimer = phaseTimerStart;
+        if (getMode() == MazeMode.LAGLESS) {
+            int enteringStage = curSafe + 1;
+            int steps = (enteringStage - 1) / 5;
+            monsterManager.setSpeedMultiplier(1.0f + 0.2f * steps);
+        } else {
+            monsterManager.spawnMore(getMode() == MazeMode.MODERN ? 30 : 15);
+        }
+        stopSafePad();
+        playersOnPad.clear();
+        firstClaimedThisPhase = false;
 
-            if (nextSafePad == null) spawnSafePad();
+        phaseTimerStart = stageTimer(curSafe + 1);
+        phaseTimer = phaseTimerStart;
+        phaseDeadlineMs = now + (phaseTimerStart * 1000L);
 
-            monsterManager.removeMonstersOn(nextSafePad);
+        if (nextSafePad == null) spawnSafePad();
 
-            curSafe++;
-            safePad = nextSafePad;
-            nextSafePad = null;
+        monsterManager.removeMonstersOn(nextSafePad);
 
-            checkWin();
+        curSafe++;
+        safePad = nextSafePad;
+        nextSafePad = null;
+
+        checkWin();
+    }
+
+    private void showPhaseWarning(int value) {
+        if (value == 20 || value == 15 || value == 10 || value == 5 || value == 4) {
+            TextUtil.titleAll("", ChatColor.GREEN + "" + ChatColor.BOLD + value, 5, 40, 5);
+        } else if (value == 3) {
+            TextUtil.titleAll("", ChatColor.YELLOW + "" + ChatColor.BOLD + value, 5, 40, 5);
+        } else if (value == 2) {
+            TextUtil.titleAll("", ChatColor.GOLD + "" + ChatColor.BOLD + value, 5, 40, 5);
+            spawnSafePad();
+        } else if (value == 1) {
+            TextUtil.titleAll("", ChatColor.RED + "" + ChatColor.BOLD + value, 5, 40, 5);
         }
     }
 
@@ -588,7 +547,6 @@ public class GameManager implements Listener {
                 continue;
             }
 
-            // Always check Pilot when standing on the safe pad
             stats.checkPilotLand(p, true);
 
             if (!playersOnPad.contains(p)) {
@@ -600,6 +558,7 @@ public class GameManager implements Listener {
                     broadcast(ChatColor.GREEN + p.getName() + ChatColor.YELLOW + " reached the Safe Pad first!");
                     int decreased = Math.max(6, 16 - (curSafe - 1));
                     phaseTimer = Math.min(decreased, phaseTimer);
+                    phaseDeadlineMs = Math.min(phaseDeadlineMs, System.currentTimeMillis() + (decreased * 1000L));
                     for (Player other : getAlivePlayers()) {
                         if (other.equals(p)) continue;
                         other.sendMessage(ChatColor.YELLOW + "You have " + ChatColor.WHITE
@@ -614,10 +573,9 @@ public class GameManager implements Listener {
 
         if (allOn && !getAlivePlayers().isEmpty()) {
             phaseTimer = Math.min(4, phaseTimer);
+            phaseDeadlineMs = Math.min(phaseDeadlineMs, System.currentTimeMillis() + 4000L);
         }
     }
-
-    // -------------------- Center deterioration --------------------
 
     @SuppressWarnings("deprecation")
     private void deteriorateCenter() {
@@ -637,14 +595,11 @@ public class GameManager implements Listener {
             if (centerSafeZoneDecay == 1) {
                 it.remove();
                 if (mazeGenerator.getCenterSafeZonePaths().contains(cur)) {
-                    // Real path cell: rebuild as maze block and re-enable its waypoint
-                    // (the maze shows through underneath).
                     me.monstermaze.maze.MazeBlockData theme = mazeGenerator.getTheme();
                     floor.setType(theme.Top.Type);
                     floor.setData(theme.Top.Data);
                     mazeGenerator.enableWaypoint(cur);
                 } else {
-                    // Decorative/barrier center cell: falls away into the void.
                     floor.setType(Material.AIR);
                 }
             } else if (floor.getType() == Material.STAINED_CLAY || floor.getType() == Material.QUARTZ_BLOCK) {
@@ -656,8 +611,6 @@ public class GameManager implements Listener {
         if (centerSafeZoneDecay == 1) centerSafeZoneDecay = -1;
     }
 
-    // -------------------- Players --------------------
-
     public boolean isOnAnyPad(Player player) {
         if (safePad != null && safePad.isActive() && safePad.isOn(player)) return true;
         if (nextSafePad != null && nextSafePad.isActive() && nextSafePad.isOn(player)) return true;
@@ -667,7 +620,6 @@ public class GameManager implements Listener {
         return false;
     }
 
-    /** The pad mobs should direct a Maverick player toward (active pad, else the preview pad). */
     public Location getMobKnockTarget() {
         SafePad t = safePad != null ? safePad : nextSafePad;
         return t == null ? null : t.getLocation();
@@ -689,8 +641,6 @@ public class GameManager implements Listener {
         p.setFireTicks(0);
         p.setExp(0.99f);
         p.setLevel(0);
-        
-        // Ensure all alive players are visible to each other
         for (Player online : Bukkit.getOnlinePlayers()) {
             p.showPlayer(online);
             online.showPlayer(p);
@@ -709,7 +659,6 @@ public class GameManager implements Listener {
         return list;
     }
 
-    /** Record this player's highest stage reached for the active mode+pattern (persisted). */
     private void recordPB(Player player) {
         int pattern = getPatternIndex();
         if (pattern < 0) return;
@@ -717,17 +666,11 @@ public class GameManager implements Listener {
         me.monstermaze.kit.KitType k = kitManager.getKit(player);
         if (k != null) kit = k.id;
 
-        // Capture the kit's stored PB BEFORE recordRun writes this run, so the
-        // solo emit check below compares against the PREVIOUS best (a first-time
-        // kit run must count as a PB, not be compared against its own new value).
         int prevKitPB = kit != null
                 ? plugin.getLeaderboards().getKitPB(plugin.getMode(), pattern, player.getUniqueId(), kit)
                 : 0;
         plugin.getLeaderboards().recordRun(plugin.getMode(), pattern, player.getUniqueId(), curSafe, kit);
 
-        // In solo mode, emit a run record to the crowd-sourced leaderboard ONLY when
-        // this run set a new personal best for (mode, pattern, kit). Repeated attempts
-        // that don't beat the best aren't useful for a leaderboard, so we skip them.
         if (soloMode && runEndRecordedGuard) {
             runEndRecordedGuard = false;
             boolean isPb = kit != null && curSafe > prevKitPB;
@@ -748,15 +691,12 @@ public class GameManager implements Listener {
         player.getInventory().clear();
         player.playSound(player.getLocation(), Sound.WITHER_SPAWN, 0.5f, 1.5f);
 
-        // Hide eliminated player from all living players so they don't block screens
         for (UUID aliveId : alive) {
             Player alivePlayer = Bukkit.getPlayer(aliveId);
             if (alivePlayer != null && alivePlayer.isOnline()) {
                 alivePlayer.hidePlayer(player);
             }
         }
-        
-        // Ensure other spectators can still see them
         for (UUID specId : spectators) {
             Player specPlayer = Bukkit.getPlayer(specId);
             if (specPlayer != null && specPlayer.isOnline()) {
@@ -765,8 +705,6 @@ public class GameManager implements Listener {
             }
         }
 
-        // Put eliminated spectators on the maze centre platform (has a floor) so they
-        // don't fall into the void; they can fly over to watch the remaining survivors.
         if (center != null) player.teleport(center.clone().add(0, 1, 0));
         checkWin();
     }
@@ -775,7 +713,6 @@ public class GameManager implements Listener {
         if (state != GameState.LIVE) return;
         List<Player> remaining = getAlivePlayers();
 
-        // Solo: keep going until the player dies (0 remaining)
         if (soloMode) {
             if (remaining.isEmpty()) {
                 state = GameState.ENDING;
@@ -787,14 +724,11 @@ public class GameManager implements Listener {
             return;
         }
 
-        // Multiplayer: last player standing wins
         if (remaining.size() <= 1) {
             if (remaining.size() == 1) {
                 Player winner = remaining.get(0);
-                
-                // Record winner's PB BEFORE setting state to ENDING
                 recordPB(winner);
-                
+
                 broadcast(ChatColor.GOLD + "" + ChatColor.BOLD + winner.getName()
                         + " wins Monster Maze! (Stage " + curSafe + ")");
                 TextUtil.title(winner, ChatColor.GOLD + "Victory!", ChatColor.YELLOW + "Stage " + curSafe, 10, 60, 10);
@@ -803,8 +737,7 @@ public class GameManager implements Listener {
             } else {
                 broadcast(ChatColor.GOLD + "No winners...");
             }
-            
-            // Transition state after recording
+
             state = GameState.ENDING;
             Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
                 @Override public void run() { forceStop(); }
@@ -818,7 +751,6 @@ public class GameManager implements Listener {
         SafePad target = safePad != null ? safePad : nextSafePad;
         if (target == null) return;
         Location loc = target.getLocation();
-        // PERF: the pad moves once per stage; only resend the compass packet on change.
         if (lastCompassTarget != null
                 && lastCompassTarget.getWorld() == loc.getWorld()
                 && lastCompassTarget.getBlockX() == loc.getBlockX()
@@ -840,7 +772,6 @@ public class GameManager implements Listener {
             pct = (float) Math.min(Math.max(phaseTimer / (double) Math.max(6, 16 - (curSafe - 1)), 0), 0.999);
         }
         int lvl = Math.max(0, phaseTimer);
-        // PERF: values change at 1Hz at most; only send the packets when they actually change.
         if (pct == lastExpPct && lvl == lastLevel) return;
         lastExpPct = pct;
         lastLevel = lvl;
@@ -852,13 +783,11 @@ public class GameManager implements Listener {
 
     private void broadcast(String msg) { Bukkit.broadcastMessage(msg); }
 
-    // -------------------- Events --------------------
-
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         UUID id = player.getUniqueId();
-        
+
         for (Player online : Bukkit.getOnlinePlayers()) {
             online.showPlayer(player);
         }
@@ -914,9 +843,6 @@ public class GameManager implements Listener {
         if (p.getLocation().getY() < center.getY() - 3) {
             eliminate(p, ChatColor.RED + p.getName() + " fell off the maze!");
         }
-        // Pilot check: only award when the player actually lands ON a safe pad after a bump.
-        // (Previously passed "true" unconditionally, so any grounded landing after a mob hit —
-        // even far from a pad — triggered Pilot.)
         if (p.isOnGround()) {
             stats.checkPilotLand(p, isOnAnyPad(p));
         }
