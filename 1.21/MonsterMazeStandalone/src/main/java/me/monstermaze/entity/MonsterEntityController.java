@@ -7,13 +7,14 @@ import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
-import org.bukkit.entity.Slime;
-import org.bukkit.entity.Zombie;
 import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.util.BoundingBox;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Central Monster Maze entity normalisation. */
 public final class MonsterEntityController {
@@ -22,6 +23,8 @@ public final class MonsterEntityController {
     public static final double MOVEMENT_SPEED = 0.2D;
     public static final String MONSTER_METADATA = "monstermaze_mob";
     public static final String MONSTER_SKIN_METADATA = "monstermaze_skin";
+
+    private static final Map<UUID, String> SKINS = new ConcurrentHashMap<UUID, String>();
 
     private static boolean resolved;
     private static Method getHandle;
@@ -48,6 +51,24 @@ public final class MonsterEntityController {
         }
         setMovementSpeed(entity);
         normalizeHitbox(entity);
+    }
+
+    /** Set the client-facing mob appearance while retaining the Snow Golem server entity. */
+    public static void setSkin(LivingEntity entity, String skin) {
+        if (entity == null) return;
+        String value = skin == null || skin.trim().isEmpty() ? "snowman" : skin.trim().toLowerCase(java.util.Locale.ROOT);
+        SKINS.put(entity.getUniqueId(), value);
+        try {
+            entity.setMetadata(MONSTER_SKIN_METADATA, new FixedMetadataValue(MonsterMazePlugin.getInstance(), value));
+        } catch (Throwable ignored) { }
+    }
+
+    public static String getSkin(UUID uuid) {
+        return uuid == null ? null : SKINS.get(uuid);
+    }
+
+    public static void forget(LivingEntity entity) {
+        if (entity != null) SKINS.remove(entity.getUniqueId());
     }
 
     public static void tick(LivingEntity entity) {
