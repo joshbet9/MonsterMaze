@@ -19,7 +19,6 @@ import java.lang.reflect.Method;
 public final class MonsterEntityController {
     public static final double HITBOX_WIDTH = 0.7D;
     public static final double HITBOX_HEIGHT = 1.9D;
-    /** 1.8 EntitySnowman movement attribute. */
     public static final double MOVEMENT_SPEED = 0.2D;
     public static final String MONSTER_METADATA = "monstermaze_mob";
 
@@ -42,10 +41,11 @@ public final class MonsterEntityController {
         entity.setFallDistance(0);
 
         if (entity instanceof Mob) {
+            // AI is disabled, but AWARE stays enabled so externally-controlled movement is not
+            // suppressed by entity implementations such as Villager.
             Mob mob = (Mob) entity;
-            // Renderer entity only: Monster Maze owns all movement and targeting.
             mob.setAI(false);
-            mob.setAware(false);
+            mob.setAware(true);
         }
         if (entity instanceof Zombie) {
             Zombie zombie = (Zombie) entity;
@@ -54,7 +54,6 @@ public final class MonsterEntityController {
             try { zombie.setShouldBurnInDay(false); } catch (Throwable ignored) { }
         }
         if (entity instanceof Slime) ((Slime) entity).setSize(1);
-
         setMovementSpeed(entity);
         normalizeHitbox(entity);
     }
@@ -67,7 +66,7 @@ public final class MonsterEntityController {
         if (entity instanceof Mob) {
             Mob mob = (Mob) entity;
             mob.setAI(false);
-            mob.setAware(false);
+            mob.setAware(true);
         }
         if (entity instanceof Zombie) {
             Zombie zombie = (Zombie) entity;
@@ -93,16 +92,12 @@ public final class MonsterEntityController {
         } catch (Throwable ignored) { }
     }
 
-    /** Force the NMS bounding box to the 1.8 Snowman dimensions. */
     public static void normalizeHitbox(LivingEntity entity) {
         if (entity == null || entity.getWorld() == null) return;
         BoundingBox current = entity.getBoundingBox();
         if (Math.abs(current.getWidthX() - HITBOX_WIDTH) < 0.0001D
                 && Math.abs(current.getWidthZ() - HITBOX_WIDTH) < 0.0001D
-                && Math.abs(current.getHeight() - HITBOX_HEIGHT) < 0.0001D) {
-            return;
-        }
-
+                && Math.abs(current.getHeight() - HITBOX_HEIGHT) < 0.0001D) return;
         resolveReflection();
         if (getHandle == null || aabbConstructor == null || setBoundingBox == null) return;
         try {
