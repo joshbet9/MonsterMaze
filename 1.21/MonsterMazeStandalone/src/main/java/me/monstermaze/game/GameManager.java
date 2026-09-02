@@ -610,7 +610,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
                 it.remove();
                 if (mazeGenerator.getCenterSafeZonePaths().contains(cur)) {
                     // Real path cell: rebuild as the active map's actual maze surface.
-                    me.monstermaze.maze.MazeBlockData theme = mazeGenerator.getTheme();
+                    me.monstermaze.maze.MazeBlockData theme = plugin.getMapManager().activeTheme();
                     floor.setType(theme.top, false);
                     mazeGenerator.enableWaypoint(cur);
                 } else {
