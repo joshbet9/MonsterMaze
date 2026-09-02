@@ -6,7 +6,11 @@ $project = Join-Path $repoRoot '1.21\MonsterMazeStandalone'
 $sourceJar = Join-Path $project 'target\MonsterMazeStandalone.jar'
 $dist = Join-Path $here 'solo-dist'
 $maps = Join-Path $here 'maps'
-$paper = if ($env:MM_PAPER_JAR) { $env:MM_PAPER_JAR } else { Join-Path $here 'tools\paper-1.21.11.jar' }
+$paper = if ($env:MM_PAPER_JAR) { $env:MM_PAPER_JAR } else {
+    $preferredPaper = Join-Path $here 'tools\paper-1.21.11.jar'
+    $genericPaper = Join-Path $here 'tools\paper.jar'
+    if (Test-Path $preferredPaper) { $preferredPaper } elseif (Test-Path $genericPaper) { $genericPaper } else { $preferredPaper }
+}
 $protocol = if ($env:MM_PROTOCOLLIB_JAR) { $env:MM_PROTOCOLLIB_JAR } else { Join-Path $here 'tools\ProtocolLib.jar' }
 
 # Prefer an explicitly supplied JDK, otherwise discover an installed Temurin/OpenJDK 21.
