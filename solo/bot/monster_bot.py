@@ -1,14 +1,18 @@
 """Monster Maze SOLO Discord leaderboard bot.
 
 Keeps Minecraft 1.8 and 1.21 PBs separate, with one leaderboard channel for
-Overall, one for Maze Patterns, and one for Kits per platform.
+Overall, one for Maze Patterns, and one for Kits per platform. Also runs an
+independent weekly competition for each platform.
 """
 
 import asyncio
 import json
 import os
+import random
 import re
 import sqlite3
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import discord
 
@@ -22,6 +26,9 @@ KITS = ["Jumper", "Slowball", "Body Builder", "Repulsor", "Maverick"]
 PATTERNS = 3
 MAX_HTTP_RETRIES = 5
 REFRESH_DELAY = 2.0
+DEFAULT_COMPETITION_CHANNEL = "competitions"
+DEFAULT_COMPETITION_TIMEZONE = "Australia/Brisbane"
+COMPETITION_HISTORY_WINDOW = 8
 
 
 def load_config():
@@ -34,6 +41,23 @@ def db():
     conn.execute("PRAGMA journal_mode=WAL")
     _migrate_runs(conn)
     conn.execute("CREATE TABLE IF NOT EXISTS boards (board_key TEXT PRIMARY KEY, channel_id TEXT, msg_id TEXT)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS competitions (
+            platform TEXT NOT NULL,
+            number INTEGER NOT NULL,
+            week_key TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            pattern INTEGER NOT NULL,
+            kit TEXT NOT NULL,
+            start_ts TEXT NOT NULL,
+            end_ts TEXT NOT NULL,
+            channel_id TEXT,
+            msg_id TEXT,
+            status TEXT NOT NULL,
+            PRIMARY KEY (platform, week_key),
+            UNIQUE (platform, number)
+        )
+    """)
     return conn
 
 
@@ -88,6 +112,13 @@ def kit_board(platform, mode, pattern, kit, top_n):
     return _rows("WHERE platform=? AND mode=? AND pattern=? AND kit=?", [platform, mode, pattern, kit], top_n)
 
 
+def competition_rows(platform, mode, pattern, kit, top_n):
+    conn = db()
+    rows = conn.execute("SELECT name, stage, time_ms FROM runs WHERE platform=? AND mode=? AND pattern=? AND kit=? ORDER BY stage DESC, time_ms ASC, name ASC LIMIT ?", (platform, mode, pattern, kit, top_n)).fetchall()
+    conn.close()
+    return rows
+
+
 def get_board_msg(board_key):
     conn = db()
     row = conn.execute("SELECT channel_id, msg_id FROM boards WHERE board_key=?", (board_key,)).fetchone()
@@ -139,6 +170,119 @@ def parse_embed(embed):
     return {"name": title.split(" - new PB", 1)[0].strip()[:256], "platform": platform, "mode": mode.lower()[:64], "pattern": pattern, "kit": kit[:64], "stage": int(match.group(1)), "time_ms": time_ms, "uuid": uuid_match.group(1).lower()}
 
 
+def _competition_timezone(cfg):
+    name = cfg.get("competition_timezone", DEFAULT_COMPETITION_TIMEZONE)
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        print(f"Invalid competition timezone {name!r}; using {DEFAULT_COMPETITION_TIMEZONE}.")
+        return ZoneInfo(DEFAULT_COMPETITION_TIMEZONE)
+
+
+def _week_window(now, tz):
+    local = now.astimezone(tz)
+    start = (local - timedelta(days=local.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=7)
+    week_key = start.strftime("%G-W%V")
+    return start, end, week_key
+
+
+def _competition_kits(mode):
+    # Original has no QOL kits; all other configured modes allow the full kit pool.
+    return [kit for kit in KITS if not (mode.lower() == "original" and kit == "Maverick")]
+
+
+def _next_competition_number(conn, platform):
+    row = conn.execute("SELECT COALESCE(MAX(number), 0) + 1 FROM competitions WHERE platform=?", (platform,)).fetchone()
+    return int(row[0])
+
+
+def _choose_competition(conn, platform, modes):
+    if not modes:
+        return None
+    recent = conn.execute("SELECT mode, pattern, kit FROM competitions WHERE platform=? ORDER BY number DESC LIMIT ?", (platform, COMPETITION_HISTORY_WINDOW)).fetchall()
+    recent_keys = {(row[0], row[1], row[2]) for row in recent}
+    candidates = [(mode.lower(), pattern, kit) for mode in modes for pattern in range(PATTERNS) for kit in _competition_kits(mode)]
+    if not candidates:
+        return None
+    fresh = [candidate for candidate in candidates if candidate not in recent_keys]
+    return random.SystemRandom().choice(fresh or candidates)
+
+
+def get_current_competition(platform, cfg):
+    tz = _competition_timezone(cfg)
+    now = datetime.now(timezone.utc)
+    start, end, week_key = _week_window(now, tz)
+    conn = db()
+    row = conn.execute("SELECT platform, number, week_key, mode, pattern, kit, start_ts, end_ts, channel_id, msg_id, status FROM competitions WHERE platform=? AND week_key=?", (platform, week_key)).fetchone()
+    conn.close()
+    if row:
+        return dict(zip(("platform", "number", "week_key", "mode", "pattern", "kit", "start_ts", "end_ts", "channel_id", "msg_id", "status"), row))
+    return None
+
+
+def create_competition(platform, cfg):
+    tz = _competition_timezone(cfg)
+    now = datetime.now(timezone.utc)
+    start, end, week_key = _week_window(now, tz)
+    modes = list(cfg.get("platform_modes", {}).get(platform, cfg.get("modes", [])))
+    conn = db()
+    existing = conn.execute("SELECT platform, number, week_key, mode, pattern, kit, start_ts, end_ts, channel_id, msg_id, status FROM competitions WHERE platform=? AND week_key=?", (platform, week_key)).fetchone()
+    if existing:
+        conn.close()
+        return dict(zip(("platform", "number", "week_key", "mode", "pattern", "kit", "start_ts", "end_ts", "channel_id", "msg_id", "status"), existing))
+    chosen = _choose_competition(conn, platform, modes)
+    if chosen is None:
+        conn.close()
+        return None
+    mode, pattern, kit = chosen
+    number = _next_competition_number(conn, platform)
+    conn.execute("INSERT INTO competitions (platform, number, week_key, mode, pattern, kit, start_ts, end_ts, channel_id, msg_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'current')", (platform, number, week_key, mode, pattern, kit, start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()))
+    conn.commit()
+    conn.close()
+    return {"platform": platform, "number": number, "week_key": week_key, "mode": mode, "pattern": pattern, "kit": kit, "start_ts": start.astimezone(timezone.utc).isoformat(), "end_ts": end.astimezone(timezone.utc).isoformat(), "channel_id": None, "msg_id": None, "status": "current"}
+
+
+def set_competition_message(platform, week_key, channel_id, msg_id):
+    conn = db()
+    conn.execute("UPDATE competitions SET channel_id=?, msg_id=? WHERE platform=? AND week_key=?", (str(channel_id), str(msg_id), platform, week_key))
+    conn.commit()
+    conn.close()
+
+
+def mark_competition_archived(platform, week_key):
+    conn = db()
+    conn.execute("UPDATE competitions SET status='archived' WHERE platform=? AND week_key=?", (platform, week_key))
+    conn.commit()
+    conn.close()
+
+
+def competition_embed(bot, competition, archived=False):
+    platform = competition["platform"]
+    pattern = competition["pattern"]
+    title_prefix = "ARCHIVED" if archived else "CURRENT"
+    embed = discord.Embed(title=f"{title_prefix} COMPETITION — {PLATFORM_LABELS[platform]}", color=0xF1C40F)
+    embed.add_field(name="Challenge", value=f"**{competition['mode'].capitalize()}**\nMaze Pattern **{pattern + 1}**\nKit **{competition['kit']}**", inline=False)
+    if archived:
+        end_dt = datetime.fromisoformat(competition["end_ts"]).astimezone(bot.competition_tz)
+        embed.add_field(name="Competition", value=f"#{competition['number']:03d} • {competition['week_key']}\nEnded {discord.utils.format_dt(end_dt, 'F')}", inline=False)
+    else:
+        end_dt = datetime.fromisoformat(competition["end_ts"]).astimezone(bot.competition_tz)
+        embed.add_field(name="Competition", value=f"#{competition['number']:03d} • {competition['week_key']}\nEnds {discord.utils.format_dt(end_dt, 'R')} ({discord.utils.format_dt(end_dt, 'F')})", inline=False)
+    rows = competition_rows(platform, competition["mode"], pattern, competition["kit"], bot.top_n)
+    if rows:
+        lines = []
+        for i, (name, stage, time_ms) in enumerate(rows, 1):
+            medal = {1: ":first_place:", 2: ":second_place:", 3: ":third_place:"}.get(i, f"{i}.")
+            minutes, seconds = divmod(max(0, time_ms) // 1000, 60)
+            lines.append(f"{medal} **{name}** — stage {stage} ({minutes}m {seconds}s)")
+        embed.add_field(name="Standings", value="\n".join(lines), inline=False)
+    else:
+        embed.add_field(name="Standings", value="No qualifying runs yet.", inline=False)
+    embed.set_footer(text="Scores are taken from the verified SOLO leaderboard feed.")
+    return embed
+
+
 class MonsterBot(discord.Client):
     def __init__(self, cfg):
         intents = discord.Intents.default()
@@ -151,6 +295,9 @@ class MonsterBot(discord.Client):
         self.refresh_tasks = {}
         self.rebuild_lock = asyncio.Lock()
         self.ready_once = False
+        self.competition_tz = _competition_timezone(cfg)
+        self.competition_task = None
+        self.competition_refresh_task = None
 
     def resolve_channel(self, ref):
         if ref is None or ref == "":
@@ -171,6 +318,10 @@ class MonsterBot(discord.Client):
     def leaderboard_channels(self, platform):
         return self.cfg.get("channels", {}).get(platform, {})
 
+    def competition_channel(self):
+        ref = self.cfg.get("competition_channel", DEFAULT_COMPETITION_CHANNEL)
+        return self.resolve_channel(ref)
+
     def schedule_refresh(self, platform, mode):
         key = (platform, mode)
         if key not in self.refresh_tasks or self.refresh_tasks[key].done():
@@ -180,6 +331,7 @@ class MonsterBot(discord.Client):
         await asyncio.sleep(REFRESH_DELAY)
         try:
             await self.refresh_platform(platform)
+            await self.refresh_competitions()
         except Exception as exc:
             print(f"live board refresh failed for {platform}: {exc!r}")
 
@@ -213,6 +365,7 @@ class MonsterBot(discord.Client):
             print(f"rescanned {seen} PB submissions ({accepted} database updates)")
             for platform in PLATFORMS:
                 await self.refresh_platform(platform)
+            await self.refresh_competitions()
 
     async def on_ready(self):
         print(f"Logged in as {self.user} (id {self.user.id})")
@@ -222,7 +375,8 @@ class MonsterBot(discord.Client):
         self.ready_once = True
         try:
             await self.rebuild_all()
-            print("Ready. Standings up to date.")
+            self.competition_task = asyncio.create_task(self.competition_scheduler())
+            print("Ready. Standings and weekly competitions up to date.")
         except Exception as exc:
             print(f"initial rebuild failed: {exc!r}")
 
@@ -238,6 +392,12 @@ class MonsterBot(discord.Client):
                 print(f"manual rebuild failed: {exc!r}")
                 await message.channel.send(f"Rebuild failed: `{str(exc)[:1800]}`")
             return
+        if message.content.strip().lower() == "!competition":
+            await self.refresh_competitions()
+            channel = self.competition_channel()
+            if channel:
+                await message.channel.send("Weekly competitions refreshed.")
+            return
         feed_refs = {str(ref) for ref in self.cfg.get("feed_channels", [])}
         if str(message.channel.id) not in feed_refs and message.channel.name not in feed_refs:
             return
@@ -245,6 +405,87 @@ class MonsterBot(discord.Client):
             run = parse_embed(embed)
             if run and upsert_run(run):
                 self.schedule_refresh(run["platform"], run["mode"])
+
+    async def competition_scheduler(self):
+        while True:
+            try:
+                await self.refresh_competitions()
+                now = datetime.now(timezone.utc).astimezone(self.competition_tz)
+                next_week = (now - timedelta(days=now.weekday()) + timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+                delay = max(30.0, (next_week - now).total_seconds() + 2.0)
+                await asyncio.sleep(delay)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                print(f"competition scheduler failed: {exc!r}")
+                await asyncio.sleep(60.0)
+
+    async def refresh_competitions(self):
+        channel = self.competition_channel()
+        if channel is None:
+            print(f"competition channel not found (ref {self.cfg.get('competition_channel', DEFAULT_COMPETITION_CHANNEL)})")
+            return
+        for platform in PLATFORMS:
+            competition = create_competition(platform, self.cfg)
+            if competition is None:
+                print(f"No valid competition candidates for {platform}")
+                continue
+            await self._ensure_current_competition_message(channel, competition)
+        await self._refresh_competition_message_standings(channel)
+
+    async def _ensure_current_competition_message(self, channel, competition):
+        message = None
+        if competition.get("msg_id"):
+            try:
+                message = await self.discord_call(lambda: channel.fetch_message(int(competition["msg_id"])), f"fetch competition {competition['platform']}")
+            except discord.NotFound:
+                message = None
+            except discord.HTTPException as exc:
+                print(f"failed to fetch current competition {competition['platform']}: {exc}")
+                return
+        embed = competition_embed(self, competition, archived=False)
+        if message is not None:
+            try:
+                await self.discord_call(lambda: message.edit(embed=embed), f"edit competition {competition['platform']}")
+                return
+            except discord.NotFound:
+                pass
+            except discord.HTTPException as exc:
+                print(f"failed to edit current competition {competition['platform']}: {exc}")
+                return
+        try:
+            new_message = await self.discord_call(lambda: channel.send(embed=embed), f"post competition {competition['platform']}")
+            try:
+                await self.discord_call(lambda: new_message.pin(), f"pin competition {competition['platform']}")
+            except discord.HTTPException as exc:
+                print(f"failed to pin current competition {competition['platform']}: {exc}")
+            set_competition_message(competition["platform"], competition["week_key"], channel.id, new_message.id)
+            print(f"posted+pinned current competition {competition['platform']} #{competition['number']:03d}")
+        except discord.HTTPException as exc:
+            print(f"failed to post current competition {competition['platform']}: {exc}")
+
+    async def _refresh_competition_message_standings(self, channel):
+        conn = db()
+        rows = conn.execute("SELECT platform, number, week_key, mode, pattern, kit, start_ts, end_ts, channel_id, msg_id, status FROM competitions ORDER BY number DESC").fetchall()
+        conn.close()
+        for row in rows:
+            competition = dict(zip(("platform", "number", "week_key", "mode", "pattern", "kit", "start_ts", "end_ts", "channel_id", "msg_id", "status"), row))
+            if not competition.get("msg_id"):
+                continue
+            try:
+                message = await self.discord_call(lambda: channel.fetch_message(int(competition["msg_id"])), f"fetch competition archive {competition['platform']} #{competition['number']}")
+            except (discord.NotFound, discord.HTTPException):
+                continue
+            archived = competition["status"] == "archived"
+            if not archived:
+                end = datetime.fromisoformat(competition["end_ts"])
+                if datetime.now(timezone.utc) >= end:
+                    archived = True
+                    mark_competition_archived(competition["platform"], competition["week_key"])
+            try:
+                await self.discord_call(lambda: message.edit(embed=competition_embed(self, competition, archived=archived)), f"refresh competition {competition['platform']} #{competition['number']}")
+            except discord.HTTPException as exc:
+                print(f"failed to refresh competition {competition['platform']} #{competition['number']}: {exc}")
 
     def _lines(self, rows):
         lines = []
