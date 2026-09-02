@@ -7,7 +7,6 @@ import me.monstermaze.event.MonsterBumpPlayerEvent;
 import me.monstermaze.game.GameState;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.game.SafePad;
-import me.monstermaze.kit.KitType;
 import me.monstermaze.maze.MazeGenerator;
 import me.monstermaze.util.UtilAction;
 import me.monstermaze.util.UtilEnt;
@@ -31,32 +30,28 @@ import java.util.Random;
 import java.util.UUID;
 
 /**
- * Monster movement/bump matching original Maze.java:
- * - getTarget() walks a cardinal line to the next intersection
- * - no U-turn when alternatives exist
- * - CreatureMoveFast-style slide at 1.4 speed
- * - bump: range < 1, knockback trajectory str 1 / y 0.75 / maxY 1.2, 4 dmg, 1s CD
+ * Monster movement/bump matching original Maze.java.
+ *
+ * TEST ONLY: broad TPS isolation. Monster Maze still spawns and tracks its mobs,
+ * but all MonsterManager per-tick LIVE processing is disabled. The mobs remain
+ * real NMS entities in the world, so their own vanilla/NMS entity ticking remains.
  */
 public class MonsterManager {
+
+    private static final boolean BROAD_TPS_ISOLATION_TEST = true;
 
     private final MonsterMazePlugin plugin;
     private final GameManager game;
     private MazeGenerator maze;
-
     private String mobType = "snowman";
-
     private final Map<LivingEntity, MazeMobWaypoint> ents = new HashMap<LivingEntity, MazeMobWaypoint>();
     private final Map<UUID, Long> bumpCooldown = new HashMap<UUID, Long>();
     private final Random random = new Random();
     private BukkitTask tickTask;
     private BukkitTask spawnTask;
-
     private final Map<LivingEntity, Long> launched = new HashMap<LivingEntity, Long>();
     private final Map<LivingEntity, Long> frozen = new HashMap<LivingEntity, Long>();
-
     private float speedMultiplier = 1.0f;
-
-    /** TEST: navigation decisions run at 10Hz while actual movement remains 20Hz. */
     private int navigationTick;
 
     public MonsterManager(MonsterMazePlugin plugin, GameManager game) {
@@ -64,15 +59,12 @@ public class MonsterManager {
         this.game = game;
     }
 
-    public void setSpeedMultiplier(float multiplier) {
-        this.speedMultiplier = multiplier;
-    }
+    public void setSpeedMultiplier(float multiplier) { this.speedMultiplier = multiplier; }
 
     public void setMobType(String type) {
         this.mobType = type != null && !type.isEmpty() ? type : "snowman";
         if (!"snowman".equalsIgnoreCase(this.mobType)) {
-            plugin.getLogger().warning("[MonsterMaze] Map mob '" + this.mobType
-                    + "' is not implemented yet; using ghost snowman for now.");
+            plugin.getLogger().warning("[MonsterMaze] Map mob '" + this.mobType + "' is not implemented yet; using ghost snowman for now.");
         }
     }
 
@@ -80,14 +72,11 @@ public class MonsterManager {
         clear();
         this.maze = maze;
         navigationTick = 0;
-        int starter = game.getMode() == MazeMode.MODERN ? 225
-                : game.getMode() == MazeMode.LAGLESS ? 500
-                : 150;
+        int starter = game.getMode() == MazeMode.MODERN ? 225 : game.getMode() == MazeMode.LAGLESS ? 500 : 150;
 
         final int[] spawned = {0};
         spawnTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
-            @Override
-            public void run() {
+            @Override public void run() {
                 if (game.getState() != GameState.STARTING && game.getState() != GameState.LIVE) {
                     if (spawnTask != null) spawnTask.cancel();
                     return;
@@ -101,9 +90,9 @@ public class MonsterManager {
         }, 1L, 1L);
 
         tickTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
-            @Override
-            public void run() {
+            @Override public void run() {
                 if (!game.isLive()) return;
+                if (BROAD_TPS_ISOLATION_TEST) return;
                 move();
                 bump();
                 tickLaunched();
@@ -113,14 +102,8 @@ public class MonsterManager {
     }
 
     public void stop() {
-        if (tickTask != null) {
-            tickTask.cancel();
-            tickTask = null;
-        }
-        if (spawnTask != null) {
-            spawnTask.cancel();
-            spawnTask = null;
-        }
+        if (tickTask != null) { tickTask.cancel(); tickTask = null; }
+        if (spawnTask != null) { spawnTask.cancel(); spawnTask = null; }
         clear();
         maze = null;
     }
@@ -147,9 +130,7 @@ public class MonsterManager {
         Location center = maze.getCenter();
         List<Location> paths = maze.getPathPoints();
         if (paths.isEmpty()) return 0;
-
-        int spawned = 0;
-        int guard = 0;
+        int spawned = 0, guard = 0;
         while (spawned < count && guard++ < count * 5) {
             Location loc = paths.get(random.nextInt(paths.size())).clone();
             if (loc.distanceSquared(center) < 7.5 * 7.5) continue;
@@ -172,12 +153,10 @@ public class MonsterManager {
     }
 
     public void spawnMore(int count) {
-        if (maze == null) return;
-        if (game.getMode() == MazeMode.LAGLESS) return;
+        if (maze == null || game.getMode() == MazeMode.LAGLESS) return;
         List<Location> spawns = maze.getSpawnPoints();
         List<Location> pool = spawns.isEmpty() ? maze.getPathPoints() : spawns;
         if (pool.isEmpty()) return;
-
         for (int i = 0; i < count; i++) {
             Location loc = pool.get(random.nextInt(pool.size())).clone();
             Snowman ent = UtilEnt.spawnGhostSnowman(loc);
@@ -191,8 +170,7 @@ public class MonsterManager {
         }
     }
 
-    public void increaseDifficulty() {
-    }
+    public void increaseDifficulty() { }
 
     public void removeMonstersOn(SafePad pad) {
         if (pad == null) return;
@@ -211,151 +189,93 @@ public class MonsterManager {
 
     private void move() {
         if (maze == null) return;
-
-        // Actual movement stays at 20Hz. Only the expensive waypoint/navigation decision
-        // is throttled to 10Hz. This should preserve smooth movement while reducing the
-        // repeated maze block/path queries performed for every monster.
         navigationTick++;
         boolean recalculateNavigation = (navigationTick & 1) == 1;
-
         Iterator<Entry<LivingEntity, MazeMobWaypoint>> it = ents.entrySet().iterator();
         while (it.hasNext()) {
             Entry<LivingEntity, MazeMobWaypoint> data = it.next();
             LivingEntity ent = data.getKey();
             MazeMobWaypoint wp = data.getValue();
-
-            if (ent == null || !ent.isValid() || ent.isDead()) {
-                it.remove();
-                continue;
-            }
-
-            if (launched.containsKey(ent)) continue;
-            if (frozen.containsKey(ent)) continue;
-
+            if (ent == null || !ent.isValid() || ent.isDead()) { it.remove(); continue; }
+            if (launched.containsKey(ent) || frozen.containsKey(ent)) continue;
             if (wp.Target == null || ent.getLocation().getY() < wp.Target.getBlockY()) {
                 Location loc = maze.getClosestPath(ent.getLocation());
                 ent.teleport(loc);
                 wp.Target = loc;
             }
-
             if (recalculateNavigation && offset2d(ent.getLocation(), wp.Target) < 0.4) {
                 ArrayList<Block> nextBlock = new ArrayList<Block>();
-
                 Block north = getTarget(ent.getLocation().getBlock(), null, BlockFace.NORTH);
                 Block south = getTarget(ent.getLocation().getBlock(), null, BlockFace.SOUTH);
                 Block east = getTarget(ent.getLocation().getBlock(), null, BlockFace.EAST);
                 Block west = getTarget(ent.getLocation().getBlock(), null, BlockFace.WEST);
-
                 if (north != null) nextBlock.add(north);
                 if (south != null) nextBlock.add(south);
                 if (east != null) nextBlock.add(east);
                 if (west != null) nextBlock.add(west);
-
-                if (nextBlock.isEmpty()) {
-                    it.remove();
-                    ent.remove();
-                    continue;
-                }
-
+                if (nextBlock.isEmpty()) { it.remove(); ent.remove(); continue; }
                 if (nextBlock.size() > 1 && wp.Direction != CardinalDirection.NULL) {
                     if (wp.Direction == CardinalDirection.NORTH) nextBlock.remove(south);
                     else if (wp.Direction == CardinalDirection.SOUTH) nextBlock.remove(north);
                     else if (wp.Direction == CardinalDirection.WEST) nextBlock.remove(east);
                     else if (wp.Direction == CardinalDirection.EAST) nextBlock.remove(west);
                 }
-
-                if (nextBlock.isEmpty()) {
-                    it.remove();
-                    ent.remove();
-                    continue;
-                }
-
+                if (nextBlock.isEmpty()) { it.remove(); ent.remove(); continue; }
                 Block chosen = nextBlock.get(random.nextInt(nextBlock.size()));
                 Location nextLoc = chosen.getLocation();
                 wp.Target = nextLoc.clone().add(0.5, 0, 0.5);
-
                 if (north != null && nextLoc.equals(north.getLocation())) wp.Direction = CardinalDirection.NORTH;
                 else if (south != null && nextLoc.equals(south.getLocation())) wp.Direction = CardinalDirection.SOUTH;
                 else if (east != null && nextLoc.equals(east.getLocation())) wp.Direction = CardinalDirection.EAST;
                 else if (west != null && nextLoc.equals(west.getLocation())) wp.Direction = CardinalDirection.WEST;
             }
-
             UtilEnt.CreatureMoveFast(ent, wp.Target, 1.4f * speedMultiplier);
         }
     }
 
     private Block getTarget(Block start, Block cur, BlockFace face) {
         if (cur == null) cur = start;
-
         while (isWaypoint(cur.getRelative(face)) && !isDisabledWaypoint(cur.getRelative(face))) {
             cur = cur.getRelative(face);
-
             int count = 0;
-            if (face != BlockFace.NORTH && isWaypoint(cur.getRelative(BlockFace.NORTH))
-                    && !isDisabledWaypoint(cur.getRelative(BlockFace.NORTH))) count++;
-            if (face != BlockFace.SOUTH && isWaypoint(cur.getRelative(BlockFace.SOUTH))
-                    && !isDisabledWaypoint(cur.getRelative(BlockFace.SOUTH))) count++;
-            if (face != BlockFace.EAST && isWaypoint(cur.getRelative(BlockFace.EAST))
-                    && !isDisabledWaypoint(cur.getRelative(BlockFace.EAST))) count++;
-            if (face != BlockFace.WEST && isWaypoint(cur.getRelative(BlockFace.WEST))
-                    && !isDisabledWaypoint(cur.getRelative(BlockFace.WEST))) count++;
+            if (face != BlockFace.NORTH && isWaypoint(cur.getRelative(BlockFace.NORTH)) && !isDisabledWaypoint(cur.getRelative(BlockFace.NORTH))) count++;
+            if (face != BlockFace.SOUTH && isWaypoint(cur.getRelative(BlockFace.SOUTH)) && !isDisabledWaypoint(cur.getRelative(BlockFace.SOUTH))) count++;
+            if (face != BlockFace.EAST && isWaypoint(cur.getRelative(BlockFace.EAST)) && !isDisabledWaypoint(cur.getRelative(BlockFace.EAST))) count++;
+            if (face != BlockFace.WEST && isWaypoint(cur.getRelative(BlockFace.WEST)) && !isDisabledWaypoint(cur.getRelative(BlockFace.WEST))) count++;
+            if (count > 1) break;
         }
-
         if (cur.equals(start)) return null;
         return cur;
     }
 
-    private boolean isWaypoint(Block b) {
-        return maze != null && maze.isPathRaw(b.getLocation());
-    }
+    private boolean isWaypoint(Block b) { return maze != null && maze.isPathRaw(b.getLocation()); }
 
-    private boolean isDisabledWaypoint(Block b) {
-        if (maze == null) return false;
-        return !maze.isPath(b.getLocation()) && maze.isPathRaw(b.getLocation());
-    }
+    private boolean isDisabledWaypoint(Block b) { return maze != null && !maze.isPath(b.getLocation()) && maze.isPathRaw(b.getLocation()); }
 
     private void bump() {
         List<Player> players = game.getAlivePlayers();
         if (players.isEmpty()) return;
-
         int m = ents.size();
         if (m == 0) return;
         LivingEntity[] mobs = new LivingEntity[m];
-        double[] mx = new double[m];
-        double[] my = new double[m];
-        double[] mz = new double[m];
+        double[] mx = new double[m], my = new double[m], mz = new double[m];
         int count = 0;
         for (LivingEntity ent : ents.keySet()) {
             if (ent == null || !ent.isValid() || launched.containsKey(ent)) continue;
             Location loc = ent.getLocation();
-            mobs[count] = ent;
-            mx[count] = loc.getX();
-            my[count] = loc.getY();
-            mz[count] = loc.getZ();
-            count++;
+            mobs[count] = ent; mx[count] = loc.getX(); my[count] = loc.getY(); mz[count] = loc.getZ(); count++;
         }
-
         for (Player player : players) {
-            if (!canBump(player)) continue;
-            if (game.isOnAnyPad(player)) continue;
-
+            if (!canBump(player) || game.isOnAnyPad(player)) continue;
             Location pl = player.getLocation();
-            double px = pl.getX();
-            double py = pl.getY();
-            double pz = pl.getZ();
-
+            double px = pl.getX(), py = pl.getY(), pz = pl.getZ();
             for (int i = 0; i < count; i++) {
-                double dx = px - mx[i];
-                double dz = pz - mz[i];
+                double dx = px - mx[i], dz = pz - mz[i];
                 if (dx * dx + dz * dz >= 1.0) continue;
-
                 double dy = py - my[i];
-                double distSq = dx * dx + dy * dy + dz * dz;
-                if (distSq >= 1.0) continue;
-
+                if (dx * dx + dy * dy + dz * dz >= 1.0) continue;
                 LivingEntity ent = mobs[i];
                 markBump(player);
-
                 me.monstermaze.kit.KitManager km = game.getKitManager();
                 if (km != null && km.isBodyRushActive(player)) {
                     Vector away = ent.getLocation().toVector().subtract(player.getLocation().toVector());
@@ -368,7 +288,6 @@ public class MonsterManager {
                     Bukkit.getPluginManager().callEvent(new MonsterBumpPlayerEvent(player));
                     break;
                 }
-
                 Location el = ent.getLocation();
                 Vector away = pl.toVector().subtract(el.toVector());
                 away.setY(0);
@@ -388,9 +307,7 @@ public class MonsterManager {
         launched.put(ent, System.currentTimeMillis());
     }
 
-    public Iterable<LivingEntity> getMonsters() {
-        return ents.keySet();
-    }
+    public Iterable<LivingEntity> getMonsters() { return ents.keySet(); }
 
     public void freeze(LivingEntity ent, long thawAt) {
         if (!ents.containsKey(ent)) return;
@@ -405,10 +322,7 @@ public class MonsterManager {
         while (it.hasNext()) {
             Entry<LivingEntity, Long> e = it.next();
             LivingEntity ent = e.getKey();
-            if (ent == null || !ent.isValid() || ent.isDead()) {
-                it.remove();
-                continue;
-            }
+            if (ent == null || !ent.isValid() || ent.isDead()) { it.remove(); continue; }
             if (now >= e.getValue() || ent.isOnGround()) {
                 it.remove();
                 ent.setVelocity(new Vector(0, 0, 0));
@@ -423,10 +337,7 @@ public class MonsterManager {
         while (it.hasNext()) {
             Entry<LivingEntity, Long> e = it.next();
             LivingEntity ent = e.getKey();
-            if (ent == null || !ent.isValid() || ent.isDead()) {
-                it.remove();
-                continue;
-            }
+            if (ent == null || !ent.isValid() || ent.isDead()) { it.remove(); continue; }
             if (now >= e.getValue()) it.remove();
         }
     }
@@ -436,16 +347,10 @@ public class MonsterManager {
         return last == null || System.currentTimeMillis() - last >= 1000L;
     }
 
-    private void markBump(Player p) {
-        bumpCooldown.put(p.getUniqueId(), System.currentTimeMillis());
-    }
-
+    private void markBump(Player p) { bumpCooldown.put(p.getUniqueId(), System.currentTimeMillis()); }
 
     private double offset2d(Location a, Location b) {
-        double dx = a.getX() - b.getX();
-        double dz = a.getZ() - b.getZ();
+        double dx = a.getX() - b.getX(), dz = a.getZ() - b.getZ();
         return Math.sqrt(dx * dx + dz * dz);
     }
 }
-
-// Main branch canonical refresh: Test 1 navigation throttling; public launch API retained.
