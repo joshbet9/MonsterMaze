@@ -15,9 +15,7 @@ import java.lang.reflect.Method;
 
 /** Central Monster Maze entity normalisation. */
 public final class MonsterEntityController {
-    /** 1.8 EntitySnowman gameplay width. */
     public static final double HITBOX_WIDTH = 0.7D;
-    /** 1.8 EntitySnowman gameplay height. */
     public static final double HITBOX_HEIGHT = 1.9D;
     /** 1.8 EntitySnowman movement attribute. */
     public static final double MOVEMENT_SPEED = 0.2D;
@@ -44,14 +42,12 @@ public final class MonsterEntityController {
             mob.setAI(true);
             mob.setAware(true);
         }
-
         if (entity instanceof Zombie) {
             Zombie zombie = (Zombie) entity;
             zombie.setAdult();
             zombie.setConversionTime(-1);
             try { zombie.setShouldBurnInDay(false); } catch (Throwable ignored) { }
         }
-
         if (entity instanceof Slime) ((Slime) entity).setSize(1);
 
         setMovementSpeed(entity);
@@ -74,14 +70,23 @@ public final class MonsterEntityController {
     private static void setMovementSpeed(LivingEntity entity) {
         try {
             AttributeInstance movement = entity.getAttribute(Attribute.MOVEMENT_SPEED);
-            if (movement != null) movement.setBaseValue(MOVEMENT_SPEED);
+            if (movement != null && Math.abs(movement.getBaseValue() - MOVEMENT_SPEED) > 0.000001D) {
+                movement.setBaseValue(MOVEMENT_SPEED);
+            }
         } catch (Throwable ignored) { }
     }
 
     /** Force the NMS bounding box to the 1.8 Snowman dimensions. */
     public static void normalizeHitbox(LivingEntity entity) {
         if (entity == null || entity.getWorld() == null) return;
-        resolveReflection(entity);
+        BoundingBox current = entity.getBoundingBox();
+        if (Math.abs(current.getWidthX() - HITBOX_WIDTH) < 0.0001D
+                && Math.abs(current.getWidthZ() - HITBOX_WIDTH) < 0.0001D
+                && Math.abs(current.getHeight() - HITBOX_HEIGHT) < 0.0001D) {
+            return;
+        }
+
+        resolveReflection();
         if (getHandle == null || aabbConstructor == null || setBoundingBox == null) return;
         try {
             Object handle = getHandle.invoke(entity);
@@ -93,7 +98,7 @@ public final class MonsterEntityController {
         } catch (Throwable ignored) { }
     }
 
-    private static void resolveReflection(LivingEntity entity) {
+    private static void resolveReflection() {
         if (resolved) return;
         resolved = true;
         try {
