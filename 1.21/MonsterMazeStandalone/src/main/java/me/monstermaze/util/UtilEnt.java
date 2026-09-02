@@ -15,6 +15,17 @@ import org.bukkit.util.Vector;
 public final class UtilEnt {
     private UtilEnt() {}
 
+    /**
+     * Entity spawning sends the client spawn packet before spawnEntity returns, so the normal
+     * UUID->skin map is populated one instruction too late for that first packet. The spawn
+     * packet listener reads this main-thread handoff while the spawn call is in progress.
+     */
+    private static final ThreadLocal<String> PENDING_SPAWN_SKIN = new ThreadLocal<String>();
+
+    public static String getPendingSpawnSkin() {
+        return PENDING_SPAWN_SKIN.get();
+    }
+
     public static boolean CreatureMoveFast(Entity ent, Location target, float speed) {
         return CreatureMoveFast(ent, target, speed, true);
     }
@@ -82,6 +93,8 @@ public final class UtilEnt {
     /** Every Monster Maze mob is physically a Snow Golem; mobType is client-facing only. */
     public static LivingEntity spawnGhostMob(Location loc, String mobType) {
         if (loc == null || loc.getWorld() == null) return null;
+        String skin = normalizeSkin(mobType);
+        PENDING_SPAWN_SKIN.set(skin);
         try {
             Entity entity = loc.getWorld().spawnEntity(loc, EntityType.SNOW_GOLEM, CreatureSpawnEvent.SpawnReason.CUSTOM);
             if (!(entity instanceof LivingEntity)) {
@@ -89,13 +102,15 @@ public final class UtilEnt {
                 return null;
             }
             LivingEntity living = (LivingEntity) entity;
-            MonsterEntityController.setSkin(living, normalizeSkin(mobType));
+            MonsterEntityController.setSkin(living, skin);
             vegetate(living);
             MonsterEntityController.configure(living);
             return living;
         } catch (Throwable t) {
             Bukkit.getLogger().warning("[MonsterMaze] spawnGhostMob '" + mobType + "' failed: " + t);
             return null;
+        } finally {
+            PENDING_SPAWN_SKIN.remove();
         }
     }
 
