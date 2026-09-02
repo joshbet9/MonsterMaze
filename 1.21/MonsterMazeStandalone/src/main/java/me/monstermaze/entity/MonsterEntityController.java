@@ -1,5 +1,6 @@
 package me.monstermaze.entity;
 
+import me.monstermaze.MonsterMazePlugin;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.attribute.Attribute;
@@ -8,6 +9,7 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Slime;
 import org.bukkit.entity.Zombie;
+import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.util.BoundingBox;
 
 import java.lang.reflect.Constructor;
@@ -19,6 +21,7 @@ public final class MonsterEntityController {
     public static final double HITBOX_HEIGHT = 1.9D;
     /** 1.8 EntitySnowman movement attribute. */
     public static final double MOVEMENT_SPEED = 0.2D;
+    public static final String MONSTER_METADATA = "monstermaze_mob";
 
     private static boolean resolved;
     private static Method getHandle;
@@ -29,6 +32,7 @@ public final class MonsterEntityController {
 
     public static void configure(LivingEntity entity) {
         if (entity == null) return;
+        tag(entity);
         entity.setRemoveWhenFarAway(false);
         entity.setCanPickupItems(false);
         entity.setCollidable(false);
@@ -56,6 +60,7 @@ public final class MonsterEntityController {
 
     public static void tick(LivingEntity entity) {
         if (entity == null || !entity.isValid()) return;
+        tag(entity);
         entity.setFireTicks(0);
         entity.setVisualFire(false);
         if (entity instanceof Zombie) {
@@ -65,6 +70,12 @@ public final class MonsterEntityController {
         }
         setMovementSpeed(entity);
         normalizeHitbox(entity);
+    }
+
+    private static void tag(LivingEntity entity) {
+        try {
+            entity.setMetadata(MONSTER_METADATA, new FixedMetadataValue(MonsterMazePlugin.getInstance(), true));
+        } catch (Throwable ignored) { }
     }
 
     private static void setMovementSpeed(LivingEntity entity) {
