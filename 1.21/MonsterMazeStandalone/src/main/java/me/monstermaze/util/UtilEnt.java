@@ -75,8 +75,12 @@ public final class UtilEnt {
             Mob mob = (Mob) ent;
             try { Bukkit.getMobGoals().removeAllGoals(mob); }
             catch (Throwable t) { Bukkit.getLogger().warning("[MonsterMaze] Failed to remove vanilla mob goals: " + t); }
-            mob.setAI(false);
-            mob.setAware(true);
+            // Do not disable AI here. The 1.8 implementation removed the vanilla goals but
+            // deliberately left the entity's movement/physics system alive. On Paper 1.21,
+            // setAI(false) makes the mob completely unable to move, including externally-applied
+            // Repulsor velocity. MonsterEntityController therefore keeps AI enabled and disables
+            // awareness after goal removal, while setCollidable(false) provides the 1.8 ghost
+            // collision behaviour.
         }
     }
 
