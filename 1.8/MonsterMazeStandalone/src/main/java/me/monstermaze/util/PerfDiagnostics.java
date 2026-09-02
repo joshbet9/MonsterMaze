@@ -5,6 +5,8 @@ import me.monstermaze.game.GameManager;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.lang.reflect.Field;
@@ -17,6 +19,8 @@ import java.util.Locale;
  * without adding per-tick logging noise during normal operation.
  */
 public final class PerfDiagnostics {
+    private static final boolean STRIP_KIT_ITEM_META_TEST = true;
+
     private final MonsterMazePlugin plugin;
     private final GameManager game;
     private BukkitTask heartbeatTask;
@@ -35,6 +39,7 @@ public final class PerfDiagnostics {
     private int lastLoggedPhaseTimer = Integer.MIN_VALUE;
     private final SimpleDateFormat clockFormat = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
     private Field phaseTimerField;
+    private boolean kitMetaStrippedThisLive;
 
     private String lastStack = "";
     private long stackSinceNs;
@@ -78,6 +83,8 @@ public final class PerfDiagnostics {
                         liveHeartbeatStart = heartbeatCount;
                         liveElapsedLogSecond = -1L;
                         lastLoggedPhaseTimer = Integer.MIN_VALUE;
+                        kitMetaStrippedThisLive = false;
+                        if (STRIP_KIT_ITEM_META_TEST) stripKitItemMeta();
                         plugin.getLogger().info(String.format(Locale.US,
                                 "[PERF][LIVE-START] real=%s stopwatchElapsed=0.000s serverTick=0 phaseTimer=%d",
                                 wallClock(), getPhaseTimer()));
@@ -108,6 +115,7 @@ public final class PerfDiagnostics {
                     liveHeartbeatStart = -1L;
                     liveElapsedLogSecond = -1L;
                     lastLoggedPhaseTimer = Integer.MIN_VALUE;
+                    kitMetaStrippedThisLive = false;
                 }
             }
         }, 1L, 1L);
@@ -132,6 +140,22 @@ public final class PerfDiagnostics {
         plugin.getLogger().info(String.format(Locale.US,
                 "[PERF] Diagnostics stopped. heartbeats=%d maxGap=%.1fms slowTicks=%d",
                 heartbeatCount, maxGapNs / 1_000_000.0, slowTicks));
+    }
+
+    /** TEST 6: remove ItemMeta/NBT-bearing metadata from the player's inventory once at LIVE start. */
+    private void stripKitItemMeta() {
+        int stripped = 0;
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            org.bukkit.inventory.PlayerInventory inv = player.getInventory();
+            for (int i = 0; i < inv.getSize(); i++) {
+                ItemStack item = inv.getItem(i);
+                if (item == null || !item.hasItemMeta()) continue;
+                inv.setItem(i, new ItemStack(item.getType(), item.getAmount(), item.getDurability()));
+                stripped++;
+            }
+        }
+        kitMetaStrippedThisLive = true;
+        plugin.getLogger().info("[PERF][TEST6] stripped ItemMeta from " + stripped + " kit inventory stack(s)");
     }
 
     private void snapshot() {
