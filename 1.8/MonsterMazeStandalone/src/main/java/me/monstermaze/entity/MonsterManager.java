@@ -348,8 +348,10 @@ public class MonsterManager {
         }
 
         for (Player player : players) {
-            if (!canBump(player)) continue;
             if (game.isOnAnyPad(player)) continue;
+            me.monstermaze.kit.KitManager km = game.getKitManager();
+            boolean bodyRush = km != null && km.isBodyRushActive(player);
+            if (!bodyRush && !canBump(player)) continue;
 
             Location pl = player.getLocation();
             double px = pl.getX();
@@ -366,12 +368,8 @@ public class MonsterManager {
                 if (distSq >= 1.0) continue; // exact 3D range: was sqrt(distSq) < 1.0
 
                 LivingEntity ent = mobs[i];
-                markBump(player);
 
-                // Body Builder Body Rush (QOL only): a contacting mob is deflected away like a
-                // Repulsor launch — no knockback, no damage, full immunity — and consumes one use.
-                me.monstermaze.kit.KitManager km = game.getKitManager();
-                if (km != null && km.isBodyRushActive(player)) {
+                if (bodyRush) {
                     Vector away = ent.getLocation().toVector().subtract(player.getLocation().toVector());
                     away.setY(0);
                     if (away.lengthSquared() <= 1e-6) away = new Vector(1, 0, 0);
@@ -384,6 +382,9 @@ public class MonsterManager {
                     Bukkit.getPluginManager().callEvent(new MonsterBumpPlayerEvent(player));
                     break;
                 }
+
+                // Normal mob contact retains the original one-second bump cooldown.
+                markBump(player);
 
                 // Anti-bonk, ping-independent: lift the player ABOVE the maze floor before applying
                 // the single velocity packet, so the client never applies ground friction to the

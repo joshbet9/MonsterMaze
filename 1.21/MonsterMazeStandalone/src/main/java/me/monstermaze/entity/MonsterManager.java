@@ -303,7 +303,10 @@ public class MonsterManager {
         }
 
         for (Player player : players) {
-            if (!canBump(player) || game.isOnAnyPad(player)) continue;
+            if (game.isOnAnyPad(player)) continue;
+            me.monstermaze.kit.KitManager km = game.getKitManager();
+            boolean bodyRush = km != null && km.isBodyRushActive(player);
+            if (!bodyRush && !canBump(player)) continue;
             Location pl = player.getLocation();
             for (int i = 0; i < count; i++) {
                 double dx = pl.getX() - mx[i];
@@ -313,10 +316,8 @@ public class MonsterManager {
                 if (dx * dx + dy * dy + dz * dz >= 1.0) continue;
 
                 LivingEntity ent = mobs[i];
-                markBump(player);
 
-                me.monstermaze.kit.KitManager km = game.getKitManager();
-                if (km != null && km.isBodyRushActive(player)) {
+                if (bodyRush) {
                     Vector away = ent.getLocation().toVector().subtract(player.getLocation().toVector());
                     away.setY(0);
                     if (away.lengthSquared() <= 1e-6) away = new Vector(1, 0, 0);
@@ -326,6 +327,8 @@ public class MonsterManager {
                     player.getWorld().playSound(ent.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_HURT, 1.2f, 0.8f);
                     break;
                 }
+
+                markBump(player);
 
                 double floorY = game.getCenter().getY();
                 double above = player.getLocation().getY() - floorY;
