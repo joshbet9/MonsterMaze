@@ -9,15 +9,14 @@
   },
   "channels": {
     "1.8": {
-      "modern": {"overall": "leaderboard-modern-1-8", "patterns": "leaderboard-modern-1-8-mazepatterns", "kits": "leaderboard-modern-1-8-kits"},
-      "speed": {"overall": "leaderboard-speed-1-8", "patterns": "leaderboard-speed-1-8-mazepatterns", "kits": "leaderboard-speed-1-8-kits"},
-      "lagless": {"overall": "leaderboard-lagless-1-8", "patterns": "leaderboard-lagless-1-8-mazepatterns", "kits": "leaderboard-lagless-1-8-kits"},
-      "original": {"overall": "leaderboard-original-1-8", "patterns": "leaderboard-original-1-8-mazepatterns", "kits": "leaderboard-original-1-8-kits"}
+      "overall": "1.8-leaderboard-overall",
+      "mazepattern": "1.8-leaderboard-mazepattern",
+      "kits": "1.8-leaderboard-kits"
     },
     "1.21": {
-      "original": {"overall": "leaderboard-original-1-21", "patterns": "leaderboard-original-1-21-mazepatterns", "kits": "leaderboard-original-1-21-kits"},
-      "modern": {"overall": "leaderboard-modern-1-21", "patterns": "leaderboard-modern-1-21-mazepatterns", "kits": "leaderboard-modern-1-21-kits"},
-      "classic": {"overall": "leaderboard-classic-1-21", "patterns": "leaderboard-classic-1-21-mazepatterns", "kits": "leaderboard-classic-1-21-kits"}
+      "overall": "1.21-leaderboard-overall",
+      "mazepattern": "1.21-leaderboard-mazepattern",
+      "kits": "1.21-leaderboard-kits"
     }
   },
   "top_n": 10
