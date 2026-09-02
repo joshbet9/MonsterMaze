@@ -84,7 +84,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.monsterEntityListener = new MonsterEntityListener(this, gameManager);
         if (Bukkit.getPluginManager().getPlugin("ProtocolLib") != null) {
             try {
-                this.monsterDisguiseListener = new MonsterDisguiseListener();
+                this.monsterDisguiseListener = new MonsterDisguiseListener(this);
                 getLogger().info("ProtocolLib detected; Monster Maze ghost-mob disguises enabled.");
             } catch (Throwable t) {
                 getLogger().warning("ProtocolLib is present but ghost-mob disguises could not be enabled: " + t.getClass().getSimpleName());
