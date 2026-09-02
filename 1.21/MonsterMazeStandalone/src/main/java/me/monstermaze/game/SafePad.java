@@ -33,6 +33,15 @@ public class SafePad implements Listener {
         this.center = pathLocation.clone();
         this.surfaceY = pathLocation.getBlockY() - 1;
         this.qol = qol;
+
+        // The maze is generated asynchronously. Make sure the map palette has been applied
+        // BEFORE taking snapshots, otherwise removing this pad later restores the temporary
+        // quartz generation palette and relies on the next MapThemeApplier tick to fix it.
+        MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
+        if (plugin != null && plugin.getMapThemeApplier() != null) {
+            plugin.getMapThemeApplier().refresh();
+        }
+
         captureAndBuild();
         ensureBeacon();
     }
