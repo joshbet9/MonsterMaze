@@ -1,7 +1,7 @@
 {
   "_comment": "Copy this file to config.json and fill in your values. Channel refs can be Discord channel IDs or unique channel names.",
   "token": "YOUR_BOT_TOKEN",
-  "feed_channels": ["solo-runs"],
+  "feed_channels": ["1544580990251438121"],
   "modes": ["modern", "speed", "lagless", "original"],
   "platform_modes": {
     "1.8": ["modern", "speed", "lagless", "original"],
@@ -21,7 +21,7 @@
   },
   "top_n": 10,
   "migration": {
-    "source_channel": "OLD_SOLO_RUNS_CHANNEL_ID",
-    "destination_channel": "NEW_SOLO_RUNS_CHANNEL_ID"
+    "source_channel": "1543520905576194098",
+    "destination_channel": "1544580990251438121"
   }
 }
