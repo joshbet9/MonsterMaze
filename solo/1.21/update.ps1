@@ -26,7 +26,7 @@ foreach ($key in $manifest.files.PSObject.Properties.Name) {
     $hash = if (Test-Path $dest) { (Get-FileHash $dest -Algorithm SHA256).Hash.ToLowerInvariant() } else { "" }
     if ($hash -eq $entry.sha256) { continue }
     $guard = $key.ToLowerInvariant()
-    if (@('submitter/config.ps1','server/server.properties') -contains $guard) { Write-Host "Preserving $key"; continue }
+    if (@('submitter/config.ps1','server/server.properties','server/plugins/monstermazestandalone/config.yml') -contains $guard) { Write-Host "Preserving $key"; continue }
     $source = $key
     if ($source -match '^server/(mm_[^/]+)(/.*)?$') { $source = 'maps/' + $Matches[1] + $Matches[2] }
     $tmp = Join-Path $tmpDir (($key -replace '/', '\\') + '.tmp')
