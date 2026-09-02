@@ -19,5 +19,9 @@
       "kits": "1.21-leaderboard-kits"
     }
   },
-  "top_n": 10
+  "top_n": 10,
+  "migration": {
+    "source_channel": "OLD_SOLO_RUNS_CHANNEL_ID",
+    "destination_channel": "NEW_SOLO_RUNS_CHANNEL_ID"
+  }
 }
