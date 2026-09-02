@@ -1,6 +1,7 @@
 # Monster Maze SOLO - submitter (Discord webhook only)
-# Watches the plugin's solo-runs folder and posts each finished PB run to the
-# Discord webhook for that run's mode. Platform is explicit in the record.
+# Watches the plugin's solo-runs folder and posts EVERY completed solo run.
+# Permanent lifetime PBs remain a separate leaderboard; weekly competitions
+# consume this complete attempt feed and choose each player's best run in-week.
 
 $ErrorActionPreference = "Stop"
 
@@ -55,22 +56,23 @@ foreach ($f in $files) {
         if ($secs -eq 60) { $mins++; $secs = 0 }
         $time = "{0}m {1}s" -f $mins, $secs
         $minecraft = if ($platform -eq "1.8") { "1.8.9" } else { "1.21.11" }
+        $submittedAt = [long]$run.submittedAt
 
         $embed = @{
-            title  = "$($run.name) - new PB (stage $($run.stage))"
+            title  = "$($run.name) - Solo Run (stage $($run.stage))"
             color  = 0x33aa66
             fields = @(
-                @{ name = "Minecraft"; value = $minecraft;                    inline = $true },
-                @{ name = "Mode";      value = [string]$run.mode;             inline = $true },
-                @{ name = "Pattern";   value = "Maze $($run.pattern + 1)";   inline = $true },
-                @{ name = "Kit";       value = [string]$kit;                   inline = $true },
-                @{ name = "Stage";     value = [string]$run.stage;             inline = $true },
-                @{ name = "Time";      value = $time;                          inline = $true }
+                @{ name = "Minecraft";   value = $minecraft;                  inline = $true },
+                @{ name = "Mode";        value = [string]$run.mode;           inline = $true },
+                @{ name = "Pattern";     value = "Maze $($run.pattern + 1)"; inline = $true },
+                @{ name = "Kit";         value = [string]$kit;                 inline = $true },
+                @{ name = "Stage";       value = [string]$run.stage;           inline = $true },
+                @{ name = "Time";        value = $time;                        inline = $true }
             )
-            footer = @{ text = "platform $platform | uuid $($run.uuid) | configHash $($run.configHash)" }
+            footer = @{ text = "platform $platform | uuid $($run.uuid) | submittedAt $submittedAt | submission $($f.BaseName) | configHash $($run.configHash)" }
         }
 
-        $body = @{ content = "New solo PB submitted!"; embeds = @($embed) } | ConvertTo-Json -Depth 5
+        $body = @{ content = "New solo run submitted!"; embeds = @($embed) } | ConvertTo-Json -Depth 5
         $null = Invoke-RestMethod -Uri $webhook -Method Post -ContentType "application/json" -Body $body
         Write-Host ("Posted {0}: platform {1}, mode {2}, stage {3}" -f $run.name, $platform, $run.mode, $run.stage)
         Move-Item -LiteralPath $f.FullName -Destination (Join-Path $submitted $f.Name) -Force
