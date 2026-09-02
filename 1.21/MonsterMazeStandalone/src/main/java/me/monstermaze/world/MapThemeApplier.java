@@ -56,11 +56,12 @@ public final class MapThemeApplier {
             Block middle = world.getBlockAt(x, y - 2, z);
             Block bottom = world.getBlockAt(x, y - 3, z);
 
-            // A safe pad occupies all three layers at its centre/edge positions. If its
-            // surface is one of the protected pad blocks, leave the entire column alone.
-            if (isProtectedPadBlock(top)) continue;
-
-            top.setType(theme.top, false);
+            // Preserve the visible safe/start pad surface, but still theme the maze layers
+            // underneath it. Previously the whole column was skipped, leaving test quartz
+            // visible whenever a pad disappeared.
+            if (!isProtectedPadBlock(top)) {
+                top.setType(theme.top, false);
+            }
             middle.setType(theme.middle, false);
             bottom.setType(theme.bottom, false);
         }
