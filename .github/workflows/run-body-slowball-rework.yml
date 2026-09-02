@@ -1,0 +1,18 @@
+name: Run Body Builder and Slowballer rework
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  rework:
+    if: github.event.head_commit.message != 'Apply Body Builder and Slowballer rework'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: python3 .github/rework_body_slowball.py
