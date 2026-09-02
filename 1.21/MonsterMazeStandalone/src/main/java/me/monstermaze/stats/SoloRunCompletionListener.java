@@ -26,8 +26,13 @@ public final class SoloRunCompletionListener implements Listener {
         this.plugin = plugin;
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         this.task = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
-            @Override public void run() { snapshotLiveRun(); }
+            @Override public void run() { tick(); }
         }, 1L, 1L);
+    }
+
+    private void tick() {
+        checkForElimination();
+        snapshotLiveRun();
     }
 
     private void snapshotLiveRun() {
