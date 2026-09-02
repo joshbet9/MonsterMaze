@@ -7,6 +7,7 @@ import com.comphenix.protocol.events.ListenerPriority;
 import com.comphenix.protocol.events.PacketAdapter;
 import com.comphenix.protocol.events.PacketEvent;
 import com.comphenix.protocol.wrappers.WrappedDataValue;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 
 import java.util.ArrayList;
@@ -72,10 +73,8 @@ public final class MonsterDisguiseListener {
      */
     private void sanitizeMetadata(PacketEvent event) {
         try {
-            if (event.getPacket().getIntegers().size() == 0) return;
-            int entityId = event.getPacket().getIntegers().read(0);
-            UUID uuid = event.getPacket().getEntityModifier(event).read(0).getUniqueId();
-            if (uuid == null || MonsterEntityController.getSkin(uuid) == null) return;
+            Entity entity = event.getPacket().getEntityModifier(event).read(0);
+            if (entity == null || MonsterEntityController.getSkin(entity.getUniqueId()) == null) return;
 
             List<WrappedDataValue> values = event.getPacket().getDataValueCollectionModifier().read(0);
             if (values == null || values.isEmpty()) return;
