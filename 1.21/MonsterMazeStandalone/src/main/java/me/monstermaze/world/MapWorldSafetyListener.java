@@ -1,7 +1,6 @@
 package me.monstermaze.world;
 
 import me.monstermaze.MonsterMazePlugin;
-import me.monstermaze.game.GameState;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.Difficulty;
@@ -31,6 +30,18 @@ public final class MapWorldSafetyListener implements Listener {
     public MapWorldSafetyListener(MonsterMazePlugin plugin) {
         this.plugin = plugin;
         Bukkit.getPluginManager().registerEvents(this, plugin);
+
+        // MapManager loads the active map before this listener is constructed, so WorldLoadEvent
+        // is not sufficient for converted 1.8 worlds. Clean already-loaded worlds immediately.
+        for (World world : Bukkit.getWorlds()) {
+            if (!isManagedWorld(world)) continue;
+            configureWorld(world);
+            purgeLoadedChunks(world);
+        }
+
+        // Run every tick. This is intentionally aggressive: a converted Nether map can contain
+        // thousands of saved zombie-pigmen which become Zombified Piglins in 1.21. They must be
+        // removed before they get several ticks of AI/entity processing.
         this.enforcementTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override public void run() {
                 for (World world : Bukkit.getWorlds()) {
@@ -43,7 +54,7 @@ public final class MapWorldSafetyListener implements Listener {
                     player.setSaturation(20f);
                 }
             }
-        }, 1L, 10L);
+        }, 1L, 1L);
     }
 
     public void shutdown() {
@@ -63,14 +74,10 @@ public final class MapWorldSafetyListener implements Listener {
         world.setThundering(false);
         world.setTime(6000L);
 
-        // Converted 1.8 map worlds can contain saved hostile entities. Keep every map peaceful
-        // while it is a lobby/world-selection area so those entities are removed by the engine
-        // before they can repopulate the map. Monster Maze switches to NORMAL automatically once
-        // a game enters STARTING/LIVE, where its own CUSTOM entities are spawned.
-        GameState state = plugin.getGameManager() == null
-                ? null : plugin.getGameManager().getState();
-        world.setDifficulty(state == GameState.STARTING || state == GameState.LIVE
-                ? Difficulty.NORMAL : Difficulty.PEACEFUL);
+        // Monster Maze monsters are explicitly spawned with CUSTOM spawn reason and do not need
+        // vanilla difficulty/AI. Keep map worlds Peaceful permanently so Zombified Piglin natural
+        // spawning can never activate between our purge passes.
+        world.setDifficulty(Difficulty.PEACEFUL);
     }
 
     private void purgeLoadedChunks(World world) {
