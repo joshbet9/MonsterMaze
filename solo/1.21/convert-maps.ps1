@@ -4,20 +4,24 @@ $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $canonical = Join-Path $here '..\maps'
 $out = Join-Path $here 'maps'
-$paper = if ($env:MM_PAPER_JAR) { $env:MM_PAPER_JAR } else { Join-Path $here 'tools\paper-1.21.11.jar' }
+$tools = Join-Path $here 'tools'
+$paper = if ($env:MM_PAPER_JAR) { $env:MM_PAPER_JAR } else { Join-Path $tools 'paper-1.21.11.jar' }
 $java = if ($env:MM_JAVA_BIN) { $env:MM_JAVA_BIN } else { 'java' }
 $maps = @('mm_colombia','mm_sandycoast','mm_siberian','mm_swampland','mm_tesorohundido','mm_volcano')
 if (-not (Test-Path $paper)) { throw "Paper 1.21.11 jar not found: $paper" }
 if (-not (Test-Path $canonical)) { throw "Canonical map source missing: $canonical" }
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory -Force $out | Out-Null
+New-Item -ItemType Directory -Force $tools | Out-Null
 
 foreach ($map in $maps) {
     $source = Join-Path $canonical $map
+    $staged = Join-Path $tools $map
     $target = Join-Path $out $map
     if (-not (Test-Path (Join-Path $source 'level.dat'))) { throw "Missing level.dat for $map" }
+    if (Test-Path $staged) { Remove-Item $staged -Recurse -Force }
     Write-Host "Preparing $map ..."
-    Copy-Item -Recurse -Force $source $target
+    Copy-Item -Recurse -Force $source $staged
 
     $serverProps = @"
 accepts-transfers=false
@@ -40,16 +44,20 @@ spawn-npcs=false
 view-distance=6
 simulation-distance=6
 "@
-    Set-Content -LiteralPath (Join-Path $here 'tools\server.properties') -Value $serverProps -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $tools 'server.properties') -Value $serverProps -Encoding ascii
 
-    Push-Location (Join-Path $here 'tools')
+    Push-Location $tools
     try {
         # The queued 'stop' is consumed after Paper finishes loading the world,
         # causing Paper to save the upgraded Anvil data before exiting.
         cmd.exe /c "echo stop^|\"$java\" -Xmx2G -jar \"$paper\" --nogui --world \"$map\""
         if ($LASTEXITCODE -ne 0) { throw "Paper conversion failed for $map (exit $LASTEXITCODE)." }
     } finally { Pop-Location }
-    Remove-Item -LiteralPath (Join-Path $out $map 'session.lock') -Force -ErrorAction SilentlyContinue
+
+    if (-not (Test-Path (Join-Path $staged 'level.dat'))) { throw "Paper did not leave a level.dat for $map." }
+    Remove-Item -LiteralPath (Join-Path $staged 'session.lock') -Force -ErrorAction SilentlyContinue
+    Copy-Item -Recurse -Force $staged $target
+    Remove-Item $staged -Recurse -Force
     Write-Host "Converted $map."
 }
 
