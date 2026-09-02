@@ -2,6 +2,8 @@
   "_comment": "Copy this file to config.json and fill in your values. Channel refs can be Discord channel IDs or unique channel names.",
   "token": "YOUR_BOT_TOKEN",
   "feed_channels": ["1544580990251438121"],
+  "competition_channel": "competitions",
+  "competition_timezone": "Australia/Brisbane",
   "modes": ["modern", "speed", "lagless", "original"],
   "platform_modes": {
     "1.8": ["modern", "speed", "lagless", "original"],
