@@ -72,7 +72,9 @@ public class MonsterManager {
         clear();
         this.maze = maze;
         navigationTick = 0;
-        int starter = game.getMode() == MazeMode.MODERN ? 225 : game.getMode() == MazeMode.LAGLESS ? 500 : 150;
+        // TEST 5: remove maze mobs entirely. This isolates the 1.8 server/game/player/world
+        // workload from NMS monster entity ticking as well as MonsterManager logic.
+        int starter = BROAD_TPS_ISOLATION_TEST ? 0 : (game.getMode() == MazeMode.MODERN ? 225 : game.getMode() == MazeMode.LAGLESS ? 500 : 150);
 
         final int[] spawned = {0};
         spawnTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
@@ -121,6 +123,7 @@ public class MonsterManager {
     }
 
     public void fillSpawn(int numToSpawn) {
+        if (BROAD_TPS_ISOLATION_TEST) return;
         int spawned = spawnBatch(numToSpawn);
         plugin.getLogger().info("Spawned " + spawned + " maze monsters");
     }
@@ -153,6 +156,7 @@ public class MonsterManager {
     }
 
     public void spawnMore(int count) {
+        if (BROAD_TPS_ISOLATION_TEST) return;
         if (maze == null || game.getMode() == MazeMode.LAGLESS) return;
         List<Location> spawns = maze.getSpawnPoints();
         List<Location> pool = spawns.isEmpty() ? maze.getPathPoints() : spawns;
