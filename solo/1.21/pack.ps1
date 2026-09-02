@@ -47,10 +47,12 @@ Remove-Item (Join-Path $dist 'server\plugins\MonsterMazeStandalone\solo-runs') -
 Remove-Item (Join-Path $dist 'server\world') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $dist 'server\logs') -Recurse -Force -ErrorAction SilentlyContinue
 
-$versionFile = Join-Path $here 'version.json'
-if (-not (Test-Path $versionFile)) { throw "version.json missing." }
-Copy-Item $versionFile (Join-Path $dist 'version.json') -Force
-Set-Content (Join-Path $dist 'installed.version') -Value ([string](Get-Content $versionFile -Raw | ConvertFrom-Json).'install-version') -Encoding ascii
+# Generate the updater manifest from exactly what will be shipped.
+$version = if (Test-Path (Join-Path $here 'version.json')) { [string](Get-Content (Join-Path $here 'version.json') -Raw | ConvertFrom-Json).'install-version' } else { '0.1.0-1.21' }
+$note = if (Test-Path (Join-Path $here 'version.json')) { [string](Get-Content (Join-Path $here 'version.json') -Raw | ConvertFrom-Json).note } else { 'Initial 1.21 Solo release.' }
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $here 'make_manifest.ps1') -Version $version -Note $note -Root $dist
+if ($LASTEXITCODE -ne 0) { throw "Manifest generation failed." }
+Set-Content (Join-Path $dist 'installed.version') -Value $version -Encoding ascii
 
 $zip = Join-Path $here 'solo-1.21-dist.zip'
 if (Test-Path $zip) { Remove-Item $zip -Force }
