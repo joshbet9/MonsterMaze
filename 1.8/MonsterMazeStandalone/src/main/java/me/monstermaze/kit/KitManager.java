@@ -124,7 +124,7 @@ public class KitManager implements Listener {
                 if (game.getState() != GameState.LIVE) return;
                 jumpEvent();
                 repulseCleanup();
-                // tickAbilityBars();
+                tickAbilityBars();
             }
         }, 1L, 1L);
     }
