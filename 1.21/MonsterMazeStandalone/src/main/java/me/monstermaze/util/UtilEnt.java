@@ -15,14 +15,12 @@ public final class UtilEnt {
     private UtilEnt() {}
 
     /**
-     * Monster Maze movement is deliberately entity-type independent.
+     * Entity-type-independent Monster Maze movement.
      *
-     * The original 1.8 implementation spawned the same Snowman ghost for every monster skin and
-     * drove it through ControllerMove with speed 1.4f. The 1.21 implementation must not delegate
-     * movement to each vanilla mob's Navigation implementation: those navigators have different
-     * collision/pathing rules and can leave some renderer mobs stationary or make them behave
-     * differently. Instead we reproduce the old ControllerMove fallback mathematically: horizontal
-     * direction toward the target, speed * 0.2 blocks/tick, every tick.
+     * The original 1.8 implementation spawned one Snowman ghost for every visual monster type
+     * and drove that same entity through ControllerMove. In 1.21 we therefore remove all vanilla
+     * AI from the renderer entity and own its horizontal velocity here. This prevents Villager,
+     * Enderman, Slime, etc. from contributing their own movement behaviour.
      */
     public static boolean CreatureMoveFast(Entity ent, Location target, float speed) {
         return CreatureMoveFast(ent, target, speed, true);
@@ -36,18 +34,17 @@ public final class UtilEnt {
 
         Location loc = ent.getLocation();
         Vector delta = target.toVector().subtract(loc.toVector());
-        // CreatureMoveFast in Monster Maze is horizontal maze travel. Do not let a vanilla mob's
-        // navigation decide how to climb/fall; the maze waypoint Y is already authoritative.
         delta.setY(0);
         if (delta.lengthSquared() < 1.0E-6) {
             ent.setVelocity(new Vector(0, ent.getVelocity().getY(), 0));
             return false;
         }
 
+        // The 1.8 fallback used speed * 0.2 as its per-tick horizontal step. Keep that same
+        // contract, but with vanilla AI completely disabled so no renderer-specific movement is
+        // added on top of it.
         double step = Math.min(speed * 0.2D, Math.sqrt(delta.getX() * delta.getX() + delta.getZ() * delta.getZ()));
         Vector velocity = delta.normalize().multiply(step);
-        // Preserve the entity's vertical physics while taking complete ownership of horizontal
-        // movement, exactly as the old Snowman ControllerMove did for the maze.
         velocity.setY(ent.getVelocity().getY());
         ent.setVelocity(velocity);
 
@@ -75,7 +72,7 @@ public final class UtilEnt {
         }
     }
 
-    /** Remove autonomous vanilla goals while leaving the entity usable by Monster Maze. */
+    /** Remove all autonomous vanilla goals and disable AI entirely. */
     public static void vegetate(Entity ent) {
         if (ent == null) return;
         if (ent instanceof Creature) {
@@ -83,13 +80,16 @@ public final class UtilEnt {
         }
         if (ent instanceof Mob) {
             Mob mob = (Mob) ent;
-            mob.setAI(true);
-            mob.setAware(true);
             try {
                 Bukkit.getMobGoals().removeAllGoals(mob);
             } catch (Throwable t) {
                 Bukkit.getLogger().warning("[MonsterMaze] Failed to remove vanilla mob goals: " + t);
             }
+            // Critical parity point: the renderer mob is only a skin. Do not allow its native
+            // AI/travel implementation to add movement on top of Monster Maze's Snowman-style
+            // controller.
+            mob.setAI(false);
+            mob.setAware(false);
         }
     }
 
