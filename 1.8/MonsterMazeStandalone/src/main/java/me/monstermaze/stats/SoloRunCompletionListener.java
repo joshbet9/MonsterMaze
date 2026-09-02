@@ -11,18 +11,11 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.scheduler.BukkitTask;
 
-import java.util.UUID;
-
-/**
- * Records every completed solo attempt for the Discord submission feed.
- * Lifetime PBs remain owned by LeaderboardManager; this listener deliberately
- * does not filter attempts against the previous PB.
- */
+/** Records every completed solo attempt; lifetime PB filtering stays in the permanent leaderboard. */
 public final class SoloRunCompletionListener implements Listener {
-
     private final MonsterMazePlugin plugin;
     private final BukkitTask task;
-    private UUID soloPlayer;
+    private Player soloPlayer;
     private int pattern = -1;
     private String kit;
     private boolean soloGame;
@@ -43,17 +36,15 @@ public final class SoloRunCompletionListener implements Listener {
             if (soloPlayer == null && !soloGame) {
                 if (alive.size() == 1) {
                     soloGame = true;
-                    soloPlayer = alive.get(0).getUniqueId();
+                    soloPlayer = alive.get(0);
                     pattern = plugin.getGameManager().getPatternIndex();
-                    KitType selected = plugin.getGameManager().getKitManager().getKit(alive.get(0));
+                    KitType selected = plugin.getGameManager().getKitManager().getKit(soloPlayer);
                     kit = selected == null ? null : selected.id;
                 } else if (alive.size() > 1) {
                     soloGame = false;
                 }
             }
-            if (soloGame && soloPlayer != null && alive.isEmpty()) {
-                recordOnce();
-            }
+            if (soloGame && soloPlayer != null && alive.isEmpty()) recordOnce();
         } else if (state == GameState.ENDING && soloGame && soloPlayer != null) {
             recordOnce();
         } else if (state == GameState.IDLE) {
@@ -63,17 +54,17 @@ public final class SoloRunCompletionListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent event) {
-        if (soloGame && soloPlayer != null && soloPlayer.equals(event.getPlayer().getUniqueId())) {
-            Bukkit.getScheduler().runTask(plugin, new Runnable() {
-                @Override public void run() { recordOnce(); }
-            });
-        }
+        if (!soloGame || soloPlayer == null || !soloPlayer.getUniqueId().equals(event.getPlayer().getUniqueId())) return;
+        record(event.getPlayer());
     }
 
     private void recordOnce() {
         if (recorded || !soloGame || soloPlayer == null || pattern < 0 || kit == null) return;
-        Player player = Bukkit.getPlayer(soloPlayer);
-        if (player == null) return;
+        record(soloPlayer);
+    }
+
+    private void record(Player player) {
+        if (recorded || player == null || pattern < 0 || kit == null) return;
         recorded = true;
         long liveStart = plugin.getGameManager().getGameLiveTime();
         long elapsed = liveStart > 0 ? Math.max(0L, System.currentTimeMillis() - liveStart) : 0L;
