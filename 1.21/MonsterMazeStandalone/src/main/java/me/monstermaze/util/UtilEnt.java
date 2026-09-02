@@ -8,6 +8,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.util.Vector;
 
 /** Paper 1.21 entity utilities used by Monster Maze. */
@@ -31,16 +32,17 @@ public final class UtilEnt {
         double distance = delta.length();
         if (distance < 1.0E-6) return false;
 
-        // Move the renderer entity explicitly rather than relying on its vanilla physics. This is
-        // deliberate: in 1.8 every monster was a Snowman ghost, so Villager/Enderman/etc. must
-        // not get different movement semantics in 1.21. The 1.8 audit records 0.07 blocks as the
-        // maximum one-tick travel at the 1.4 controller speed.
-        double step = Math.min(0.07D, distance);
+        // The old 1.21 implementation hard-coded 0.07 blocks here, ignoring the controller
+        // speed completely. MonsterManager supplies the controller value, so movement must scale
+        // from that value. With the current 0.8 controller this gives 0.14 blocks per movement
+        // call, matching the intended Snowman-ghost movement scale rather than vanilla AI.
+        double step = Math.min(speed * 0.175D, distance);
         Vector movement = delta.normalize().multiply(step);
         Location next = loc.clone().add(movement);
         next.setY(loc.getY());
         next.setYaw((float) Math.toDegrees(Math.atan2(-movement.getX(), movement.getZ())));
         next.setPitch(loc.getPitch());
+        ent.setVelocity(new Vector(0, 0, 0));
         ent.teleport(next);
         return true;
     }
@@ -92,7 +94,9 @@ public final class UtilEnt {
             return null;
         }
         try {
-            Entity entity = loc.getWorld().spawnEntity(loc, type);
+            // Explicit CUSTOM is important because map worlds intentionally reject every natural
+            // creature spawn. Monster Maze owns these entities; the renderer mob is only the skin.
+            Entity entity = loc.getWorld().spawnEntity(loc, type, CreatureSpawnEvent.SpawnReason.CUSTOM);
             if (!(entity instanceof LivingEntity)) { entity.remove(); return null; }
             LivingEntity living = (LivingEntity) entity;
             vegetate(living);
