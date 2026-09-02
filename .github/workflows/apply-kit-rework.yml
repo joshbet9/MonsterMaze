@@ -1,0 +1,292 @@
+name: Apply kit rework
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply kit changes
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          import subprocess
+
+          ROOT = Path.cwd()
+          versions = ['1.8', '1.21']
+
+          body_section = r'''    // -------------------- Body Builder secondary: Body Rush --------------------
+    // QOL-mode only. Two apple charges are supplied at the start of the game. Right-click
+    // consumes one charge and starts a 10 second Body Rush. Every valid mob contact removes
+    // 2 seconds. The normal 1-second player bump cooldown is bypassed only while this is active.
+
+    @EventHandler
+    public void onBodyRush(PlayerInteractEvent event) {
+        if (game.getState() != GameState.LIVE) return;
+        if (!game.qolEnabled()) return;
+        Action a = event.getAction();
+        if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK) return;
+
+        Player player = event.getPlayer();
+        if (getKit(player) != KitType.BODY_BUILDER) return;
+        if (!game.getAlivePlayers().contains(player)) return;
+
+        ItemStack hand = player.getItemInHand();
+        if (hand == null || hand.getType() != Material.APPLE) return;
+
+        if (isBodyRushActive(player)) {
+            event.setCancelled(true);
+            return;
+        }
+
+        event.setCancelled(true);
+        if (hand.getAmount() <= 1) {
+            player.setItemInHand(null);
+        } else {
+            hand.setAmount(hand.getAmount() - 1);
+            player.setItemInHand(hand);
+        }
+
+        long now = System.currentTimeMillis();
+        bodyRushUntil.put(player.getUniqueId(), now + BODY_RUSH_DURATION_MS);
+        player.getWorld().playEffect(player.getLocation(), Effect.MOBSPAWNER_FLAMES, 0);
+        TextUtil.title(player, "", ChatColor.RED + "" + ChatColor.BOLD + "BODY RUSH!"
+                + ChatColor.WHITE + " 10 seconds", 5, 30, 5);
+        TextUtil.actionBar(player, ChatColor.RED + "" + ChatColor.BOLD + "BODY RUSH "
+                + ChatColor.WHITE + "10.0s " + ChatColor.GRAY + "-2s per hit");
+        player.updateInventory();
+        Bukkit.getPluginManager().callEvent(new AbilityUseEvent(player));
+    }
+
+    /** True while Body Rush is active in a QOL mode. */
+    public boolean isBodyRushActive(Player player) {
+        if (!game.qolEnabled()) return false;
+        Long until = bodyRushUntil.get(player.getUniqueId());
+        if (until == null) return false;
+        if (until <= System.currentTimeMillis()) {
+            bodyRushUntil.remove(player.getUniqueId());
+            return false;
+        }
+        return true;
+    }
+
+    /** Register one valid mob contact. Each contact removes exactly 2 seconds. */
+    public int consumeBodyRushUse(Player player) {
+        Long until = bodyRushUntil.get(player.getUniqueId());
+        if (until == null) return 0;
+
+        long remaining = until - System.currentTimeMillis() - BODY_RUSH_HIT_REDUCTION_MS;
+        if (remaining <= 0) {
+            bodyRushUntil.remove(player.getUniqueId());
+            TextUtil.actionBar(player, ChatColor.RED + "" + ChatColor.BOLD + "BODY RUSH "
+                    + ChatColor.WHITE + "ended");
+            player.getWorld().playEffect(player.getLocation(), Effect.MOBSPAWNER_FLAMES, 0);
+            return 0;
+        }
+
+        bodyRushUntil.put(player.getUniqueId(), System.currentTimeMillis() + remaining);
+        TextUtil.actionBar(player, ChatColor.RED + "" + ChatColor.BOLD + "BODY RUSH "
+                + ChatColor.WHITE + String.format(java.util.Locale.US, "%.1fs", remaining / 1000.0)
+                + ChatColor.YELLOW + "  -2.0s HIT!");
+        player.getWorld().playEffect(player.getLocation(), Effect.MOBSPAWNER_FLAMES, 0);
+        return (int) Math.ceil(remaining / 1000.0);
+    }
+
+    private static ItemStack bodyRushItem(int charges) {
+        ItemStack item = new ItemStack(Material.APPLE, Math.max(0, charges));
+        ItemMeta meta = item.getItemMeta();
+        meta.setDisplayName(ChatColor.RED + "" + ChatColor.BOLD + "Body Rush");
+        meta.setLore(java.util.Arrays.asList(
+                ChatColor.GRAY + "Right Click to activate.",
+                ChatColor.GRAY + "10 second power-up.",
+                ChatColor.GRAY + "Each monster hit removes 2 seconds."));
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    // -------------------- Slowballer secondary: Cryo Blitz --------------------
+    // QOL-mode only. Q-drop freezes every monster within CRYO_RADIUS blocks for 3 seconds.
+    // The cooldown and frozen timer are shown above the hotbar, with visible feedback for all players.
+
+    @EventHandler
+    public void onCryoBlitz(PlayerDropItemEvent event) {
+        if (game.getState() != GameState.LIVE) return;
+        if (!game.qolEnabled()) return;
+        Player player = event.getPlayer();
+        if (getKit(player) != KitType.SLOWBALL) return;
+        if (!game.getAlivePlayers().contains(player)) return;
+
+        event.setCancelled(true);
+
+        long now = System.currentTimeMillis();
+        Long last = cryoCooldown.get(player.getUniqueId());
+        if (last != null && now - last < CRYO_COOLDOWN_MS) {
+            long left = (CRYO_COOLDOWN_MS - (now - last) + 999L) / 1000L;
+            TextUtil.actionBar(player, ChatColor.AQUA + "CRYO BLITZ " + ChatColor.WHITE + left + "s");
+            return;
+        }
+        cryoCooldown.put(player.getUniqueId(), now);
+        cryoFreezeUntil.put(player.getUniqueId(), now + CRYO_FREEZE_MS);
+
+        MonsterManager mm = game.getMonsterManager();
+        int frozenCount = 0;
+        if (mm != null) {
+            java.util.List<LivingEntity> list = new java.util.ArrayList<LivingEntity>();
+            for (LivingEntity ent : mm.getMonsters()) list.add(ent);
+            for (LivingEntity ent : list) {
+                if (ent == null || !ent.isValid()) continue;
+                if (player.getLocation().distanceSquared(ent.getLocation()) > CRYO_RADIUS * CRYO_RADIUS) continue;
+                mm.freeze(ent, now + CRYO_FREEZE_MS);
+                ent.getWorld().playEffect(ent.getLocation(), Effect.SNOWBALL_BREAK, 0);
+                frozenCount++;
+            }
+        }
+
+        for (Player viewer : game.getAlivePlayers()) {
+            viewer.getWorld().playEffect(player.getLocation(), Effect.SNOWBALL_BREAK, 0, CRYO_RADIUS + 4);
+            TextUtil.title(viewer, "", ChatColor.AQUA + "" + ChatColor.BOLD + "CRYO BLITZ!"
+                    + ChatColor.WHITE + " " + frozenCount + " mob(s) frozen", 3, 25, 5);
+        }
+        Bukkit.getPluginManager().callEvent(new AbilityUseEvent(player));
+    }
+
+    private ItemStack slowballItem(UUID playerId, int amount) {
+        ItemStack item = new ItemStack(Material.SNOW_BALL, Math.max(1, amount));
+        ItemMeta meta = item.getItemMeta();
+        meta.setDisplayName(ChatColor.AQUA + "Slowball");
+        meta.setLore(cooldownLore(playerId));
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private java.util.List<String> cooldownLore(UUID playerId) {
+        long now = System.currentTimeMillis();
+        long rem = -1;
+        Long t = cryoCooldown.get(playerId);
+        if (t != null) {
+            rem = (t.longValue() + CRYO_COOLDOWN_MS) - now;
+        }
+        java.util.List<String> lore = new java.util.ArrayList<String>();
+        lore.add(ChatColor.GRAY + "Q-drop: Cryo Blitz (freeze " + CRYO_RADIUS + " blocks).");
+        if (rem >= 0) {
+            lore.add(ChatColor.AQUA + "Cryo Blitz ready in " + ((rem + 999L) / 1000L) + "s");
+        } else {
+            lore.add(ChatColor.AQUA + "Cryo Blitz ready!");
+        }
+        return lore;
+    }
+
+    /** Per-tick ability HUD for Body Rush and Cryo Blitz. */
+    private void tickAbilityUi() {
+        if (game.getState() != GameState.LIVE) return;
+        long now = System.currentTimeMillis();
+        for (Player p : game.getAlivePlayers()) {
+            if (getKit(p) == KitType.BODY_BUILDER && game.qolEnabled()) {
+                Long until = bodyRushUntil.get(p.getUniqueId());
+                if (until != null) {
+                    long rem = until - now;
+                    if (rem <= 0) {
+                        bodyRushUntil.remove(p.getUniqueId());
+                        TextUtil.actionBar(p, ChatColor.RED + "BODY RUSH ended");
+                    } else {
+                        TextUtil.actionBar(p, ChatColor.RED + "" + ChatColor.BOLD + "BODY RUSH "
+                                + ChatColor.WHITE + String.format(java.util.Locale.US, "%.1fs", rem / 1000.0)
+                                + ChatColor.GRAY + "  -2s per hit");
+                    }
+                } else {
+                    ItemStack apple = p.getInventory().getItem(0);
+                    if (apple != null && apple.getType() == Material.APPLE && apple.getAmount() > 0) {
+                        TextUtil.actionBar(p, ChatColor.RED + "BODY RUSH READY");
+                    }
+                }
+            } else if (getKit(p) == KitType.SLOWBALL && game.qolEnabled()) {
+                Long frozen = cryoFreezeUntil.get(p.getUniqueId());
+                if (frozen != null && frozen > now) {
+                    TextUtil.actionBar(p, ChatColor.AQUA + "FROZEN: " + ChatColor.WHITE
+                            + String.format(java.util.Locale.US, "%.1fs", (frozen - now) / 1000.0));
+                } else {
+                    if (frozen != null) cryoFreezeUntil.remove(p.getUniqueId());
+                    Long used = cryoCooldown.get(p.getUniqueId());
+                    if (used != null && now - used < CRYO_COOLDOWN_MS) {
+                        long left = (CRYO_COOLDOWN_MS - (now - used) + 999L) / 1000L;
+                        TextUtil.actionBar(p, ChatColor.AQUA + "CRYO BLITZ: " + ChatColor.WHITE + left + "s");
+                    } else {
+                        TextUtil.actionBar(p, ChatColor.AQUA + "CRYO BLITZ READY");
+                    }
+                }
+            }
+        }
+    }
+
+'''
+
+          for version in versions:
+              kit = ROOT / version / 'MonsterMazeStandalone/src/main/java/me/monstermaze/kit/KitManager.java'
+              mm = ROOT / version / 'MonsterMazeStandalone/src/main/java/me/monstermaze/entity/MonsterManager.java'
+              s = kit.read_text(encoding='utf-8')
+              s = s.replace('private final Map<UUID, Integer> bodyRushUses = new HashMap<UUID, Integer>();',
+                            'private final Map<UUID, Long> bodyRushUntil = new HashMap<UUID, Long>();')
+              s = s.replace('private final Map<UUID, Long> cryoCooldown = new HashMap<UUID, Long>();',
+                            'private final Map<UUID, Long> cryoCooldown = new HashMap<UUID, Long>();\n\n    /** Slowballer: frozen HUD timer for the activating player. */\n    private final Map<UUID, Long> cryoFreezeUntil = new HashMap<UUID, Long>();')
+              s = s.replace('private static final int BODY_RUSH_MAX_USES = 5;',
+                            'private static final long BODY_RUSH_DURATION_MS = 10000L;\n    private static final long BODY_RUSH_HIT_REDUCTION_MS = 2000L;')
+              s = s.replace('private static final int CRYO_COOLDOWN_MS = 60000;',
+                            'private static final int CRYO_COOLDOWN_MS = 30000;')
+              s = s.replace('private static final int CRYO_RADIUS = 5;',
+                            'private static final int CRYO_RADIUS = 6;')
+              s = s.replace('bodyRushUses.clear();', 'bodyRushUntil.clear();')
+              s = s.replace('bodyRushUses.remove(player.getUniqueId());', 'bodyRushUntil.remove(player.getUniqueId());')
+              s = s.replace('cryoCooldown.remove(player.getUniqueId());', 'cryoCooldown.remove(player.getUniqueId());\n        cryoFreezeUntil.remove(player.getUniqueId());')
+              s = s.replace('player.getInventory().setItem(0, bodyRushItem(BODY_RUSH_MAX_USES));',
+                            'player.getInventory().setItem(0, bodyRushItem(2));')
+              if '                tickAbilityUi();\n' not in s:
+                  s = s.replace('                repulseCleanup();\n', '                repulseCleanup();\n                tickAbilityUi();\n', 1)
+              start = s.index('    // -------------------- Body Builder secondary: Body Rush --------------------')
+              end = s.index('    // -------------------- DE view-of-others dye toggle --------------------', start)
+              s = s[:start] + body_section + s[end:]
+              kit.write_text(s, encoding='utf-8', newline='\n')
+
+              m = mm.read_text(encoding='utf-8')
+              old_guard = '''        for (Player player : players) {\n            if (!canBump(player)) continue;'''
+              new_guard = '''        for (Player player : players) {\n            me.monstermaze.kit.KitManager km = game.getKitManager();\n            boolean bodyRushActive = km != null && km.isBodyRushActive(player);\n            if (!bodyRushActive && !canBump(player)) continue;'''
+              if old_guard not in m:
+                  raise SystemExit(f'Could not find bump guard in {mm}')
+              m = m.replace(old_guard, new_guard, 1)
+              old_contact = '''                LivingEntity ent = mobs[i];\n                markBump(player);\n\n                // Body Builder Body Rush'''
+              new_contact = '''                LivingEntity ent = mobs[i];\n\n                // Body Builder Body Rush'''
+              if old_contact not in m:
+                  raise SystemExit(f'Could not find body-rush contact block in {mm}')
+              m = m.replace(old_contact, new_contact, 1)
+              marker = '''                    break;\n                }\n\n                // Anti-bonk'''
+              replacement = '''                    break;\n                }\n\n                markBump(player);\n\n                // Anti-bonk'''
+              if marker not in m:
+                  raise SystemExit(f'Could not relocate markBump in {mm}')
+              m = m.replace(marker, replacement, 1)
+              mm.write_text(m, encoding='utf-8', newline='\n')
+
+          doc = ROOT / 'docs/mechanics.md'
+          d = doc.read_text(encoding='utf-8')
+          d = re.sub(r'- \*\*Body Builder.*?(?=\n- \*\*Slowballer)', '''- **Body Builder — Body Rush** (QOL-only):\n  - Starts with **2 apple charges**. Right-click consumes one apple and activates Body Rush for **10 seconds**.\n  - While active, each valid mob contact deflects the mob away with no player knockback or damage.\n  - Every valid mob contact removes **2 seconds** from the timer.\n  - The normal **1-second player bump cooldown remains for everyone else**, but is bypassed while Body Rush is active so successive mob contacts register immediately.\n  - The active timer is shown above the hotbar; hit feedback makes the 2-second reduction obvious.\n\n''', d, flags=re.S)
+          d = re.sub(r'- \*\*Slowballer.*?(?=\n- \*\*Repulsor|\n## |\Z)', '''- **Slowballer — Cryo Blitz** (QOL-only, Q-drop trigger):\n  - Cooldown is **30 seconds**.\n  - Freezes every monster within **6 blocks** for **3 seconds**.\n  - Activation/frozen feedback is shown to the using player and other players.\n  - The above-hotbar HUD shows **READY**, cooldown remaining, or the frozen timer.\n\n''', d, flags=re.S)
+          doc.write_text(d, encoding='utf-8', newline='\n')
+
+          for version in versions:
+              text = (ROOT / version / 'MonsterMazeStandalone/src/main/java/me/monstermaze/kit/KitManager.java').read_text(encoding='utf-8')
+              for check in ['BODY_RUSH_DURATION_MS = 10000L', 'BODY_RUSH_HIT_REDUCTION_MS = 2000L', 'CRYO_COOLDOWN_MS = 30000', 'CRYO_RADIUS = 6', 'cryoFreezeUntil', 'BODY RUSH READY', 'CRYO BLITZ READY']:
+                  if check not in text:
+                      raise SystemExit(f'Verification failed for {version}: {check}')
+
+          subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
+          subprocess.run(['git', 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], check=True)
+          subprocess.run(['git', 'rm', '-f', '.github/workflows/kit-rework-apply.yml'], check=True)
+          subprocess.run(['git', 'add', '1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/kit/KitManager.java', '1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/entity/MonsterManager.java', '1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/kit/KitManager.java', '1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/entity/MonsterManager.java', 'docs/mechanics.md', '.github/workflows/apply-kit-rework.yml'], check=True)
+          subprocess.run(['git', 'commit', '-m', 'Implement Body Rush and Cryo Blitz rework [kit-rework]'], check=True)
+          subprocess.run(['git', 'push'], check=True)
