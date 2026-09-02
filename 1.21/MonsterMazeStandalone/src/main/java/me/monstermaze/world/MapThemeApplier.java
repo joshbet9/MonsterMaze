@@ -24,7 +24,10 @@ public final class MapThemeApplier {
     public void start() {
         if (task != null) return;
         task = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
-            @Override public void run() { applyIfReady(); }
+            @Override public void run() {
+                applyIfReady();
+                applyCenterThemeIfNeeded();
+            }
         }, 1L, 1L);
     }
 
@@ -37,6 +40,7 @@ public final class MapThemeApplier {
         lastPattern = -1;
         lastMap = "";
         applyIfReady();
+        applyCenterThemeIfNeeded();
     }
 
     private void applyIfReady() {
@@ -70,6 +74,28 @@ public final class MapThemeApplier {
         lastPattern = pattern;
         lastMap = map;
         plugin.getLogger().info("Applied map theme '" + map + "' to maze pattern " + (pattern + 1) + ".");
+    }
+
+    /**
+     * Center deterioration directly restores a path cell from the temporary quartz material.
+     * Re-apply only the small center-path subset every tick so that the final restoration uses
+     * the real map palette without scanning/replacing the entire maze every tick.
+     */
+    private void applyCenterThemeIfNeeded() {
+        if (plugin.getGameManager() == null) return;
+        MazeGenerator maze = plugin.getGameManager().getMazeGenerator();
+        if (maze == null || !maze.isMazeLive()) return;
+
+        MazeBlockData theme = plugin.getMapManager().activeTheme();
+        List<Location> centerPaths = maze.getCenterSafeZonePaths();
+        for (Location path : centerPaths) {
+            World world = path.getWorld();
+            if (world == null) continue;
+            Block top = world.getBlockAt(path.getBlockX(), path.getBlockY() - 1, path.getBlockZ());
+            if (!isProtectedPadBlock(top) && top.getType() != theme.top) {
+                top.setType(theme.top, false);
+            }
+        }
     }
 
     private boolean isProtectedPadBlock(Block block) {
