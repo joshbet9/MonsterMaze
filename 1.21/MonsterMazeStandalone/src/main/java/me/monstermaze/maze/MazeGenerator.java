@@ -111,117 +111,107 @@ public class MazeGenerator {
         plugin.getLogger().info("Lobby ready (no shell - void only)");
     }
 
-  // -------------------- Maze pattern only --------------------
+    // -------------------- Maze pattern only --------------------
 
-/**
- * Generate a random maze pattern.
- * This preserves the original behaviour.
- */
-public void generateMaze() {
-    generateMazeAsync(-1, null);
-}
-
-/**
- * Generate a specific maze pattern.
- *
- * @param requestedPattern zero-based pattern index (0, 1, 2),
- *                         or -1 for random
- */
-public void generateMaze(int requestedPattern) {
-    generateMazeAsync(requestedPattern, null);
-}
-
-/**
- * Generate a random maze pattern asynchronously.
- */
-public void generateMazeAsync(final Runnable onDone) {
-    generateMazeAsync(-1, onDone);
-}
-
-/**
- * Generate a specific or random maze pattern asynchronously.
- *
- * @param requestedPattern zero-based pattern index (0, 1, 2),
- *                         or -1 for random
- */
-public void generateMazeAsync(final int requestedPattern, final Runnable onDone) {
-    if (center == null) {
-        throw new IllegalStateException("No center - run /mm setcenter first");
+    /** Generate a random maze pattern. */
+    public void generateMaze() {
+        generateMazeAsync(-1, null);
     }
 
-    if (requestedPattern < -1 || requestedPattern >= MazeLayouts.ALL_MAZES.length) {
-        throw new IllegalArgumentException(
-                "Invalid maze pattern index: " + requestedPattern
-                        + " (valid values: 0-" + (MazeLayouts.ALL_MAZES.length - 1) + ")"
-        );
+    /** Generate a specific maze pattern. */
+    public void generateMaze(int requestedPattern) {
+        generateMazeAsync(requestedPattern, null);
     }
 
-    // Clear old maze pattern (lobby is separate, high above, and persists)
-    teardownMazePatternOnly();
-
-    clearRuntimeLists();
-    mazeBlocks.clear();
-
-    if (requestedPattern == -1) {
-        this.patternIndex = random.nextInt(MazeLayouts.ALL_MAZES.length);
-    } else {
-        this.patternIndex = requestedPattern;
+    /** Generate a random maze pattern asynchronously. */
+    public void generateMazeAsync(final Runnable onDone) {
+        generateMazeAsync(-1, onDone);
     }
 
-    this.mazeData = MazeLayouts.ALL_MAZES[patternIndex];
-
-    final World world = center.getWorld();
-    final int cx = center.getBlockX();
-    final int cy = center.getBlockY();
-    final int cz = center.getBlockZ();
-    final long t0 = System.currentTimeMillis();
-
-    plugin.getLogger().info(
-            "Placing maze pattern " + (patternIndex + 1)
-                    + (requestedPattern == -1 ? " (random)" : " (requested)")
-                    + "..."
-    );
-
-    clearShellRegionAsync(world, cx, cy, cz, new Runnable() {
-        @Override
-        public void run() {
-            // Paths only — typically a few thousand blocks, not tens of thousands
-            Bukkit.getScheduler().runTask(plugin, new Runnable() {
-                int mz = 0;
-
-                @Override
-                public void run() {
-                    long slice = System.currentTimeMillis();
-
-                    while (mz < MAZE_SIZE && System.currentTimeMillis() - slice < 45) {
-                        buildMazeRow(world, cx, cy, cz, mz);
-                        mz++;
-                    }
-
-                    if (mz < MAZE_SIZE) {
-                        Bukkit.getScheduler().runTaskLater(plugin, this, 1L);
-                        return;
-                    }
-
-                    rebuildPadSpawnList();
-                    mazeLive = true;
-
-                    plugin.getLogger().info(
-                            "Maze pattern " + (patternIndex + 1)
-                                    + " ready in "
-                                    + (System.currentTimeMillis() - t0)
-                                    + "ms. Paths=" + pathPoints.size()
-                                    + " blocks=" + mazeBlocks.size()
-                    );
-
-                    if (onDone != null) {
-                        onDone.run();
-                    }
-                }
-            });
+    /**
+     * Generate a specific or random maze pattern asynchronously.
+     *
+     * @param requestedPattern zero-based pattern index (0, 1, 2), or -1 for random
+     */
+    public void generateMazeAsync(final int requestedPattern, final Runnable onDone) {
+        if (center == null) {
+            throw new IllegalStateException("No center - run /mm setcenter first");
         }
-    });
-}
+
+        if (requestedPattern < -1 || requestedPattern >= MazeLayouts.ALL_MAZES.length) {
+            throw new IllegalArgumentException(
+                    "Invalid maze pattern index: " + requestedPattern
+                            + " (valid values: 0-" + (MazeLayouts.ALL_MAZES.length - 1) + ")"
+            );
+        }
+
+        teardownMazePatternOnly();
+        clearRuntimeLists();
+        mazeBlocks.clear();
+
+        if (requestedPattern == -1) {
+            this.patternIndex = random.nextInt(MazeLayouts.ALL_MAZES.length);
+        } else {
+            this.patternIndex = requestedPattern;
+        }
+
+        this.mazeData = MazeLayouts.ALL_MAZES[patternIndex];
+
+        final World world = center.getWorld();
+        final int cx = center.getBlockX();
+        final int cy = center.getBlockY();
+        final int cz = center.getBlockZ();
+        final MazeBlockData theme = plugin.getMapManager().activeTheme();
+        final long t0 = System.currentTimeMillis();
+
+        plugin.getLogger().info(
+                "Placing maze pattern " + (patternIndex + 1)
+                        + (requestedPattern == -1 ? " (random)" : " (requested)")
+                        + " using theme top=" + theme.top
+                        + ", middle=" + theme.middle
+                        + ", bottom=" + theme.bottom + "..."
+        );
+
+        clearShellRegionAsync(world, cx, cy, cz, new Runnable() {
+            @Override
+            public void run() {
+                // Place every maze support/surface block with the active map palette from
+                // the very first block. MapThemeApplier remains useful as a defensive repair,
+                // but is no longer required to correct an initially-quartz maze.
+                Bukkit.getScheduler().runTask(plugin, new Runnable() {
+                    int mz = 0;
+
+                    @Override
+                    public void run() {
+                        long slice = System.currentTimeMillis();
+
+                        while (mz < MAZE_SIZE && System.currentTimeMillis() - slice < 45) {
+                            buildMazeRow(world, cx, cy, cz, mz, theme);
+                            mz++;
+                        }
+
+                        if (mz < MAZE_SIZE) {
+                            Bukkit.getScheduler().runTaskLater(plugin, this, 1L);
+                            return;
+                        }
+
+                        rebuildPadSpawnList();
+                        mazeLive = true;
+
+                        plugin.getLogger().info(
+                                "Maze pattern " + (patternIndex + 1)
+                                        + " ready in "
+                                        + (System.currentTimeMillis() - t0)
+                                        + "ms. Paths=" + pathPoints.size()
+                                        + " blocks=" + mazeBlocks.size()
+                        );
+
+                        if (onDone != null) onDone.run();
+                    }
+                });
+            }
+        });
+    }
 
     /**
      * Carve the (possibly stale) quartz shell back to open void across the maze area.
@@ -249,16 +239,14 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
                     int z = startZ + (index / (endX - startX + 1));
                     for (int y = yLow; y <= yHigh; y++) {
                         Block b = world.getBlockAt(x, y, z);
-                        if (b.getType() != Material.AIR) {
-                            b.setType(Material.AIR);
-                        }
+                        if (b.getType() != Material.AIR) b.setType(Material.AIR);
                     }
                     index++;
                 }
                 if (index < span) {
                     Bukkit.getScheduler().runTaskLater(plugin, this, 1L);
-                } else {
-                    if (onDone != null) onDone.run();
+                } else if (onDone != null) {
+                    onDone.run();
                 }
             }
         });
@@ -267,7 +255,6 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
     public void returnToLobby() {
         if (center == null) return;
         teardownMazePatternOnly();
-        // Rebuild small lobby high above the maze (independent of maze teardown)
         World world = center.getWorld();
         int cx = center.getBlockX();
         int cy = center.getBlockY();
@@ -292,7 +279,6 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
     }
 
     private void teardownMazePatternOnly() {
-        // Remove only maze path blocks (not shell)
         if (!mazeBlocks.isEmpty()) {
             final List<BlockPos> toClear = new ArrayList<BlockPos>(mazeBlocks);
             mazeBlocks.clear();
@@ -309,14 +295,10 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
                     while (idx >= 0 && System.currentTimeMillis() - start < 45) {
                         BlockPos bp = toClear.get(idx);
                         Block b = bp.world.getBlockAt(bp.x, bp.y, bp.z);
-                        if (b.getType() != Material.AIR) {
-                            b.setType(Material.AIR);
-                        }
+                        if (b.getType() != Material.AIR) b.setType(Material.AIR);
                         idx--;
                     }
-                    if (idx >= 0) {
-                        Bukkit.getScheduler().runTaskLater(plugin, this, 1L);
-                    }
+                    if (idx >= 0) Bukkit.getScheduler().runTaskLater(plugin, this, 1L);
                 }
             });
         } else {
@@ -335,10 +317,6 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
         for (int x = -LOBBY_R; x <= LOBBY_R; x++) {
             for (int z = -LOBBY_R; z <= LOBBY_R; z++) {
                 for (int y = -1; y <= 2; y++) {
-                    // Don't clear shell floor far below
-                    if (y < 0 && Math.abs(x) <= LOBBY_R && Math.abs(z) <= LOBBY_R) {
-                        // clear lobby platform only
-                    }
                     Block b = world.getBlockAt(cx + x, cy + y, cz + z);
                     if (b.getType() == Material.WHITE_STAINED_GLASS
                             || b.getType() == Material.EMERALD_BLOCK
@@ -359,20 +337,14 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
 
     public void prepareRound() { }
 
-    public void endRound() {
-        returnToLobby();
-    }
+    public void endRound() { returnToLobby(); }
 
-    public void cleanup() {
-        returnToLobby();
-    }
+    public void cleanup() { returnToLobby(); }
 
     public void dropContainment() {
         for (Location loc : containmentGlass) {
             Block b = loc.getBlock();
-            if (b.getType() == Material.CYAN_STAINED_GLASS) {
-                b.setType(Material.AIR);
-            }
+            if (b.getType() == Material.CYAN_STAINED_GLASS) b.setType(Material.AIR);
         }
         containmentGlass.clear();
     }
@@ -390,15 +362,7 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
         validSafePadSpawns.clear();
     }
 
-    /**
-     * Faithful port of MazePreset.build()'s valid-safe-pad construction:
-     * 1. Start from every maze cell.
-     * 2. Drop any within 10 (2D) of a spawn.
-     * 3. Drop any within 7 (2D) of a glass bound.
-     * 4. Pick 8 "safeZones" spread apart and away from center via
-     *    UtilAlg.getLocationAwayFromOtherLocations, clearing a 6-block (3D) radius around each.
-     * 5. Drop any remaining cell within 7 (2D) of a safeZone.
-     */
+    /** Faithful port of MazePreset.build()'s valid-safe-pad construction. */
     private void rebuildPadSpawnList() {
         validSafePadSpawns.clear();
         validSafePadSpawns.addAll(pathPoints);
@@ -462,9 +426,7 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
             double closest = -1;
             for (Location away : awayFrom) {
                 if (away == null || away.getWorld() == null || location.getWorld() == null
-                        || !location.getWorld().getName().equals(away.getWorld().getName())) {
-                    continue;
-                }
+                        || !location.getWorld().getName().equals(away.getWorld().getName())) continue;
                 double dist = offset3dSq(away, location);
                 if (closest == -1 || dist < closest) closest = dist;
             }
@@ -477,13 +439,12 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
         return bestLocation == null ? center.clone() : bestLocation.clone();
     }
 
-    private void buildMazeRow(World world, int cx, int cy, int cz, int mz) {
+    private void buildMazeRow(World world, int cx, int cy, int cz, int mz, MazeBlockData theme) {
         for (int mx = 0; mx < MAZE_SIZE; mx++) {
             int val = mazeData[mz][mx];
             if (val == 0) continue;
 
             // Source MazePreset maps maze[row=y][col=x] physically to X=y, Z=x.
-            // Port data row index (mz) => physical X, column index (mx) => physical Z.
             int wx = cx - HALF + mz;
             int wz = cz - HALF + mx;
 
@@ -492,21 +453,20 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
             boolean isBarrier = (val == 4 || val == 6);
             boolean isSpawn = (val == 2);
 
-            // Column base below the surface is laid for every real path cell (including
-            // path cells that run through the center), so the maze shows once the center
-            // clay decays away. The lime clay "safe pad" starts as a full plane over the
-            // whole center and is removed over time to reveal the maze beneath.
+            // Use the active map palette at generation time. This is deliberately not
+            // quartz-first: clients should never see the default theme flash before
+            // MapThemeApplier corrects it.
             if (isPath) {
-                trackSet(world.getBlockAt(wx, cy - 2, wz), Material.CHISELED_QUARTZ_BLOCK);
-                trackSet(world.getBlockAt(wx, cy - 3, wz), Material.STONE);
+                trackSet(world.getBlockAt(wx, cy - 2, wz), theme.middle);
+                trackSet(world.getBlockAt(wx, cy - 3, wz), theme.bottom);
             }
 
-            // Surface layer
+            // Surface layer: center starts as the lime safe-zone plane; ordinary paths use
+            // the configured map surface material immediately.
             if (isCenter) {
-                // Full lime clay plane covering the center (maze hidden underneath).
                 trackSet(world.getBlockAt(wx, cy - 1, wz), Material.LIME_TERRACOTTA);
             } else if (isPath) {
-                trackSet(world.getBlockAt(wx, cy - 1, wz), Material.QUARTZ_BLOCK);
+                trackSet(world.getBlockAt(wx, cy - 1, wz), theme.top);
             }
 
             if (isPath) {
@@ -548,16 +508,8 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
         List<Location> pool = validSafePadSpawns.isEmpty() ? pathPoints : validSafePadSpawns;
         if (pool.isEmpty()) return center.clone();
 
-        // Source pickNextLocForSafePad: when there is no current/old pad (the very first pad
-        // of the game), deliberately pick the furthest valid point from center instead of a
-        // random one (which could land too close on stage 1).
-        if (avoid == null || avoid.isEmpty()) {
-            return findFurthest(center, pool);
-        }
+        if (avoid == null || avoid.isEmpty()) return findFurthest(center, pool);
 
-        // Source pickNextLocForSafePad (non-first pad): build the exhaustive list of every
-        // valid point NOT within 40 (3D) of ANY current/old pad, then pick uniformly at random
-        // (UtilAlg.Random). If none qualify, fall back to the furthest-from-center point.
         List<Location> best = new ArrayList<Location>();
         for (Location pos : pool) {
             boolean canAdd = true;
@@ -569,9 +521,7 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
             }
             if (canAdd) best.add(pos);
         }
-        if (best.isEmpty()) {
-            return findFurthest(center, pool);
-        }
+        if (best.isEmpty()) return findFurthest(center, pool);
         return best.get(random.nextInt(best.size())).clone();
     }
 
@@ -586,9 +536,7 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
                 bestSq = d;
                 best.clear();
                 best.add(l);
-            } else if (d == bestSq) {
-                best.add(l);
-            }
+            } else if (d == bestSq) best.add(l);
         }
         return best.get(random.nextInt(best.size())).clone();
     }
@@ -627,9 +575,7 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
         int cx = padCenter.getBlockX();
         int cz = padCenter.getBlockZ();
         for (int x = -2; x <= 2; x++) {
-            for (int z = -2; z <= 2; z++) {
-                disabledWaypoints.add((cx + x) + "," + (cz + z));
-            }
+            for (int z = -2; z <= 2; z++) disabledWaypoints.add((cx + x) + "," + (cz + z));
         }
     }
 
@@ -637,9 +583,7 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
         int cx = padCenter.getBlockX();
         int cz = padCenter.getBlockZ();
         for (int x = -2; x <= 2; x++) {
-            for (int z = -2; z <= 2; z++) {
-                disabledWaypoints.remove((cx + x) + "," + (cz + z));
-            }
+            for (int z = -2; z <= 2; z++) disabledWaypoints.remove((cx + x) + "," + (cz + z));
         }
     }
 
@@ -650,7 +594,6 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
     public List<Location> getSpawnPoints() { return spawnPoints; }
     public Location getCenter() { return center == null ? null : center.clone(); }
 
-    /** Lobby center = maze center lifted to the separate pre/post-match platform. */
     public Location getLobbyCenter() {
         if (center == null) return null;
         return center.clone().add(0, LOBBY_Y_OFFSET, 0);
@@ -664,9 +607,7 @@ public void generateMazeAsync(final int requestedPattern, final Runnable onDone)
     }
 
     private void setQuiet(Block block, Material mat) {
-        if (block.getType() != mat) {
-            block.setType(mat);
-        }
+        if (block.getType() != mat) block.setType(mat);
     }
 
     private static class BlockPos {
