@@ -12,6 +12,7 @@ import me.monstermaze.stats.SoloRunCompletionListener;
 import me.monstermaze.world.MapCommandListener;
 import me.monstermaze.world.MapManager;
 import me.monstermaze.world.MapThemeApplier;
+import me.monstermaze.world.MapWorldSafetyListener;
 import me.monstermaze.world.SoloPBCommandListener;
 import me.monstermaze.world.VoidWorldManager;
 import org.bukkit.Bukkit;
@@ -28,6 +29,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private VoidWorldManager voidWorlds;
     private MapManager mapManager;
     private MapThemeApplier mapThemeApplier;
+    private MapWorldSafetyListener mapWorldSafetyListener;
     private MazeMode mode = MazeMode.ORIGINAL;
     private me.monstermaze.stats.LeaderboardManager leaderboards;
     private boolean soloMode;
@@ -42,6 +44,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.voidWorlds = new VoidWorldManager(this);
         this.mapManager = new MapManager(this);
         this.mapThemeApplier = new MapThemeApplier(this);
+        this.mapWorldSafetyListener = new MapWorldSafetyListener(this);
         this.leaderboards = new me.monstermaze.stats.LeaderboardManager(this);
         this.runRecorder = new RunRecorder(this);
 
@@ -105,6 +108,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         if (monsterEntityListener != null) monsterEntityListener.shutdown();
         if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown();
         if (mapThemeApplier != null) mapThemeApplier.stop();
+        if (mapWorldSafetyListener != null) mapWorldSafetyListener.shutdown();
         if (gameManager != null) gameManager.forceStop();
         getLogger().info("MonsterMazeStandalone disabled.");
     }
