@@ -3,6 +3,10 @@
   "token": "YOUR_BOT_TOKEN",
   "feed_channels": ["YOUR_SOLO_RUNS_CHANNEL_ID"],
   "modes": ["modern", "speed", "lagless", "original"],
+  "platform_modes": {
+    "1.8": ["modern", "speed", "lagless", "original"],
+    "1.21": ["original", "modern", "classic"]
+  },
   "channels": {
     "1.8": {
       "modern": {"overall": "leaderboard-modern-1-8", "patterns": "leaderboard-modern-1-8-mazepatterns", "kits": "leaderboard-modern-1-8-kits"},
@@ -11,10 +15,9 @@
       "original": {"overall": "leaderboard-original-1-8", "patterns": "leaderboard-original-1-8-mazepatterns", "kits": "leaderboard-original-1-8-kits"}
     },
     "1.21": {
+      "original": {"overall": "leaderboard-original-1-21", "patterns": "leaderboard-original-1-21-mazepatterns", "kits": "leaderboard-original-1-21-kits"},
       "modern": {"overall": "leaderboard-modern-1-21", "patterns": "leaderboard-modern-1-21-mazepatterns", "kits": "leaderboard-modern-1-21-kits"},
-      "speed": {"overall": "leaderboard-speed-1-21", "patterns": "leaderboard-speed-1-21-mazepatterns", "kits": "leaderboard-speed-1-21-kits"},
-      "lagless": {"overall": "leaderboard-lagless-1-21", "patterns": "leaderboard-lagless-1-21-mazepatterns", "kits": "leaderboard-lagless-1-21-kits"},
-      "original": {"overall": "leaderboard-original-1-21", "patterns": "leaderboard-original-1-21-mazepatterns", "kits": "leaderboard-original-1-21-kits"}
+      "classic": {"overall": "leaderboard-classic-1-21", "patterns": "leaderboard-classic-1-21-mazepatterns", "kits": "leaderboard-classic-1-21-kits"}
     }
   },
   "top_n": 10
