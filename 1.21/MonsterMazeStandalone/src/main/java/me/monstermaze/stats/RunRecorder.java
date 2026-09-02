@@ -14,6 +14,8 @@ import java.util.UUID;
 /** Emits completed solo runs as lightweight JSON records for the Solo submitter. */
 public class RunRecorder {
 
+    private static final String PLATFORM = "1.21";
+
     private final MonsterMazePlugin plugin;
     private final File folder;
 
@@ -52,6 +54,7 @@ public class RunRecorder {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
         sb.append(entry("schema", "1"));
+        sb.append(entry("platform", PLATFORM));
         sb.append(entry("plugin", pluginVer));
         sb.append(entry("name", name));
         sb.append(entry("uuid", uuid.toString()));
@@ -70,7 +73,7 @@ public class RunRecorder {
             writer.write(sb.toString());
             writer.close();
             plugin.getLogger().info("Solo run recorded: " + out.getName()
-                    + " (mode=" + mode.id + " stage=" + stage + " time=" + elapsedMs + "ms)");
+                    + " (platform=" + PLATFORM + " mode=" + mode.id + " stage=" + stage + " time=" + elapsedMs + "ms)");
             return true;
         } catch (IOException e) {
             plugin.getLogger().warning("Could not write solo run record: " + e.getMessage());
