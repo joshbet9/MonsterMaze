@@ -1,5 +1,6 @@
 package me.monstermaze.util;
 
+import me.monstermaze.entity.MonsterEntityController;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Creature;
@@ -8,14 +9,7 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 
-/**
- * Paper 1.21 entity utilities used by Monster Maze.
- *
- * <p>The 1.8 build used a custom Snowman whose network entity registration was changed so the
- * client rendered it as the selected monster. That NMS registration trick does not have a direct
- * 1.21 equivalent. The modern equivalent is to spawn the actual vanilla entity type, remove its
- * vanilla goals through Paper's Mob Goal API, and let Monster Maze drive all movement itself.</p>
- */
+/** Paper 1.21 entity utilities used by Monster Maze. */
 public final class UtilEnt {
     private UtilEnt() {}
 
@@ -55,7 +49,7 @@ public final class UtilEnt {
         }
     }
 
-    /** Remove autonomous vanilla goals while leaving AI/pathfinding available to Monster Maze. */
+    /** Remove autonomous vanilla goals while leaving the entity usable by Monster Maze. */
     public static void vegetate(Entity ent) {
         if (ent == null) return;
         if (ent instanceof Creature) {
@@ -73,7 +67,6 @@ public final class UtilEnt {
         }
     }
 
-    /** Stop the current Paper pathfinder path. */
     public static void stopNavigation(Entity ent) {
         if (!(ent instanceof Mob)) return;
         try {
@@ -83,10 +76,7 @@ public final class UtilEnt {
         }
     }
 
-    /**
-     * Modern Monster Maze ghost: the real vanilla entity type is sent to the client, but its
-     * autonomous behaviour is stripped so Monster Maze remains authoritative over movement.
-     */
+    /** Spawn the selected renderer entity, then normalise it to the Monster Maze ghost contract. */
     public static LivingEntity spawnGhostMob(Location loc, String mobType) {
         if (loc == null || loc.getWorld() == null) return null;
         EntityType type = resolveMobType(mobType);
@@ -101,11 +91,8 @@ public final class UtilEnt {
                 return null;
             }
             LivingEntity living = (LivingEntity) entity;
-            living.setRemoveWhenFarAway(false);
-            living.setCanPickupItems(false);
-            living.setCollidable(false);
-            living.setSilent(true);
             vegetate(living);
+            MonsterEntityController.configure(living);
             return living;
         } catch (Throwable t) {
             Bukkit.getLogger().warning("[MonsterMaze] spawnGhostMob '" + mobType + "' failed: " + t);
@@ -125,7 +112,6 @@ public final class UtilEnt {
         }
     }
 
-    /** Retained for compatibility with older 1.21 callers that explicitly request Snow Golems. */
     public static org.bukkit.entity.Snowman spawnGhostSnowman(Location loc) {
         LivingEntity ent = spawnGhostMob(loc, "snowman");
         return ent instanceof org.bukkit.entity.Snowman ? (org.bukkit.entity.Snowman) ent : null;
