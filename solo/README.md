@@ -90,7 +90,7 @@ The Discord layout is:
 
 1.8 modes are Original, Modern, Speed and Lagless. 1.21 modes are Original,
 Modern and Classic. The five kits are shared by both platforms: Jumper,
-Slowball, Body Builder, Repulsor and Maverick.
+Slowballer, Body Builder, Repulsor and Maverick.
 
 The leaderboard database key is:
 
