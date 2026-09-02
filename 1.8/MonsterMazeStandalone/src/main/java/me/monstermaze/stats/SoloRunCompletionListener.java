@@ -11,13 +11,14 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.scheduler.BukkitTask;
 
-/** Records every completed solo attempt; lifetime PB filtering stays in the permanent leaderboard. */
+/** Records every completed solo attempt; PB attempts are already emitted by GameManager. */
 public final class SoloRunCompletionListener implements Listener {
     private final MonsterMazePlugin plugin;
     private final BukkitTask task;
     private Player soloPlayer;
     private int pattern = -1;
     private String kit;
+    private int previousPB;
     private boolean soloGame;
     private boolean recorded;
 
@@ -40,6 +41,7 @@ public final class SoloRunCompletionListener implements Listener {
                     pattern = plugin.getGameManager().getPatternIndex();
                     KitType selected = plugin.getGameManager().getKitManager().getKit(soloPlayer);
                     kit = selected == null ? null : selected.id;
+                    previousPB = kit == null ? 0 : plugin.getLeaderboards().getKitPB(plugin.getMode(), pattern, soloPlayer.getUniqueId(), kit);
                 } else if (alive.size() > 1) {
                     soloGame = false;
                 }
@@ -65,17 +67,23 @@ public final class SoloRunCompletionListener implements Listener {
 
     private void record(Player player) {
         if (recorded || player == null || pattern < 0 || kit == null) return;
+        int stage = plugin.getGameManager().getStage();
+        if (stage > previousPB) {
+            // GameManager already wrote the PB attempt to solo-runs/. Do not duplicate it.
+            recorded = true;
+            return;
+        }
         recorded = true;
         long liveStart = plugin.getGameManager().getGameLiveTime();
         long elapsed = liveStart > 0 ? Math.max(0L, System.currentTimeMillis() - liveStart) : 0L;
-        plugin.getRunRecorder().record(player, plugin.getMode(), pattern, kit,
-                plugin.getGameManager().getStage(), elapsed);
+        plugin.getRunRecorder().record(player, plugin.getMode(), pattern, kit, stage, elapsed);
     }
 
     private void reset() {
         soloPlayer = null;
         pattern = -1;
         kit = null;
+        previousPB = 0;
         soloGame = false;
         recorded = false;
     }
