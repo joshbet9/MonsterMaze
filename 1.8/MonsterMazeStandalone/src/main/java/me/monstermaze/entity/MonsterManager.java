@@ -440,10 +440,6 @@ public class MonsterManager {
         bumpCooldown.put(p.getUniqueId(), System.currentTimeMillis());
     }
 
-    private void launch(LivingEntity ent, Vector velocity) {
-        launched.put(ent, System.currentTimeMillis() + 2000L);
-        ent.setVelocity(velocity);
-    }
 
     private double offset2d(Location a, Location b) {
         double dx = a.getX() - b.getX();
