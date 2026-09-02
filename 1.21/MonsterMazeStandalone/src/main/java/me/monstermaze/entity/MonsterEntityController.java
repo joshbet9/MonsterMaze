@@ -21,6 +21,7 @@ public final class MonsterEntityController {
     public static final double HITBOX_HEIGHT = 1.9D;
     public static final double MOVEMENT_SPEED = 0.2D;
     public static final String MONSTER_METADATA = "monstermaze_mob";
+    public static final String MONSTER_SKIN_METADATA = "monstermaze_skin";
 
     private static boolean resolved;
     private static Method getHandle;
@@ -41,20 +42,10 @@ public final class MonsterEntityController {
         entity.setFallDistance(0);
 
         if (entity instanceof Mob) {
-            // Keep the vanilla entity ticking so external velocity/physics works. Awareness is
-            // disabled and all vanilla goals are removed by UtilEnt. This gives us the important
-            // combination for Monster Maze: no autonomous AI, but pushed/launched mobs still move.
             Mob mob = (Mob) entity;
             mob.setAI(true);
             mob.setAware(false);
         }
-        if (entity instanceof Zombie) {
-            Zombie zombie = (Zombie) entity;
-            zombie.setAdult();
-            zombie.setConversionTime(-1);
-            try { zombie.setShouldBurnInDay(false); } catch (Throwable ignored) { }
-        }
-        if (entity instanceof Slime) ((Slime) entity).setSize(1);
         setMovementSpeed(entity);
         normalizeHitbox(entity);
     }
@@ -66,15 +57,8 @@ public final class MonsterEntityController {
         entity.setVisualFire(false);
         if (entity instanceof Mob) {
             Mob mob = (Mob) entity;
-            // Do not setAI(false): on modern Paper that can suppress externally-applied
-            // velocity. setAware(false) prevents autonomous behaviour while preserving physics.
             mob.setAI(true);
             mob.setAware(false);
-        }
-        if (entity instanceof Zombie) {
-            Zombie zombie = (Zombie) entity;
-            zombie.setAdult();
-            try { zombie.setShouldBurnInDay(false); } catch (Throwable ignored) { }
         }
         setMovementSpeed(entity);
         normalizeHitbox(entity);
