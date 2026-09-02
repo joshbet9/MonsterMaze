@@ -1,8 +1,8 @@
 package me.monstermaze;
 
-import me.monstermaze.command.MMDebugCommand;
 import me.monstermaze.command.MMCommand;
 import me.monstermaze.command.MMUtilityCommandListener;
+import me.monstermaze.entity.MonsterEntityListener;
 import me.monstermaze.game.BuildBypassListener;
 import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
@@ -33,6 +33,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private boolean soloMode;
     private RunRecorder runRecorder;
     private SoloRunCompletionListener soloRunCompletionListener;
+    private MonsterEntityListener monsterEntityListener;
 
     @Override
     public void onEnable() {
@@ -49,6 +50,10 @@ public class MonsterMazePlugin extends JavaPlugin {
         if (stored == null) stored = MazeMode.ORIGINAL;
         this.mode = stored;
         this.soloMode = cfg.getBoolean("solo-mode", false);
+        if (!cfg.contains("forced-pattern")) {
+            cfg.set("forced-pattern", -1);
+            saveConfig();
+        }
 
         for (MazeMode m : MazeMode.values()) {
             try {
@@ -71,6 +76,7 @@ public class MonsterMazePlugin extends JavaPlugin {
 
         this.gameManager = new GameManager(this);
         this.gameManager.getMonsterManager().setMobType(mapManager.activeMob());
+        this.monsterEntityListener = new MonsterEntityListener(this, gameManager);
         this.mapThemeApplier.start();
         this.soloRunCompletionListener = new SoloRunCompletionListener(this);
         gameManager.bootstrapLobby(mapCenter);
@@ -96,6 +102,7 @@ public class MonsterMazePlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (monsterEntityListener != null) monsterEntityListener.shutdown();
         if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown();
         if (mapThemeApplier != null) mapThemeApplier.stop();
         if (gameManager != null) gameManager.forceStop();
