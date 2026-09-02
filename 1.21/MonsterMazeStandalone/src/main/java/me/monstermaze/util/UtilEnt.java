@@ -14,14 +14,7 @@ import org.bukkit.util.Vector;
 public final class UtilEnt {
     private UtilEnt() {}
 
-    /**
-     * Entity-type-independent Monster Maze movement.
-     *
-     * The original 1.8 implementation spawned one Snowman ghost for every visual monster type
-     * and drove that same entity through ControllerMove. The 1.8 performance audit records the
-     * resulting travel as approximately 0.07 blocks per tick. In 1.21 we reproduce that measured
-     * movement contract directly rather than letting each renderer mob choose its own physics.
-     */
+    /** Entity-type-independent Monster Maze movement. */
     public static boolean CreatureMoveFast(Entity ent, Location target, float speed) {
         return CreatureMoveFast(ent, target, speed, true);
     }
@@ -35,21 +28,20 @@ public final class UtilEnt {
         Location loc = ent.getLocation();
         Vector delta = target.toVector().subtract(loc.toVector());
         delta.setY(0);
-        if (delta.lengthSquared() < 1.0E-6) {
-            ent.setVelocity(new Vector(0, ent.getVelocity().getY(), 0));
-            return false;
-        }
+        double distance = delta.length();
+        if (distance < 1.0E-6) return false;
 
-        // Measured 1.8 Monster Maze movement: roughly 0.07 blocks per tick. The speed argument
-        // remains part of the legacy API and the near-target clamp, but the renderer mob's native
-        // movement attribute must not change the actual Monster Maze travel rate.
-        double step = Math.min(0.07D, Math.sqrt(delta.getX() * delta.getX() + delta.getZ() * delta.getZ()));
-        Vector velocity = delta.normalize().multiply(step);
-        velocity.setY(ent.getVelocity().getY());
-        ent.setVelocity(velocity);
-
-        float yaw = (float) Math.toDegrees(Math.atan2(-velocity.getX(), velocity.getZ()));
-        ent.setRotation(yaw, ent.getLocation().getPitch());
+        // Move the renderer entity explicitly rather than relying on its vanilla physics. This is
+        // deliberate: in 1.8 every monster was a Snowman ghost, so Villager/Enderman/etc. must
+        // not get different movement semantics in 1.21. The 1.8 audit records 0.07 blocks as the
+        // maximum one-tick travel at the 1.4 controller speed.
+        double step = Math.min(0.07D, distance);
+        Vector movement = delta.normalize().multiply(step);
+        Location next = loc.clone().add(movement);
+        next.setY(loc.getY());
+        next.setYaw((float) Math.toDegrees(Math.atan2(-movement.getX(), movement.getZ())));
+        next.setPitch(loc.getPitch());
+        ent.teleport(next);
         return true;
     }
 
@@ -72,7 +64,6 @@ public final class UtilEnt {
         }
     }
 
-    /** Remove all autonomous vanilla goals and disable AI entirely. */
     public static void vegetate(Entity ent) {
         if (ent == null) return;
         if (ent instanceof Creature) {
@@ -80,27 +71,19 @@ public final class UtilEnt {
         }
         if (ent instanceof Mob) {
             Mob mob = (Mob) ent;
-            try {
-                Bukkit.getMobGoals().removeAllGoals(mob);
-            } catch (Throwable t) {
-                Bukkit.getLogger().warning("[MonsterMaze] Failed to remove vanilla mob goals: " + t);
-            }
-            // Renderer entity only. Monster Maze owns movement and targeting.
+            try { Bukkit.getMobGoals().removeAllGoals(mob); }
+            catch (Throwable t) { Bukkit.getLogger().warning("[MonsterMaze] Failed to remove vanilla mob goals: " + t); }
             mob.setAI(false);
-            mob.setAware(false);
+            mob.setAware(true);
         }
     }
 
     public static void stopNavigation(Entity ent) {
         if (!(ent instanceof Mob)) return;
-        try {
-            ((Mob) ent).getPathfinder().stopPathfinding();
-        } catch (Throwable t) {
-            Bukkit.getLogger().warning("[MonsterMaze] stopNavigation failed: " + t);
-        }
+        try { ((Mob) ent).getPathfinder().stopPathfinding(); }
+        catch (Throwable t) { Bukkit.getLogger().warning("[MonsterMaze] stopNavigation failed: " + t); }
     }
 
-    /** Spawn the selected renderer entity, then normalise it to the Monster Maze ghost contract. */
     public static LivingEntity spawnGhostMob(Location loc, String mobType) {
         if (loc == null || loc.getWorld() == null) return null;
         EntityType type = resolveMobType(mobType);
@@ -110,10 +93,7 @@ public final class UtilEnt {
         }
         try {
             Entity entity = loc.getWorld().spawnEntity(loc, type);
-            if (!(entity instanceof LivingEntity)) {
-                entity.remove();
-                return null;
-            }
+            if (!(entity instanceof LivingEntity)) { entity.remove(); return null; }
             LivingEntity living = (LivingEntity) entity;
             vegetate(living);
             MonsterEntityController.configure(living);
@@ -129,11 +109,8 @@ public final class UtilEnt {
         if (id.isEmpty() || "snowman".equals(id) || "snow_golem".equals(id)) return EntityType.SNOW_GOLEM;
         if ("zombified_piglin".equals(id) || "pig_zombie".equals(id) || "zombie_pigman".equals(id)) return EntityType.ZOMBIFIED_PIGLIN;
         if ("eyeofender".equals(id)) return EntityType.ENDERMAN;
-        try {
-            return EntityType.valueOf(id.toUpperCase().replace('-', '_').replace(' ', '_'));
-        } catch (IllegalArgumentException ignored) {
-            return null;
-        }
+        try { return EntityType.valueOf(id.toUpperCase().replace('-', '_').replace(' ', '_')); }
+        catch (IllegalArgumentException ignored) { return null; }
     }
 
     public static org.bukkit.entity.Snowman spawnGhostSnowman(Location loc) {
