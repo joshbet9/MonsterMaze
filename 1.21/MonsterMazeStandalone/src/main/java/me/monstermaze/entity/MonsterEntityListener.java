@@ -2,7 +2,6 @@ package me.monstermaze.entity;
 
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.game.GameManager;
-import me.monstermaze.game.GameState;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
@@ -50,7 +49,6 @@ public final class MonsterEntityListener implements Listener {
         switch (event.getCause()) {
             case ENTITY_ATTACK:
             case ENTITY_SWEEP_ATTACK:
-                // Monster Maze ghosts were not player-damageable. Kits use their own events.
                 event.setCancelled(true);
                 break;
             case FIRE:
@@ -58,7 +56,6 @@ public final class MonsterEntityListener implements Listener {
             case MELTING:
             case DROWNING:
             case DRYOUT:
-                // Environmental survival is not part of Monster Maze mob behaviour.
                 event.setCancelled(true);
                 break;
             default:
@@ -67,6 +64,10 @@ public final class MonsterEntityListener implements Listener {
     }
 
     private boolean isMonster(Entity entity) {
-        return entity instanceof LivingEntity && game.getMonsterManager().isMonster((LivingEntity) entity);
+        if (!(entity instanceof LivingEntity)) return false;
+        for (LivingEntity monster : game.getMonsterManager().getMonsters()) {
+            if (monster == entity) return true;
+        }
+        return false;
     }
 }
