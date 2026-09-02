@@ -447,3 +447,5 @@ public class MonsterManager {
         return Math.sqrt(dx * dx + dz * dz);
     }
 }
+
+// Main branch canonical refresh: Test 1 navigation throttling; public launch API retained.
