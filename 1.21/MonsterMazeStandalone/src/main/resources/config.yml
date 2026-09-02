@@ -4,6 +4,7 @@
 mode: Original
 solo-mode: false
 map: eyeofender
+forced-pattern: -1
 mob-overrides:
   volcano: witch
   siberian: creeper
