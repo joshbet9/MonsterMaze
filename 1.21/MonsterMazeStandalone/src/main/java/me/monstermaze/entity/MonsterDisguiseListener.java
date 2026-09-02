@@ -9,6 +9,7 @@ import com.comphenix.protocol.events.PacketEvent;
 import org.bukkit.entity.EntityType;
 
 import java.util.Locale;
+import java.util.UUID;
 
 /**
  * Rewrites the client-facing entity type of Monster Maze's Snow Golem-backed mobs.
@@ -40,8 +41,8 @@ public final class MonsterDisguiseListener {
 
     private void rewriteSpawn(PacketEvent event) {
         try {
-            if (!event.getPacket().getUUIDs().size() > 0) return;
-            java.util.UUID uuid = event.getPacket().getUUIDs().read(0);
+            if (event.getPacket().getUUIDs().size() == 0) return;
+            UUID uuid = event.getPacket().getUUIDs().read(0);
             String skin = MonsterEntityController.getSkin(uuid);
             if (skin == null) return;
 
