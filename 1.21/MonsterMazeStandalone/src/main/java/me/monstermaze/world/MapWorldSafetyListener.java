@@ -71,7 +71,13 @@ public final class MapWorldSafetyListener implements Listener {
         world.setStorm(false);
         world.setThundering(false);
         world.setTime(6000L);
-        world.setDifficulty(Difficulty.PEACEFUL);
+
+        // Do NOT use PEACEFUL here. Monster Maze uses real vanilla mobs as renderers,
+        // including Zombified Piglins on Volcano. Peaceful immediately removes hostile
+        // entities, which caused the Piglin spawn task to create a batch every tick only
+        // for the safety task/Minecraft to remove it again. Natural spawning is already
+        // disabled above and blocked by the spawn listeners below, so NORMAL is safe.
+        world.setDifficulty(Difficulty.NORMAL);
     }
 
     private void purgeLoadedChunks(World world) {
