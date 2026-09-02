@@ -16,15 +16,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Bridges the existing 1.21 game loop to the Solo run recorder without changing
- * the mature multiplayer elimination flow. It snapshots each run's kit PB while
- * the game is live, then emits a record only when the final stage beats that PB.
- */
+/** Records every completed solo attempt for the Discord feed; PB filtering is not applied here. */
 public final class SoloRunCompletionListener implements Listener {
-
     private final MonsterMazePlugin plugin;
-    private final Map<UUID, Baseline> baselines = new HashMap<UUID, Baseline>();
+    private final Map<UUID, RunInfo> runs = new HashMap<UUID, RunInfo>();
     private final BukkitTask task;
 
     public SoloRunCompletionListener(final MonsterMazePlugin plugin) {
@@ -37,29 +32,20 @@ public final class SoloRunCompletionListener implements Listener {
 
     private void snapshotLiveRun() {
         if (!plugin.isSoloMode()) {
-            baselines.clear();
+            runs.clear();
             return;
         }
-
         GameState state = plugin.getGameManager().getState();
         if (state != GameState.LIVE) {
-            if (state == GameState.IDLE) baselines.clear();
+            if (state == GameState.IDLE) runs.clear();
             return;
         }
-
         int pattern = plugin.getGameManager().getPatternIndex();
         if (pattern < 0) return;
-
         for (Player player : plugin.getGameManager().getAlivePlayers()) {
             KitType kit = plugin.getGameManager().getKitManager().getKit(player);
             if (kit == null) continue;
-            UUID uuid = player.getUniqueId();
-            Baseline existing = baselines.get(uuid);
-            if (existing == null || existing.pattern != pattern || !existing.kit.equals(kit.id)) {
-                int previous = plugin.getLeaderboards().getKitPB(
-                        plugin.getMode(), pattern, uuid, kit.id);
-                baselines.put(uuid, new Baseline(pattern, kit.id, previous));
-            }
+            runs.put(player.getUniqueId(), new RunInfo(pattern, kit.id));
         }
     }
 
@@ -77,34 +63,27 @@ public final class SoloRunCompletionListener implements Listener {
         if (!plugin.isSoloMode()) return;
         Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override public void run() {
-                Baseline baseline = baselines.remove(player.getUniqueId());
-                if (baseline == null) return;
-
-                int stage = plugin.getGameManager().getStage();
-                if (stage <= baseline.previousPB) return;
-
+                RunInfo info = runs.remove(player.getUniqueId());
+                if (info == null) return;
                 long liveStart = plugin.getGameManager().getGameLiveTime();
                 long elapsed = liveStart > 0 ? Math.max(0L, System.currentTimeMillis() - liveStart) : 0L;
-                plugin.getRunRecorder().record(player, plugin.getMode(), baseline.pattern,
-                        baseline.kit, stage, elapsed);
+                plugin.getRunRecorder().record(player, plugin.getMode(), info.pattern,
+                        info.kit, plugin.getGameManager().getStage(), elapsed);
             }
         });
     }
 
     public void shutdown() {
         task.cancel();
-        baselines.clear();
+        runs.clear();
     }
 
-    private static final class Baseline {
+    private static final class RunInfo {
         final int pattern;
         final String kit;
-        final int previousPB;
-
-        Baseline(int pattern, String kit, int previousPB) {
+        RunInfo(int pattern, String kit) {
             this.pattern = pattern;
             this.kit = kit;
-            this.previousPB = previousPB;
         }
     }
 }
