@@ -54,76 +54,52 @@ public class ArenaListener implements Listener {
                 && Math.abs(loc.getBlockZ() - c.getBlockZ()) <= r;
     }
 
-    /** Prevent players from opening beacon UIs inside the arena during a game. */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBeaconInteract(PlayerInteractEvent event) {
         if (game.getState() == GameState.IDLE) return;
         if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
             Block block = event.getClickedBlock();
             if (block != null && block.getType() == Material.BEACON) {
-                if (inArena(block.getLocation())) {
-                    event.setCancelled(true);
-                }
+                if (inArena(block.getLocation())) event.setCancelled(true);
             }
         }
     }
 
-    /** Preserve Maverick kit directional pad velocity from being overridden. */
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onPlayerVelocity(PlayerVelocityEvent event) {
         Player p = event.getPlayer();
-        if (p.hasMetadata("maverick_launch")) {
-            p.removeMetadata("maverick_launch", plugin);
-            // Allow velocity through without flattening target trajectory
-        }
+        if (p.hasMetadata("maverick_launch")) p.removeMetadata("maverick_launch", plugin);
     }
 
-    /** Snowmen forming snow layers. */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSnowForm(EntityBlockFormEvent event) {
-        if (event.getEntity() instanceof Snowman) {
-            event.setCancelled(true);
-        }
+        if (event.getEntity() instanceof Snowman) event.setCancelled(true);
     }
 
-    /** Players must not be able to attack the maze monsters — direct hits OR projectiles (snowballs).
-     *  Cancelling the damage event also stops the projectile's knockback/velocity on the monster
-     *  (vanilla only applies projectile momentum when the damage lands). */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPlayerHitMonster(EntityDamageByEntityEvent event) {
         if (!(event.getEntity() instanceof Snowman)) return;
         if (!inVoidWorld(event.getEntity().getWorld())) return;
-
         Entity damager = event.getDamager();
         if (damager instanceof Player) {
             event.setCancelled(true);
             return;
         }
-        if (damager instanceof Projectile) {
-            Projectile proj = (Projectile) damager;
-            if (proj.getShooter() instanceof Player) {
-                event.setCancelled(true);
-            }
+        if (damager instanceof Projectile && ((Projectile) damager).getShooter() instanceof Player) {
+            event.setCancelled(true);
         }
     }
 
-    /** Disable weather for the whole game. The void world keeps doWeatherCycle off, but a weather
-     *  change can still be triggered (e.g. on world reload or a client command), so block it here. */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onWeather(WeatherChangeEvent event) {
-        if (inVoidWorld(event.getWorld()) && event.toWeatherState()) {
-            event.setCancelled(true);
-        }
+        if (inVoidWorld(event.getWorld()) && event.toWeatherState()) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onThunder(ThunderChangeEvent event) {
-        if (inVoidWorld(event.getWorld()) && event.toThunderState()) {
-            event.setCancelled(true);
-        }
+        if (inVoidWorld(event.getWorld()) && event.toThunderState()) event.setCancelled(true);
     }
 
-    /** PvP off: players can never damage each other during a game. */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPlayerHitPlayer(EntityDamageByEntityEvent event) {
         if (game.getState() == GameState.IDLE) return;
@@ -133,20 +109,13 @@ public class ArenaListener implements Listener {
             return;
         }
         Entity d = event.getDamager();
-        if (d instanceof org.bukkit.entity.Projectile) {
-            org.bukkit.entity.Projectile proj = (org.bukkit.entity.Projectile) d;
-            if (proj.getShooter() instanceof Player) {
-                event.setCancelled(true);
-            }
-        }
+        if (d instanceof Projectile && ((Projectile) d).getShooter() instanceof Player) event.setCancelled(true);
     }
 
-    /** Play player hurt sound instead of default mob hit sound when attacked by a snowman. */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onMonsterAttackPlayer(EntityDamageByEntityEvent event) {
         if (game.getState() == GameState.IDLE) return;
         if (!(event.getEntity() instanceof Player)) return;
-        
         Entity damager = event.getDamager();
         if (damager instanceof Snowman) {
             Player player = (Player) event.getEntity();
@@ -154,16 +123,14 @@ public class ArenaListener implements Listener {
         }
     }
 
-    /** Fireworks are decorative in this game: since 1.9 they explode for real damage + knockback,
-     *  which would hurt the Repulsor caster at their feet and insta-kill launched monsters. */
+    /** Fireworks are decorative in Monster Maze; never let a Repulsor firework cause damage. */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onFireworkDamage(EntityDamageByEntityEvent event) {
-        if (inVoidWorld(event.getEntity().getWorld()) && event.getDamager() instanceof Firework) {
+        if (inArena(event.getEntity().getLocation()) && event.getDamager() instanceof Firework) {
             event.setCancelled(true);
         }
     }
 
-    /** Regen off: no natural (or any) health regeneration during a game. */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onRegain(EntityRegainHealthEvent event) {
         if (game.getState() == GameState.IDLE) return;
@@ -171,32 +138,25 @@ public class ArenaListener implements Listener {
         event.setCancelled(true);
     }
 
-    /** Extra safety for any entity->block change (snow/gravel etc). */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onChangeBlock(EntityChangeBlockEvent event) {
         Entity e = event.getEntity();
         if (e instanceof Snowman || inArena(event.getBlock().getLocation())) {
             if (e instanceof Snowman || e instanceof LivingEntity) {
-                if (inArena(event.getBlock().getLocation())) {
-                    event.setCancelled(true);
-                }
+                if (inArena(event.getBlock().getLocation())) event.setCancelled(true);
             }
         }
     }
 
-    /** Block natural/reinforcement spawns inside the arena; allow custom snowmen. */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onCreatureSpawn(CreatureSpawnEvent event) {
         if (!inArena(event.getLocation())) return;
         if (game.getState() == GameState.IDLE) return;
-
         if (event.getSpawnReason() == SpawnReason.CUSTOM) return;
         if ("MazeMonster".equals(event.getEntity().getCustomName())) return;
-
         event.setCancelled(true);
     }
 
-    /** Lock hunger: never drain in the lobby (IDLE/ENDING) or during a match, and keep food topped up. */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onFood(FoodLevelChangeEvent event) {
         if (!(event.getEntity() instanceof Player)) return;
@@ -204,13 +164,9 @@ public class ArenaListener implements Listener {
         event.setCancelled(true);
         Player p = (Player) event.getEntity();
         p.setFoodLevel(20);
-        try {
-            p.setSaturation(20f);
-        } catch (Throwable ignored) {
-        }
+        try { p.setSaturation(20f); } catch (Throwable ignored) { }
     }
 
-    /** Keep players in the pre/post-game lobby safe: no fall, starvation, drowning, etc. */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onLobbyDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player)) return;
@@ -223,16 +179,12 @@ public class ArenaListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
-        if (inVoidWorld(event.getPlayer().getWorld()) && game.getState() != GameState.IDLE) {
-            event.setCancelled(true);
-        }
+        if (inVoidWorld(event.getPlayer().getWorld()) && game.getState() != GameState.IDLE) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
-        if (inVoidWorld(event.getPlayer().getWorld()) && game.getState() != GameState.IDLE) {
-            event.setCancelled(true);
-        }
+        if (inVoidWorld(event.getPlayer().getWorld()) && game.getState() != GameState.IDLE) event.setCancelled(true);
     }
 
     private boolean inVoidWorld(World w) {
