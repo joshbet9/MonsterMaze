@@ -1,0 +1,49 @@
+name: Force refresh MonsterManager
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repair and refresh MonsterManager
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          p = Path('1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/entity/MonsterManager.java')
+          s = p.read_text(encoding='utf-8')
+
+          # Remove only the accidental private duplicate launch() implementation,
+          # if present. Keep the public API launch() used by KitManager.
+          pattern = r'\n\s*private void launch\(LivingEntity ent, Vector velocity\) \{\s*\n\s*launched\.put\(ent, System\.currentTimeMillis\(\) \+ 2000L\);\s*\n\s*ent\.setVelocity\(velocity\);\s*\n\s*\}\s*'
+          s2, n = re.subn(pattern, '\n', s, count=1)
+          if n:
+              s = s2
+
+          marker = '// Main branch canonical refresh: Test 1 navigation throttling; public launch API retained.\n'
+          if marker not in s:
+              s += '\n' + marker
+              p.write_text(s, encoding='utf-8')
+          elif n:
+              p.write_text(s, encoding='utf-8')
+
+      - name: Commit refresh
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- 1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/entity/MonsterManager.java
+          git rm -- .github/workflows/force-refresh-monster-manager.yml
+          if git diff --cached --quiet; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git commit -m "Fix duplicate MonsterManager launch and refresh main"
+          git push
