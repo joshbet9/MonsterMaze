@@ -381,6 +381,23 @@ public class MonsterManager {
         }
     }
 
+    public void launch(LivingEntity ent, Vector velocity) {
+        if (!ents.containsKey(ent)) return;
+        frozen.remove(ent);
+        ent.setVelocity(velocity);
+        launched.put(ent, System.currentTimeMillis());
+    }
+
+    public Iterable<LivingEntity> getMonsters() {
+        return ents.keySet();
+    }
+
+    public void freeze(LivingEntity ent, long thawAt) {
+        if (!ents.containsKey(ent)) return;
+        launched.remove(ent);
+        frozen.put(ent, thawAt);
+    }
+
     private void tickLaunched() {
         if (launched.isEmpty()) return;
         long now = System.currentTimeMillis();
