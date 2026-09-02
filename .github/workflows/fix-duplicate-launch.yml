@@ -1,0 +1,35 @@
+name: Fix duplicate MonsterManager launch
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove duplicate private launch method
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          p = Path('1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/entity/MonsterManager.java')
+          s = p.read_text()
+          pattern = r'\n    private void launch\(LivingEntity ent, Vector velocity\) \{\n        launched\.put\(ent, System\.currentTimeMillis\(\) \+ 2000L\);\n        ent\.setVelocity\(velocity\);\n    \}\n'
+          s2, n = re.subn(pattern, '\n', s, count=1)
+          if n != 1:
+              raise SystemExit(f'Expected exactly one duplicate private launch method, removed {n}')
+          p.write_text(s2)
+      - name: Commit fix and remove temporary workflow
+        run: |
+          git config user.name 'MonsterMaze Bot'
+          git config user.email 'monstermaze-bot@users.noreply.github.com'
+          git add 1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/entity/MonsterManager.java .github/workflows/fix-duplicate-launch.yml
+          git rm .github/workflows/fix-duplicate-launch.yml
+          git commit -m 'FIX: remove duplicate MonsterManager launch method'
+          git push
