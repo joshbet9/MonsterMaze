@@ -10,6 +10,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -19,7 +20,7 @@ import java.util.Locale;
  * without adding per-tick logging noise during normal operation.
  */
 public final class PerfDiagnostics {
-    private static final boolean STRIP_KIT_ITEM_META_TEST = true;
+    private static final boolean TEST6_ISOLATE_KIT_TICKS = true;
 
     private final MonsterMazePlugin plugin;
     private final GameManager game;
@@ -39,7 +40,6 @@ public final class PerfDiagnostics {
     private int lastLoggedPhaseTimer = Integer.MIN_VALUE;
     private final SimpleDateFormat clockFormat = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
     private Field phaseTimerField;
-    private boolean kitMetaStrippedThisLive;
 
     private String lastStack = "";
     private long stackSinceNs;
@@ -83,8 +83,10 @@ public final class PerfDiagnostics {
                         liveHeartbeatStart = heartbeatCount;
                         liveElapsedLogSecond = -1L;
                         lastLoggedPhaseTimer = Integer.MIN_VALUE;
-                        kitMetaStrippedThisLive = false;
-                        if (STRIP_KIT_ITEM_META_TEST) stripKitItemMeta();
+                        if (TEST6_ISOLATE_KIT_TICKS) {
+                            stripKitItemMeta();
+                            cancelKitManagerRepeatingTasks();
+                        }
                         plugin.getLogger().info(String.format(Locale.US,
                                 "[PERF][LIVE-START] real=%s stopwatchElapsed=0.000s serverTick=0 phaseTimer=%d",
                                 wallClock(), getPhaseTimer()));
@@ -115,7 +117,6 @@ public final class PerfDiagnostics {
                     liveHeartbeatStart = -1L;
                     liveElapsedLogSecond = -1L;
                     lastLoggedPhaseTimer = Integer.MIN_VALUE;
-                    kitMetaStrippedThisLive = false;
                 }
             }
         }, 1L, 1L);
@@ -142,7 +143,7 @@ public final class PerfDiagnostics {
                 heartbeatCount, maxGapNs / 1_000_000.0, slowTicks));
     }
 
-    /** TEST 6: remove ItemMeta/NBT-bearing metadata from the player's inventory once at LIVE start. */
+    /** TEST 6: preserve material/count/durability but remove Bukkit ItemMeta from kit inventory stacks. */
     private void stripKitItemMeta() {
         int stripped = 0;
         for (Player player : Bukkit.getOnlinePlayers()) {
@@ -154,8 +155,31 @@ public final class PerfDiagnostics {
                 stripped++;
             }
         }
-        kitMetaStrippedThisLive = true;
-        plugin.getLogger().info("[PERF][TEST6] stripped ItemMeta from " + stripped + " kit inventory stack(s)");
+        plugin.getLogger().info("[PERF][TEST6] stripped ItemMeta from " + stripped + " inventory stack(s)");
+    }
+
+    /**
+     * Test-only cancellation of KitManager's two repeating LIVE tasks. We identify the
+     * anonymous Runnable classes rather than cancelling every task owned by the plugin,
+     * so GameManager's timer and PerfDiagnostics continue to run.
+     */
+    private void cancelKitManagerRepeatingTasks() {
+        int cancelled = 0;
+        for (BukkitTask task : Bukkit.getScheduler().getPendingTasks()) {
+            if (task == null || task.getOwner() != plugin || !task.isSync()) continue;
+            try {
+                Method getTaskClass = task.getClass().getDeclaredMethod("getTaskClass");
+                getTaskClass.setAccessible(true);
+                Class<?> taskClass = (Class<?>) getTaskClass.invoke(task);
+                if (taskClass != null && taskClass.getName().startsWith("me.monstermaze.kit.KitManager$")) {
+                    task.cancel();
+                    cancelled++;
+                }
+            } catch (Throwable ignored) {
+                // Test-only diagnostic: unsupported scheduler implementation simply leaves the tasks running.
+            }
+        }
+        plugin.getLogger().info("[PERF][TEST6] cancelled " + cancelled + " KitManager repeating task(s)");
     }
 
     private void snapshot() {
