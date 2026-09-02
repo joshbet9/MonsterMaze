@@ -1,6 +1,7 @@
 package me.monstermaze;
 
 import me.monstermaze.command.MMCommand;
+import me.monstermaze.command.PerfTestCommand;
 import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
 import me.monstermaze.game.MazeMode;
@@ -61,6 +62,7 @@ public class MonsterMazePlugin extends JavaPlugin {
 
         new LobbyListener(this, gameManager, voidWorlds);
         getCommand("mm").setExecutor(new MMCommand(this));
+        getCommand("perftest").setExecutor(new PerfTestCommand(this, gameManager));
 
         // Move anyone already online into the void lobby
         Bukkit.getScheduler().runTaskLater(this, new Runnable() {
