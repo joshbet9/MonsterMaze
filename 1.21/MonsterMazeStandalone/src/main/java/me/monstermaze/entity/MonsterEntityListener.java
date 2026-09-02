@@ -3,7 +3,6 @@ package me.monstermaze.entity;
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.game.GameManager;
 import org.bukkit.Bukkit;
-import org.bukkit.entity.Enderman;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.event.EventHandler;
@@ -11,10 +10,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityCombustEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityTargetEvent;
-import org.bukkit.event.entity.EntityTeleportEvent;
 import org.bukkit.scheduler.BukkitTask;
 
-/** Keeps real 1.21 renderer mobs from leaking vanilla gameplay into Monster Maze. */
+/** Keeps Monster Maze's Snow Golem-backed entities from leaking vanilla gameplay into the game. */
 public final class MonsterEntityListener implements Listener {
     private final GameManager game;
     private final BukkitTask tickTask;
@@ -42,13 +40,6 @@ public final class MonsterEntityListener implements Listener {
 
     @EventHandler
     public void onTarget(EntityTargetEvent event) {
-        if (isMonster(event.getEntity())) event.setCancelled(true);
-    }
-
-    /** Endermen must never use their vanilla random teleport behaviour. */
-    @EventHandler
-    public void onTeleport(EntityTeleportEvent event) {
-        if (!(event.getEntity() instanceof Enderman)) return;
         if (isMonster(event.getEntity())) event.setCancelled(true);
     }
 
