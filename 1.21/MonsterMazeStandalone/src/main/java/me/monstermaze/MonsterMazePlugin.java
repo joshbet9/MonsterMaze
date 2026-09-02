@@ -127,6 +127,7 @@ public class MonsterMazePlugin extends JavaPlugin {
 
     public VoidWorldManager getVoidWorlds() { return voidWorlds; }
     public MapManager getMapManager() { return mapManager; }
+    public MapThemeApplier getMapThemeApplier() { return mapThemeApplier; }
     public me.monstermaze.stats.LeaderboardManager getLeaderboards() { return leaderboards; }
     public boolean isSoloMode() { return soloMode; }
     public RunRecorder getRunRecorder() { return runRecorder; }
