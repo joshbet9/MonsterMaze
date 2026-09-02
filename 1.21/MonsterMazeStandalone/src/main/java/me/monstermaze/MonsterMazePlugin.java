@@ -2,6 +2,7 @@ package me.monstermaze;
 
 import me.monstermaze.command.MMCommand;
 import me.monstermaze.command.MMUtilityCommandListener;
+import me.monstermaze.entity.MonsterDisguiseListener;
 import me.monstermaze.entity.MonsterEntityListener;
 import me.monstermaze.game.BuildBypassListener;
 import me.monstermaze.game.GameManager;
@@ -36,6 +37,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private RunRecorder runRecorder;
     private SoloRunCompletionListener soloRunCompletionListener;
     private MonsterEntityListener monsterEntityListener;
+    private MonsterDisguiseListener monsterDisguiseListener;
 
     @Override
     public void onEnable() {
@@ -80,6 +82,16 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.gameManager = new GameManager(this);
         this.gameManager.getMonsterManager().setMobType(mapManager.activeMob());
         this.monsterEntityListener = new MonsterEntityListener(this, gameManager);
+        if (Bukkit.getPluginManager().getPlugin("ProtocolLib") != null) {
+            try {
+                this.monsterDisguiseListener = new MonsterDisguiseListener();
+                getLogger().info("ProtocolLib detected; Monster Maze ghost-mob disguises enabled.");
+            } catch (Throwable t) {
+                getLogger().warning("ProtocolLib is present but ghost-mob disguises could not be enabled: " + t.getClass().getSimpleName());
+            }
+        } else {
+            getLogger().warning("ProtocolLib not installed; Monster Maze mobs will render as Snow Golems.");
+        }
         this.mapThemeApplier.start();
         this.soloRunCompletionListener = new SoloRunCompletionListener(this);
         gameManager.bootstrapLobby(mapCenter);
@@ -105,6 +117,7 @@ public class MonsterMazePlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (monsterDisguiseListener != null) monsterDisguiseListener.shutdown();
         if (monsterEntityListener != null) monsterEntityListener.shutdown();
         if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown();
         if (mapThemeApplier != null) mapThemeApplier.stop();
