@@ -9,7 +9,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.entity.Player;
 
-/** Re-opens arena editing only for an explicitly enabled OP Creative build session. */
+/** Re-opens arena block editing only for an explicitly enabled OP Creative build session. */
 public final class BuildBypassListener implements Listener {
     public static final String METADATA = "monstermaze_build_bypass";
 
@@ -25,11 +25,11 @@ public final class BuildBypassListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onBlockBreak(BlockBreakEvent event) {
-        if (allowed(event.getPlayer())) event.setCancelled(false);
+        event.setCancelled(!allowed(event.getPlayer()));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onBlockPlace(BlockPlaceEvent event) {
-        if (allowed(event.getPlayer())) event.setCancelled(false);
+        event.setCancelled(!allowed(event.getPlayer()));
     }
 }
