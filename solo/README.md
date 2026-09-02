@@ -65,18 +65,39 @@ to `submitted\` only after a successful post, so network failures do not lose a 
 
 ## Ranked leaderboard bot (`solo/bot/`)
 
-The optional Discord bot watches the PB feed and maintains three tiers of pinned
-ranked boards per mode and **per Minecraft platform**:
+The optional Discord bot watches the PB feed and maintains three consolidated
+leaderboard channels per Minecraft platform:
 
-- **Overall** — top stages across all patterns and kits.
-- **Pattern** — one board per Maze 1/2/3.
-- **Kit** — one board per pattern × kit (3 × 5 = 15).
+- **Overall** — one section/board for each mode, ranking across all three maze patterns and all kits.
+- **Maze Pattern** — one section for each of Maze Patterns 1, 2 and 3 within each mode.
+- **Kits** — one section for every pattern × kit within each mode (3 × 5 = 15 per mode).
 
-The bot's database key is now:
+Maps are **not** part of leaderboard identity. The three maze patterns are.
+
+The Discord layout is:
+
+```text
+#solo-runs
+
+#1.8-leaderboard-overall
+#1.8-leaderboard-mazepattern
+#1.8-leaderboard-kits
+
+#1.21-leaderboard-overall
+#1.21-leaderboard-mazepattern
+#1.21-leaderboard-kits
+```
+
+1.8 modes are Original, Modern, Speed and Lagless. 1.21 modes are Original,
+Modern and Classic. The five kits are shared by both platforms: Jumper,
+Slowball, Body Builder, Repulsor and Maverick.
+
+The leaderboard database key is:
 
 `platform + mode + pattern + kit + uuid`
 
-so a player's 1.8 and 1.21 PBs can never overwrite each other.
+so a player's 1.8 and 1.21 PBs can never overwrite each other, and map changes
+do not split a leaderboard.
 
 ### Bot hardening
 
@@ -85,26 +106,53 @@ The bot now:
 - rebuilds from the **complete PB feed history** instead of stopping at 500 messages;
 - relies on Discord.py pagination for history retrieval;
 - retries HTTP 429 and transient 5xx responses using Discord's retry delay when available;
-- coalesces bursts of live PBs into one leaderboard refresh per platform/mode;
+- coalesces bursts of live PBs into one leaderboard refresh per platform;
 - does not rebuild again every time Discord reconnects;
 - validates platform, UUID and maze pattern before accepting a submission;
 - migrates an existing `leaderboard.db` automatically, treating its historical rows
-  as 1.8 and preserving existing 1.8 board messages.
+  as 1.8.
 
 ### Bot setup
 
 1. Create a bot application at the Discord Developer Portal and enable the
    **Message Content Intent**.
-2. Invite it with Send Messages, Embed Links, Read Messages, Read Message History,
-   and Manage Messages permissions.
-3. Create three channels for each **platform + mode** you want boards for:
-   - overall (`#lb-modern-1-8`)
-   - patterns (`#lb-modern-1-8-patterns`)
-   - kits (`#lb-modern-1-8-kits`)
-   and equivalent channels for 1.21.
+2. Invite it to both the old and new Discord servers during migration. It needs
+   Send Messages, Embed Links, Read Messages and Read Message History. Manage
+   Messages is useful for pinning leaderboard posts.
+3. Create the seven channels shown above on the new server.
 4. `cd solo/bot && pip install -r requirements.txt`
-5. Copy `config.example.json` to `config.json` and set the token, feed channel and
-   `channels.<platform>.<mode>.overall|patterns|kits` values.
+5. Copy `config.example.json` to `config.json` and set the token, new `#solo-runs`
+   feed channel, and the six leaderboard channel IDs.
 6. Run `python monster_bot.py`.
+
+### Migrating the existing #solo-runs
+
+Discord cannot move a channel between servers. The one-time
+`migrate_solo_runs.py` utility copies the old `#solo-runs` message history into
+the new `#solo-runs` channel. It paginates through the complete history and is
+resumable, so it can safely be rerun after an interruption.
+
+Add this to `config.json` temporarily:
+
+```json
+"migration": {
+  "source_channel": "OLD_SOLO_RUNS_CHANNEL_ID",
+  "destination_channel": "NEW_SOLO_RUNS_CHANNEL_ID"
+}
+```
+
+Then run:
+
+```text
+python migrate_solo_runs.py
+```
+
+After the copy completes, point `feed_channels` at the new channel and run the
+leaderboard bot. It will rebuild the database from the migrated history and
+populate the new consolidated boards. Older PB embeds without an explicit
+platform are treated as 1.8 for backwards compatibility.
+
+The migration utility stores source message IDs in `solo_runs_migration.sqlite3`
+so a rerun does not duplicate already-copied messages.
 
 The bot's live database and token configuration are gitignored.
