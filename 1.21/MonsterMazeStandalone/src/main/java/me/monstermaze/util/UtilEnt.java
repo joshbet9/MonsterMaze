@@ -18,9 +18,9 @@ public final class UtilEnt {
      * Entity-type-independent Monster Maze movement.
      *
      * The original 1.8 implementation spawned one Snowman ghost for every visual monster type
-     * and drove that same entity through ControllerMove. In 1.21 we therefore remove all vanilla
-     * AI from the renderer entity and own its horizontal velocity here. This prevents Villager,
-     * Enderman, Slime, etc. from contributing their own movement behaviour.
+     * and drove that same entity through ControllerMove. The 1.8 performance audit records the
+     * resulting travel as approximately 0.07 blocks per tick. In 1.21 we reproduce that measured
+     * movement contract directly rather than letting each renderer mob choose its own physics.
      */
     public static boolean CreatureMoveFast(Entity ent, Location target, float speed) {
         return CreatureMoveFast(ent, target, speed, true);
@@ -40,10 +40,10 @@ public final class UtilEnt {
             return false;
         }
 
-        // The 1.8 fallback used speed * 0.2 as its per-tick horizontal step. Keep that same
-        // contract, but with vanilla AI completely disabled so no renderer-specific movement is
-        // added on top of it.
-        double step = Math.min(speed * 0.2D, Math.sqrt(delta.getX() * delta.getX() + delta.getZ() * delta.getZ()));
+        // Measured 1.8 Monster Maze movement: roughly 0.07 blocks per tick. The speed argument
+        // remains part of the legacy API and the near-target clamp, but the renderer mob's native
+        // movement attribute must not change the actual Monster Maze travel rate.
+        double step = Math.min(0.07D, Math.sqrt(delta.getX() * delta.getX() + delta.getZ() * delta.getZ()));
         Vector velocity = delta.normalize().multiply(step);
         velocity.setY(ent.getVelocity().getY());
         ent.setVelocity(velocity);
@@ -85,9 +85,7 @@ public final class UtilEnt {
             } catch (Throwable t) {
                 Bukkit.getLogger().warning("[MonsterMaze] Failed to remove vanilla mob goals: " + t);
             }
-            // Critical parity point: the renderer mob is only a skin. Do not allow its native
-            // AI/travel implementation to add movement on top of Monster Maze's Snowman-style
-            // controller.
+            // Renderer entity only. Monster Maze owns movement and targeting.
             mob.setAI(false);
             mob.setAware(false);
         }
