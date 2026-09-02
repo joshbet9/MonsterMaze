@@ -32,6 +32,13 @@ public final class MapThemeApplier {
         if (task != null) { task.cancel(); task = null; }
     }
 
+    /** Force a re-application after a SafePad has restored its pre-pad blocks. */
+    public void refresh() {
+        lastPattern = -1;
+        lastMap = "";
+        applyIfReady();
+    }
+
     private void applyIfReady() {
         if (plugin.getGameManager() == null) return;
         MazeGenerator maze = plugin.getGameManager().getMazeGenerator();
@@ -51,17 +58,11 @@ public final class MapThemeApplier {
             int x = path.getBlockX();
             int y = path.getBlockY();
             int z = path.getBlockZ();
-
             Block top = world.getBlockAt(x, y - 1, z);
             Block middle = world.getBlockAt(x, y - 2, z);
             Block bottom = world.getBlockAt(x, y - 3, z);
 
-            // Preserve the visible safe/start pad surface, but still theme the maze layers
-            // underneath it. Previously the whole column was skipped, leaving test quartz
-            // visible whenever a pad disappeared.
-            if (!isProtectedPadBlock(top)) {
-                top.setType(theme.top, false);
-            }
+            if (!isProtectedPadBlock(top)) top.setType(theme.top, false);
             middle.setType(theme.middle, false);
             bottom.setType(theme.bottom, false);
         }
