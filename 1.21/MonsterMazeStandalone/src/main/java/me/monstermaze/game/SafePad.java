@@ -1,7 +1,7 @@
 package me.monstermaze.game;
 
 import me.monstermaze.MonsterMazePlugin;
-import me.monstermaze.Location;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -20,16 +20,16 @@ import java.util.List;
 
 /** Beacon safe pad. */
 public class SafePad implements Listener {
-    private final org.bukkit.Location center;
+    private final Location center;
     private final int surfaceY;
     private final boolean qol;
     private final List<BlockSnapshot> snapshots = new ArrayList<BlockSnapshot>();
     private int decayCount = 11;
     private boolean active = true;
 
-    public SafePad(org.bukkit.Location pathLocation) { this(pathLocation, false); }
+    public SafePad(Location pathLocation) { this(pathLocation, false); }
 
-    public SafePad(org.bukkit.Location pathLocation, boolean qol) {
+    public SafePad(Location pathLocation, boolean qol) {
         this.center = pathLocation.clone();
         this.surfaceY = pathLocation.getBlockY() - 1;
         this.qol = qol;
@@ -99,11 +99,11 @@ public class SafePad implements Listener {
     private void setBlock(Block block, Material mat) { snapshots.add(new BlockSnapshot(block)); block.setType(mat, false); }
     private void setBlock(Block block, BlockData data) { snapshots.add(new BlockSnapshot(block)); block.setBlockData(data, false); }
 
-    public org.bukkit.Location getLocation() { return center.clone(); }
+    public Location getLocation() { return center.clone(); }
     public boolean isActive() { return active; }
 
     public boolean isOn(Entity entity) {
-        org.bukkit.Location loc = entity.getLocation();
+        Location loc = entity.getLocation();
         int by = surfaceY;
         if (qol) {
             double dx = loc.getX() - center.getX(), dz = loc.getZ() - center.getZ();
