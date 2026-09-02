@@ -7,6 +7,7 @@ import com.comphenix.protocol.events.ListenerPriority;
 import com.comphenix.protocol.events.PacketAdapter;
 import com.comphenix.protocol.events.PacketEvent;
 import com.comphenix.protocol.wrappers.WrappedDataValue;
+import me.monstermaze.MonsterMazePlugin;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 
@@ -29,9 +30,10 @@ public final class MonsterDisguiseListener {
     private final ProtocolManager protocolManager;
     private final PacketAdapter adapter;
 
-    public MonsterDisguiseListener() {
+    public MonsterDisguiseListener(MonsterMazePlugin plugin) {
         protocolManager = ProtocolLibrary.getProtocolManager();
         adapter = new PacketAdapter(
+                plugin,
                 ListenerPriority.NORMAL,
                 PacketType.Play.Server.SPAWN_ENTITY,
                 PacketType.Play.Server.ENTITY_METADATA) {
