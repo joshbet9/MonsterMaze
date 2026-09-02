@@ -1,1 +1,1 @@
-I will restore this file from the known-good commit next.
+RESTORE FROM COMMIT 2e1b0dd9ec1e52743e87419072d6062640705f24
