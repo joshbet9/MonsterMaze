@@ -7,6 +7,9 @@ commands:
   mm:
     description: Monster Maze commands
     usage: /mm <start|stop|setcenter|status|kit|kits>
+  perftest:
+    description: Temporary Monster Maze performance isolation tools
+    usage: /perftest <help|start|status|count|monsterlogic|kitlogic|living|entities|projectiles|items|npcs|inventory|world|player|gametasks|alltasks|all>
 permissions:
   monstermaze.admin:
     description: Allows control of Monster Maze
