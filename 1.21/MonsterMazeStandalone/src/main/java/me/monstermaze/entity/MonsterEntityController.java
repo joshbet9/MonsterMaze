@@ -43,8 +43,9 @@ public final class MonsterEntityController {
 
         if (entity instanceof Mob) {
             Mob mob = (Mob) entity;
-            mob.setAI(true);
-            mob.setAware(true);
+            // Renderer entity only: Monster Maze owns all movement and targeting.
+            mob.setAI(false);
+            mob.setAware(false);
         }
         if (entity instanceof Zombie) {
             Zombie zombie = (Zombie) entity;
@@ -63,6 +64,11 @@ public final class MonsterEntityController {
         tag(entity);
         entity.setFireTicks(0);
         entity.setVisualFire(false);
+        if (entity instanceof Mob) {
+            Mob mob = (Mob) entity;
+            mob.setAI(false);
+            mob.setAware(false);
+        }
         if (entity instanceof Zombie) {
             Zombie zombie = (Zombie) entity;
             zombie.setAdult();
