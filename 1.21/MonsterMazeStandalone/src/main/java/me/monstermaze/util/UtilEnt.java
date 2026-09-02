@@ -32,10 +32,8 @@ public final class UtilEnt {
         double distance = delta.length();
         if (distance < 1.0E-6) return false;
 
-        // The old 1.21 implementation hard-coded 0.07 blocks here, ignoring the controller
-        // speed completely. MonsterManager supplies the controller value, so movement must scale
-        // from that value. With the current 0.8 controller this gives 0.14 blocks per movement
-        // call, matching the intended Snowman-ghost movement scale rather than vanilla AI.
+        // Monster Maze owns movement; this is deliberately independent of vanilla mob AI.
+        // The step is scaled from the same controller speed used by the working 1.8 port.
         double step = Math.min(speed * 0.175D, distance);
         Vector movement = delta.normalize().multiply(step);
         Location next = loc.clone().add(movement);
@@ -66,6 +64,10 @@ public final class UtilEnt {
         }
     }
 
+    /**
+     * Remove vanilla goals while deliberately leaving the entity's movement/physics system alive.
+     * This mirrors the 1.8 ghost entities: Monster Maze supplies all routing itself.
+     */
     public static void vegetate(Entity ent) {
         if (ent == null) return;
         if (ent instanceof Creature) {
@@ -75,12 +77,6 @@ public final class UtilEnt {
             Mob mob = (Mob) ent;
             try { Bukkit.getMobGoals().removeAllGoals(mob); }
             catch (Throwable t) { Bukkit.getLogger().warning("[MonsterMaze] Failed to remove vanilla mob goals: " + t); }
-            // Do not disable AI here. The 1.8 implementation removed the vanilla goals but
-            // deliberately left the entity's movement/physics system alive. On Paper 1.21,
-            // setAI(false) makes the mob completely unable to move, including externally-applied
-            // Repulsor velocity. MonsterEntityController therefore keeps AI enabled and disables
-            // awareness after goal removal, while setCollidable(false) provides the 1.8 ghost
-            // collision behaviour.
         }
     }
 
@@ -90,19 +86,29 @@ public final class UtilEnt {
         catch (Throwable t) { Bukkit.getLogger().warning("[MonsterMaze] stopNavigation failed: " + t); }
     }
 
+    /**
+     * Spawn a Monster Maze ghost using the exact physical architecture of the working 1.8 port:
+     * every maze monster is a Snow Golem underneath. The configured mob type is retained only as
+     * a logical/client skin identifier. This prevents native Enderman, Piglin, Ocelot, Squid, etc.
+     * AI and spawning behaviour from leaking into the game.
+     */
     public static LivingEntity spawnGhostMob(Location loc, String mobType) {
         if (loc == null || loc.getWorld() == null) return null;
-        EntityType type = resolveMobType(mobType);
-        if (type == null || !type.isAlive()) {
-            Bukkit.getLogger().warning("[MonsterMaze] Unsupported mob type '" + mobType + "'");
-            return null;
-        }
         try {
-            // Explicit CUSTOM is important because map worlds intentionally reject every natural
-            // creature spawn. Monster Maze owns these entities; the renderer mob is only the skin.
-            Entity entity = loc.getWorld().spawnEntity(loc, type, CreatureSpawnEvent.SpawnReason.CUSTOM);
-            if (!(entity instanceof LivingEntity)) { entity.remove(); return null; }
+            Entity entity = loc.getWorld().spawnEntity(
+                    loc,
+                    EntityType.SNOW_GOLEM,
+                    CreatureSpawnEvent.SpawnReason.CUSTOM);
+            if (!(entity instanceof LivingEntity)) {
+                entity.remove();
+                return null;
+            }
+
             LivingEntity living = (LivingEntity) entity;
+            living.setMetadata(MonsterEntityController.MONSTER_SKIN_METADATA,
+                    new org.bukkit.metadata.FixedMetadataValue(
+                            me.monstermaze.MonsterMazePlugin.getInstance(),
+                            normalizeSkin(mobType)));
             vegetate(living);
             MonsterEntityController.configure(living);
             return living;
@@ -112,13 +118,13 @@ public final class UtilEnt {
         }
     }
 
-    private static EntityType resolveMobType(String mobType) {
+    /** Return the logical vanilla mob name used as the client skin/disguise. */
+    private static String normalizeSkin(String mobType) {
         String id = mobType == null ? "" : mobType.trim().toLowerCase();
-        if (id.isEmpty() || "snowman".equals(id) || "snow_golem".equals(id)) return EntityType.SNOW_GOLEM;
-        if ("zombified_piglin".equals(id) || "pig_zombie".equals(id) || "zombie_pigman".equals(id)) return EntityType.ZOMBIFIED_PIGLIN;
-        if ("eyeofender".equals(id)) return EntityType.ENDERMAN;
-        try { return EntityType.valueOf(id.toUpperCase().replace('-', '_').replace(' ', '_')); }
-        catch (IllegalArgumentException ignored) { return null; }
+        if (id.isEmpty() || "snow_golem".equals(id)) return "snowman";
+        if ("pig_zombie".equals(id) || "zombie_pigman".equals(id)) return "zombified_piglin";
+        if ("eye_of_ender".equals(id)) return "eyeofender";
+        return id;
     }
 
     public static org.bukkit.entity.Snowman spawnGhostSnowman(Location loc) {
