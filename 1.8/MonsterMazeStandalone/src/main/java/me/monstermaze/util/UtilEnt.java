@@ -1,14 +1,11 @@
 package me.monstermaze.util;
 
 import me.monstermaze.nms.AddonGhostSnowman;
-import net.minecraft.server.v1_8_R3.EntityCreature;
 import net.minecraft.server.v1_8_R3.EntityInsentient;
 import net.minecraft.server.v1_8_R3.World;
 import net.minecraft.server.v1_8_R3.WorldServer;
-import net.minecraft.server.v1_8_R3.ControllerMove;
 import org.bukkit.Location;
 import org.bukkit.craftbukkit.v1_8_R3.CraftWorld;
-import org.bukkit.craftbukkit.v1_8_R3.entity.CraftCreature;
 import org.bukkit.entity.Creature;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
@@ -24,12 +21,6 @@ public final class UtilEnt {
     private UtilEnt() {}
 
     private static String selectedGhostMobType = "snowman";
-
-    /*
-     * These are retained only as a compatibility fallback. Monster Maze mobs are
-     * CraftCreature instances, so the hot movement path below uses direct NMS calls
-     * and does not pay the reflection cost every tick.
-     */
     private static Method getHandle;
     private static Method getControllerMove;
     private static Method controllerMoveA;
@@ -62,26 +53,14 @@ public final class UtilEnt {
 
     public static boolean CreatureMoveFast(Entity ent, Location target, float speed, boolean slow) {
         if (ent == null || target == null) return false;
+
+        // TEST ONLY: disable Monster Maze custom movement while leaving mobs spawned.
+        return false;
+
+        /*
         double distSq = offsetSquared(ent.getLocation(), target);
         if (distSq < 0.01) return false;
         if (distSq < 4) speed = Math.min(speed, 1f);
-
-        /*
-         * Hot path: Monster Maze mobs are CraftCreature instances backed by
-         * EntityCreature. Calling the NMS methods directly avoids three reflective
-         * Method.invoke calls for every mob on every server tick.
-         */
-        if (ent instanceof CraftCreature) {
-            try {
-                EntityCreature handle = ((CraftCreature) ent).getHandle();
-                ControllerMove controller = handle.getControllerMove();
-                controller.a(target.getX(), target.getY(), target.getZ(), (double) speed);
-                return true;
-            } catch (Throwable ignored) {
-                // Fall through to the existing compatibility path.
-            }
-        }
-
         resolve();
         if (!available) {
             Location loc = ent.getLocation();
@@ -99,6 +78,7 @@ public final class UtilEnt {
             controllerMoveA.invoke(controller, target.getX(), target.getY(), target.getZ(), (double) speed);
             return true;
         } catch (Throwable t) { return false; }
+        */
     }
 
     public static double offsetSquared(Location a, Location b) {
