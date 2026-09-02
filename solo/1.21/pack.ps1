@@ -8,13 +8,42 @@ $dist = Join-Path $here 'solo-dist'
 $maps = Join-Path $here 'maps'
 $paper = if ($env:MM_PAPER_JAR) { $env:MM_PAPER_JAR } else { Join-Path $here 'tools\paper-1.21.11.jar' }
 $protocol = if ($env:MM_PROTOCOLLIB_JAR) { $env:MM_PROTOCOLLIB_JAR } else { Join-Path $here 'tools\ProtocolLib.jar' }
-$jdk21 = if ($env:MM_JDK21) { $env:MM_JDK21 } else { 'C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium\jdk-21' }
+
+# Prefer an explicitly supplied JDK, otherwise discover an installed Temurin/OpenJDK 21.
+if ($env:MM_JDK21) {
+    $jdk21 = $env:MM_JDK21
+} else {
+    $jdkRoots = @(
+        'C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium',
+        'C:\Program Files\Eclipse Adoptium'
+    )
+    $jdk21 = $null
+    foreach ($root in $jdkRoots) {
+        if (Test-Path $root) {
+            $candidate = Get-ChildItem $root -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '^jdk-21(?:\.|$)' } |
+                Sort-Object Name -Descending |
+                Select-Object -First 1
+            if ($candidate) { $jdk21 = $candidate.FullName; break }
+        }
+    }
+    if (-not $jdk21) {
+        $java = Get-Command java.exe -ErrorAction SilentlyContinue
+        if ($java) {
+            $javaHome = Split-Path -Parent (Split-Path -Parent $java.Source)
+            if ((Test-Path (Join-Path $javaHome 'bin\java.exe')) -and ((& (Join-Path $javaHome 'bin\java.exe') -version 2>&1) -match 'version "21')) {
+                $jdk21 = $javaHome
+            }
+        }
+    }
+}
+
 $requiredMaps = @('mm_colombia','mm_sandycoast','mm_siberian','mm_swampland','mm_tesorohundido','mm_volcano','mm_void')
 
 if (-not (Test-Path (Join-Path $project 'pom.xml'))) { throw "1.21 source project not found: $project" }
 if (-not (Test-Path $paper)) { throw "Paper 1.21.11 jar not found: $paper" }
 if (-not (Test-Path $protocol)) { throw "ProtocolLib.jar not found: $protocol" }
-if (-not (Test-Path $jdk21)) { throw "JDK 21 directory not found: $jdk21" }
+if (-not $jdk21 -or -not (Test-Path $jdk21)) { throw "JDK 21 directory not found. Set MM_JDK21 or install a JDK 21." }
 foreach ($map in $requiredMaps) {
     $mapPath = Join-Path $maps $map
     if (-not (Test-Path (Join-Path $mapPath 'level.dat'))) { throw "1.21 map world missing or invalid: $map" }
