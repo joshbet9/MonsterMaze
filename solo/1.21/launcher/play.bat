@@ -8,12 +8,12 @@ if exist "..\update.ps1" (
     echo.
 )
 
-set "JAVA_BIN=java"
-if exist "..\runtime\jdk21\bin\java.exe" set "JAVA_BIN=..\runtime\jdk21\bin\java.exe"
+REM Load the optional user override first. The default value "java" means
+REM use the bundled JDK 21, not the system PATH Java installation.
+set "JAVA_BIN="
 if exist ".\config.bat" call ".\config.bat"
-
-if /i "%JAVA_BIN%"=="java" for /f "delims=" %%i in ('where java.exe 2^>nul') do set "JAVA_BIN=%%i" & goto :found
-:found
+if not defined JAVA_BIN set "JAVA_BIN=java"
+if /i "%JAVA_BIN%"=="java" set "JAVA_BIN=%~dp0..\runtime\jdk21\bin\java.exe"
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$jb='%JAVA_BIN%'; if (!(Test-Path $jb)) { Write-Host ('Java not found at: ' + $jb); exit 1 }; $v = & $jb -version 2>&1 | Out-String; if ($LASTEXITCODE -ne 0) { Write-Host 'Java does not run.'; exit 1 }; if ($v -notmatch 'version \"21\.') { Write-Host 'Monster Maze Solo 1.21 requires Java 21.'; Write-Host $v; exit 1 }; exit 0"
 if errorlevel 1 (
