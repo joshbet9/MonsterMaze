@@ -1,10 +1,12 @@
 package me.monstermaze.world;
 
 import me.monstermaze.MonsterMazePlugin;
+import me.monstermaze.game.GameState;
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
+import org.bukkit.Difficulty;
 import org.bukkit.GameRule;
 import org.bukkit.World;
-import org.bukkit.Chunk;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
@@ -60,6 +62,15 @@ public final class MapWorldSafetyListener implements Listener {
         world.setStorm(false);
         world.setThundering(false);
         world.setTime(6000L);
+
+        // Converted 1.8 map worlds can contain saved hostile entities. Keep every map peaceful
+        // while it is a lobby/world-selection area so those entities are removed by the engine
+        // before they can repopulate the map. Monster Maze switches to NORMAL automatically once
+        // a game enters STARTING/LIVE, where its own CUSTOM entities are spawned.
+        GameState state = plugin.getGameManager() == null
+                ? null : plugin.getGameManager().getState();
+        world.setDifficulty(state == GameState.STARTING || state == GameState.LIVE
+                ? Difficulty.NORMAL : Difficulty.PEACEFUL);
     }
 
     private void purgeLoadedChunks(World world) {
@@ -85,6 +96,7 @@ public final class MapWorldSafetyListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onChunkLoad(ChunkLoadEvent event) {
         if (!isManagedWorld(event.getWorld())) return;
+        configureWorld(event.getWorld());
         purgeChunk(event.getChunk());
     }
 
