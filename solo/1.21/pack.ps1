@@ -26,7 +26,7 @@ try {
 if (-not (Test-Path $sourceJar)) { throw "Build succeeded but JAR was not produced." }
 
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
-New-Item -ItemType Directory -Force -Path (Join-Path $dist 'server\plugins') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $dist 'server\plugins\MonsterMazeStandalone') | Out-Null
 Copy-Item (Join-Path $here 'launcher') (Join-Path $dist 'launcher') -Recurse -Force
 Copy-Item (Join-Path $here 'submitter') (Join-Path $dist 'submitter') -Recurse -Force
 Copy-Item (Join-Path $here 'HOW_TO_PLAY.txt') (Join-Path $dist 'HOW_TO_PLAY.txt')
@@ -35,6 +35,7 @@ Copy-Item (Join-Path $here 'update.bat') (Join-Path $dist 'update.bat')
 Copy-Item (Join-Path $here 'README.md') (Join-Path $dist 'README.md')
 Copy-Item (Join-Path $here 'server\server.properties') (Join-Path $dist 'server\server.properties')
 Copy-Item (Join-Path $here 'server\eula.txt') (Join-Path $dist 'server\eula.txt')
+Copy-Item (Join-Path $here 'server\plugins\MonsterMazeStandalone\config.yml') (Join-Path $dist 'server\plugins\MonsterMazeStandalone\config.yml')
 Copy-Item $sourceJar (Join-Path $dist 'server\plugins\MonsterMazeStandalone.jar')
 Copy-Item $paper (Join-Path $dist 'server\paper-1.21.11.jar')
 Copy-Item $protocol (Join-Path $dist 'server\plugins\ProtocolLib.jar')
