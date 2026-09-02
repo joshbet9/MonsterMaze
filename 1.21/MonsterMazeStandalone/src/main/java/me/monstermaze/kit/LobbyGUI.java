@@ -9,7 +9,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -23,12 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * Unified Monster Maze lobby selector for the modern 1.21 implementation.
- *
- * <p>This is a modern Bukkit/Paper adaptation of the 1.8 unified lobby GUI. It keeps
- * configuration concerns together without carrying over old material IDs or NMS code.</p>
- */
+/** Unified Monster Maze lobby selector for the modern 1.21 implementation. */
 public class LobbyGUI implements Listener {
     public static final String TITLE = ChatColor.DARK_GREEN + "Monster Maze";
     private static final String MODE_TITLE = TITLE + ChatColor.GRAY + " - Mode";
@@ -47,9 +41,6 @@ public class LobbyGUI implements Listener {
     private final GameManager game;
     private final KitManager kits;
 
-    /** GUI-only next-game pattern selection. -1 means random. */
-    private int selectedPattern = -1;
-
     public LobbyGUI(MonsterMazePlugin plugin, GameManager game, KitManager kits) {
         this.plugin = plugin;
         this.game = game;
@@ -57,8 +48,16 @@ public class LobbyGUI implements Listener {
         Bukkit.getPluginManager().registerEvents(this, plugin);
     }
 
-    public void open(Player player) {
-        openHome(player);
+    public void open(Player player) { openHome(player); }
+
+    private int forcedPattern() {
+        return plugin.getConfig().getInt("forced-pattern", -1);
+    }
+
+    private void setForcedPattern(int pattern) {
+        if (pattern < -1 || pattern >= 3) return;
+        plugin.getConfig().set("forced-pattern", pattern);
+        plugin.saveConfig();
     }
 
     private void openHome(Player player) {
@@ -69,12 +68,11 @@ public class LobbyGUI implements Listener {
         KitType kit = kits.getKit(player);
         String map = plugin.getMapManager().getActiveMap();
         String mob = plugin.getMapManager().activeMob();
+        int pattern = forcedPattern();
 
         inv.setItem(4, item(Material.NETHER_STAR, ChatColor.GOLD + "Monster Maze",
-                Arrays.asList(
-                        ChatColor.GRAY + "Configure your run below.",
-                        ChatColor.GRAY + "Then press " + ChatColor.GREEN + "PLAY" + ChatColor.GRAY + " to begin."
-                )));
+                Arrays.asList(ChatColor.GRAY + "Configure your run below.",
+                        ChatColor.GRAY + "Then press " + ChatColor.GREEN + "PLAY" + ChatColor.GRAY + " to begin.")));
         inv.setItem(10, item(Material.CLOCK, mode.color + "Mode",
                 Arrays.asList(ChatColor.WHITE + mode.id, "", ChatColor.YELLOW + "Click to choose mode")));
         inv.setItem(13, item(Material.FILLED_MAP, ChatColor.LIGHT_PURPLE + "Map",
@@ -82,38 +80,33 @@ public class LobbyGUI implements Listener {
         inv.setItem(16, item(kit.icon, ChatColor.YELLOW + "Kit",
                 Arrays.asList(ChatColor.WHITE + ChatColor.stripColor(kit.display), "", ChatColor.YELLOW + "Click to choose kit")));
         inv.setItem(19, item(mobIcon(mob), ChatColor.RED + "Mob",
-                Arrays.asList(
-                        ChatColor.WHITE + prettyMob(mob),
+                Arrays.asList(ChatColor.WHITE + prettyMob(mob),
                         ChatColor.GRAY + "Default: " + ChatColor.WHITE + prettyMob(plugin.getMapManager().mob(map)),
-                        "", ChatColor.YELLOW + "Click to choose mob"
-                )));
+                        "", ChatColor.YELLOW + "Click to choose mob")));
         inv.setItem(28, item(Material.PAPER, ChatColor.AQUA + "Pattern",
-                Arrays.asList(ChatColor.WHITE + patternName(selectedPattern), "", ChatColor.YELLOW + "Click to choose pattern")));
-        inv.setItem(31, pbItem(player, mode, kit));
+                Arrays.asList(ChatColor.WHITE + patternName(pattern), "", ChatColor.YELLOW + "Click to choose pattern")));
+        inv.setItem(31, pbItem(player, mode, kit, pattern));
         inv.setItem(37, item(Material.BOOK, ChatColor.GRAY + "Selected Run",
-                Arrays.asList(
-                        ChatColor.GRAY + "Mode: " + mode.color + mode.id,
+                Arrays.asList(ChatColor.GRAY + "Mode: " + mode.color + mode.id,
                         ChatColor.GRAY + "Map: " + ChatColor.WHITE + pretty(map),
                         ChatColor.GRAY + "Mob: " + ChatColor.WHITE + prettyMob(mob),
                         ChatColor.GRAY + "Kit: " + ChatColor.WHITE + ChatColor.stripColor(kit.display),
-                        ChatColor.GRAY + "Pattern: " + ChatColor.WHITE + patternName(selectedPattern)
-                )));
+                        ChatColor.GRAY + "Pattern: " + ChatColor.WHITE + patternName(pattern))));
         inv.setItem(49, item(Material.EMERALD_BLOCK, ChatColor.GREEN + "PLAY",
                 Arrays.asList(ChatColor.GRAY + "Start Monster Maze with this selection.")));
         inv.setItem(53, item(Material.BARRIER, ChatColor.RED + "Close", null));
         player.openInventory(inv);
     }
 
-    private ItemStack pbItem(Player player, MazeMode mode, KitType kit) {
+    private ItemStack pbItem(Player player, MazeMode mode, KitType kit, int pattern) {
         List<String> lore = new ArrayList<String>();
         lore.add(ChatColor.GRAY + "Mode: " + mode.color + mode.id);
         lore.add(ChatColor.GRAY + "Kit: " + ChatColor.WHITE + ChatColor.stripColor(kit.display));
-        lore.add(ChatColor.GRAY + "Pattern: " + ChatColor.WHITE + patternName(selectedPattern));
+        lore.add(ChatColor.GRAY + "Pattern: " + ChatColor.WHITE + patternName(pattern));
         lore.add("");
-        if (selectedPattern < 0) {
-            lore.add(ChatColor.YELLOW + "Select a specific pattern to view PB.");
-        } else {
-            int pb = plugin.getLeaderboards().getKitPB(mode, selectedPattern, player.getUniqueId(), kit.id);
+        if (pattern < 0) lore.add(ChatColor.YELLOW + "Select a specific pattern to view PB.");
+        else {
+            int pb = plugin.getLeaderboards().getKitPB(mode, pattern, player.getUniqueId(), kit.id);
             lore.add(pb > 0 ? ChatColor.GREEN + "Stage " + pb : ChatColor.GRAY + "No personal best yet");
         }
         return item(Material.GOLD_BLOCK, ChatColor.GOLD + "Your Personal Best", lore);
@@ -145,9 +138,13 @@ public class LobbyGUI implements Listener {
         for (int i = 0; i < maps.size() && i < slots.length; i++) {
             String map = maps.get(i);
             boolean active = map.equalsIgnoreCase(selected);
-            inv.setItem(slots[i], item(Material.FILLED_MAP,
-                    (active ? ChatColor.GREEN + "▶ " : "") + pretty(map),
-                    Arrays.asList(active ? ChatColor.GREEN + "SELECTED" : ChatColor.YELLOW + "Click to select")));
+            boolean available = plugin.getMapManager().isAvailable(map);
+            List<String> lore = new ArrayList<String>();
+            if (active) lore.add(ChatColor.GREEN + "SELECTED");
+            if (!available) lore.add(ChatColor.RED + "WORLD NOT INSTALLED");
+            else if (!active) lore.add(ChatColor.YELLOW + "Click to select");
+            inv.setItem(slots[i], item(available ? Material.FILLED_MAP : Material.BARRIER,
+                    (active ? ChatColor.GREEN + "▶ " : "") + pretty(map), lore));
         }
         back(inv);
         p.openInventory(inv);
@@ -163,8 +160,7 @@ public class LobbyGUI implements Listener {
             KitType k = available.get(i);
             boolean active = selected == k;
             inv.setItem(slots[i], item(k.icon,
-                    (active ? ChatColor.GREEN + "▶ " : "") + k.display,
-                    loreForKit(k, active)));
+                    (active ? ChatColor.GREEN + "▶ " : "") + k.display, loreForKit(k, active)));
         }
         back(inv);
         p.openInventory(inv);
@@ -173,15 +169,16 @@ public class LobbyGUI implements Listener {
     private void openPatterns(Player p) {
         Inventory inv = Bukkit.createInventory(null, 27, PATTERN_TITLE);
         fill(inv);
+        int selected = forcedPattern();
         for (int i = 0; i < 3; i++) {
-            boolean active = selectedPattern == i;
+            boolean active = selected == i;
             inv.setItem(10 + i * 2, item(Material.PAPER,
                     (active ? ChatColor.GREEN + "▶ " : "") + "Maze " + (i + 1),
                     Arrays.asList(active ? ChatColor.GREEN + "SELECTED" : ChatColor.YELLOW + "Click to select")));
         }
         inv.setItem(17, item(Material.NETHER_STAR,
-                (selectedPattern < 0 ? ChatColor.GREEN + "▶ " : "") + "Random Pattern",
-                Arrays.asList(selectedPattern < 0 ? ChatColor.GREEN + "SELECTED" : ChatColor.YELLOW + "Click to select")));
+                (selected < 0 ? ChatColor.GREEN + "▶ " : "") + "Random Pattern",
+                Arrays.asList(selected < 0 ? ChatColor.GREEN + "SELECTED" : ChatColor.YELLOW + "Click to select")));
         back(inv);
         p.openInventory(inv);
     }
@@ -192,20 +189,15 @@ public class LobbyGUI implements Listener {
         String map = plugin.getMapManager().getActiveMap();
         String selected = plugin.getMapManager().activeMob();
         boolean override = plugin.getMapManager().hasMobOverride(map);
-
         inv.setItem(4, item(Material.NETHER_STAR, ChatColor.GOLD + "Mob Skin",
                 Arrays.asList(ChatColor.GRAY + "Map: " + ChatColor.WHITE + pretty(map),
                         ChatColor.GRAY + "Current: " + ChatColor.WHITE + prettyMob(selected))));
         inv.setItem(8, item(Material.BOOK, ChatColor.YELLOW + "Map Default",
-                Arrays.asList(
-                        ChatColor.GRAY + "Use the map's configured mob:",
+                Arrays.asList(ChatColor.GRAY + "Use the map's configured mob:",
                         ChatColor.WHITE + prettyMob(plugin.getMapManager().mob(map)), "",
-                        override ? ChatColor.YELLOW + "Click to restore default" : ChatColor.GREEN + "Currently selected"
-                )));
-
+                        override ? ChatColor.YELLOW + "Click to restore default" : ChatColor.GREEN + "Currently selected")));
         int slot = 18;
         for (String mob : MOB_IDS) {
-            if (slot >= 53) break;
             boolean active = mob.equalsIgnoreCase(selected);
             inv.setItem(slot++, item(mobIcon(mob),
                     (active ? ChatColor.GREEN + "▶ " : "") + prettyMob(mob),
@@ -217,7 +209,6 @@ public class LobbyGUI implements Listener {
 
     @EventHandler
     public void onClick(InventoryClickEvent event) {
-        if (event.getInventory() == null) return;
         String title = event.getView().getTitle();
         if (!isGuiTitle(title)) return;
         event.setCancelled(true);
@@ -241,9 +232,9 @@ public class LobbyGUI implements Listener {
             if (slot == 28) { openPatterns(p); return; }
             if (slot == 49) {
                 p.closeInventory();
-                Location start = p.getLocation();
-                if (selectedPattern >= 0) game.startGame(start, selectedPattern);
-                else game.startGame(start);
+                int pattern = forcedPattern();
+                if (pattern >= 0) game.startGame(p.getLocation(), pattern);
+                else game.startGame(p.getLocation());
                 return;
             }
             if (slot == 53) p.closeInventory();
@@ -253,14 +244,12 @@ public class LobbyGUI implements Listener {
         if (MODE_TITLE.equals(title)) {
             if (slot == 0) { openHome(p); return; }
             int[] slots = {10, 12, 14};
-            for (int i = 0; i < slots.length; i++) {
-                if (slot == slots[i]) {
-                    plugin.setMode(MazeMode.values()[i]);
-                    List<KitType> available = KitType.available(plugin.getMode() != MazeMode.ORIGINAL);
-                    if (!available.contains(kits.getKit(p))) kits.setKit(p, available.get(0));
-                    openHome(p);
-                    return;
-                }
+            for (int i = 0; i < slots.length; i++) if (slot == slots[i]) {
+                plugin.setMode(MazeMode.values()[i]);
+                List<KitType> available = KitType.available(plugin.getMode() != MazeMode.ORIGINAL);
+                if (!available.contains(kits.getKit(p))) kits.setKit(p, available.get(0));
+                openHome(p);
+                return;
             }
             return;
         }
@@ -269,19 +258,21 @@ public class LobbyGUI implements Listener {
             if (slot == 0) { openHome(p); return; }
             List<String> maps = plugin.getMapManager().knownMaps();
             int[] slots = {10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 24, 25};
-            for (int i = 0; i < slots.length; i++) {
-                if (slot == slots[i] && i < maps.size()) {
-                    String map = maps.get(i);
-                    if (plugin.getMapManager().setActiveMap(map)) {
-                        Location center = plugin.getMapManager().defaultCenter();
-                        if (center != null) {
-                            game.getMonsterManager().setMobType(plugin.getMapManager().activeMob());
-                            game.setCenter(center);
-                        }
-                    }
-                    openHome(p);
+            for (int i = 0; i < slots.length; i++) if (slot == slots[i] && i < maps.size()) {
+                String map = maps.get(i);
+                if (!plugin.getMapManager().isAvailable(map)) {
+                    p.sendMessage(ChatColor.RED + "Map world '" + map + "' is not installed on this server.");
                     return;
                 }
+                if (plugin.getMapManager().setActiveMap(map)) {
+                    Location center = plugin.getMapManager().defaultCenter();
+                    if (center != null) {
+                        game.getMonsterManager().setMobType(plugin.getMapManager().activeMob());
+                        game.setCenter(center);
+                    }
+                }
+                openHome(p);
+                return;
             }
             return;
         }
@@ -290,12 +281,10 @@ public class LobbyGUI implements Listener {
             if (slot == 0) { openHome(p); return; }
             List<KitType> available = KitType.available(plugin.getMode() != MazeMode.ORIGINAL);
             int[] slots = {10, 12, 14, 16, 22};
-            for (int i = 0; i < slots.length; i++) {
-                if (slot == slots[i] && i < available.size()) {
-                    kits.setKit(p, available.get(i));
-                    openHome(p);
-                    return;
-                }
+            for (int i = 0; i < slots.length; i++) if (slot == slots[i] && i < available.size()) {
+                kits.setKit(p, available.get(i));
+                openHome(p);
+                return;
             }
             return;
         }
@@ -303,12 +292,12 @@ public class LobbyGUI implements Listener {
         if (PATTERN_TITLE.equals(title)) {
             if (slot == 0) { openHome(p); return; }
             if (slot == 10 || slot == 12 || slot == 14) {
-                selectedPattern = (slot - 10) / 2;
+                setForcedPattern((slot - 10) / 2);
                 openHome(p);
                 return;
             }
             if (slot == 17) {
-                selectedPattern = -1;
+                setForcedPattern(-1);
                 openHome(p);
             }
             return;
@@ -340,9 +329,7 @@ public class LobbyGUI implements Listener {
                 || KIT_TITLE.equals(title) || PATTERN_TITLE.equals(title) || MOB_TITLE.equals(title);
     }
 
-    private void back(Inventory inv) {
-        inv.setItem(0, item(Material.ARROW, ChatColor.YELLOW + "Back", null));
-    }
+    private void back(Inventory inv) { inv.setItem(0, item(Material.ARROW, ChatColor.YELLOW + "Back", null)); }
 
     private void fill(Inventory inv) {
         ItemStack pane = item(Material.GRAY_STAINED_GLASS_PANE, " ", null);
@@ -365,9 +352,7 @@ public class LobbyGUI implements Listener {
         return stack;
     }
 
-    private String patternName(int pattern) {
-        return pattern < 0 ? "Random" : LeaderboardManager.patternName(pattern);
-    }
+    private String patternName(int pattern) { return pattern < 0 ? "Random" : LeaderboardManager.patternName(pattern); }
 
     private String pretty(String map) {
         if (map == null || map.isEmpty()) return "Unknown";
