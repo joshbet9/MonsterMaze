@@ -8,6 +8,7 @@ import com.comphenix.protocol.events.PacketAdapter;
 import com.comphenix.protocol.events.PacketEvent;
 import com.comphenix.protocol.wrappers.WrappedDataValue;
 import me.monstermaze.MonsterMazePlugin;
+import me.monstermaze.util.UtilEnt;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 
@@ -24,7 +25,6 @@ import java.util.UUID;
  * client renders the requested mob while the server never runs that mob's native AI.</p>
  */
 public final class MonsterDisguiseListener {
-    /** Snow Golem's subclass-specific synced-data field: pumpkin/head state. */
     private static final int SNOW_GOLEM_METADATA_INDEX = 16;
 
     private final ProtocolManager protocolManager;
@@ -58,6 +58,12 @@ public final class MonsterDisguiseListener {
             if (event.getPacket().getUUIDs().size() == 0) return;
             UUID uuid = event.getPacket().getUUIDs().read(0);
             String skin = MonsterEntityController.getSkin(uuid);
+
+            // The UUID skin map is populated immediately after Bukkit's spawnEntity call,
+            // but the initial spawn packet is emitted during that call. Use the thread-local
+            // handoff from UtilEnt for this one packet so newly spawned mobs never default to
+            // Snow Golem on the client.
+            if (skin == null) skin = UtilEnt.getPendingSpawnSkin();
             if (skin == null) return;
 
             EntityType type = resolveClientType(skin);
@@ -68,11 +74,6 @@ public final class MonsterDisguiseListener {
         }
     }
 
-    /**
-     * The physical server entity is a Snow Golem, so its subclass metadata can contain a
-     * Snow-Golem-only field. Once the spawn type has been rewritten to another mob, that field
-     * is no longer valid for the client-side entity and must not be leaked into the packet.
-     */
     private void sanitizeMetadata(PacketEvent event) {
         try {
             Entity entity = event.getPacket().getEntityModifier(event).read(0);
@@ -86,7 +87,6 @@ public final class MonsterDisguiseListener {
                 if (value.getIndex() == SNOW_GOLEM_METADATA_INDEX) continue;
                 filtered.add(value);
             }
-
             if (filtered.size() != values.size()) {
                 event.getPacket().getDataValueCollectionModifier().write(0, filtered);
             }
