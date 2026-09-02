@@ -1,8 +1,8 @@
 """Monster Maze SOLO Discord leaderboard bot.
 
-Keeps Minecraft 1.8 and 1.21 PBs separate, with one leaderboard channel for
-Overall, one for Maze Patterns, and one for Kits per platform. Also runs an
-independent weekly competition for each platform.
+Keeps Minecraft 1.8 and 1.21 PBs separate and runs one independent weekly
+competition for each platform. Competition archives are frozen snapshots so
+future PBs cannot rewrite completed weeks.
 """
 
 import asyncio
@@ -22,7 +22,9 @@ DB = os.path.join(HERE, "leaderboard.db")
 
 PLATFORMS = ("1.8", "1.21")
 PLATFORM_LABELS = {"1.8": "Minecraft 1.8.9", "1.21": "Minecraft 1.21.11"}
+# Keep the internal database ID "Slowball" for compatibility; display it as Slowballer.
 KITS = ["Jumper", "Slowball", "Body Builder", "Repulsor", "Maverick"]
+KIT_LABELS = {"Slowball": "Slowballer"}
 PATTERNS = 3
 MAX_HTTP_RETRIES = 5
 REFRESH_DELAY = 2.0
@@ -31,9 +33,27 @@ DEFAULT_COMPETITION_TIMEZONE = "Australia/Brisbane"
 COMPETITION_HISTORY_WINDOW = 8
 
 
+def kit_label(kit):
+    return KIT_LABELS.get(kit, kit)
+
+
+def normalize_kit(kit):
+    if not kit:
+        return None
+    cleaned = kit.strip()
+    for internal, label in KIT_LABELS.items():
+        if cleaned.lower() in (internal.lower(), label.lower()):
+            return internal
+    return cleaned
+
+
 def load_config():
     with open(CFG, "r", encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def _competition_columns(conn):
+    return {row[1] for row in conn.execute("PRAGMA table_info(competitions)").fetchall()}
 
 
 def db():
@@ -54,10 +74,14 @@ def db():
             channel_id TEXT,
             msg_id TEXT,
             status TEXT NOT NULL,
+            standings_json TEXT,
             PRIMARY KEY (platform, week_key),
             UNIQUE (platform, number)
         )
     """)
+    if "standings_json" not in _competition_columns(conn):
+        conn.execute("ALTER TABLE competitions ADD COLUMN standings_json TEXT")
+        conn.commit()
     return conn
 
 
@@ -80,6 +104,9 @@ def _migrate_runs(conn):
 def upsert_run(run):
     required = ("platform", "mode", "pattern", "kit", "uuid", "name", "stage")
     if any(key not in run for key in required) or run["platform"] not in PLATFORMS or not run["uuid"]:
+        return False
+    run["kit"] = normalize_kit(run["kit"])
+    if run["kit"] not in KITS:
         return False
     key = (run["platform"], run["mode"], run["pattern"], run["kit"], run["uuid"])
     conn = db()
@@ -114,7 +141,7 @@ def kit_board(platform, mode, pattern, kit, top_n):
 
 def competition_rows(platform, mode, pattern, kit, top_n):
     conn = db()
-    rows = conn.execute("SELECT name, stage, time_ms FROM runs WHERE platform=? AND mode=? AND pattern=? AND kit=? ORDER BY stage DESC, time_ms ASC, name ASC LIMIT ?", (platform, mode, pattern, kit, top_n)).fetchall()
+    rows = conn.execute("WITH ranked AS (SELECT name, stage, time_ms, ROW_NUMBER() OVER (PARTITION BY uuid ORDER BY stage DESC, time_ms ASC, name ASC) rn FROM runs WHERE platform=? AND mode=? AND pattern=? AND kit=?) SELECT name, stage, time_ms FROM ranked WHERE rn=1 ORDER BY stage DESC, time_ms ASC, name ASC LIMIT ?", (platform, mode, pattern, kit, top_n)).fetchall()
     conn.close()
     return rows
 
@@ -141,7 +168,7 @@ def parse_embed(embed):
     fields = {field.name.strip().lower(): field.value.strip() for field in embed.fields}
     mode = fields.get("mode")
     pattern_text = fields.get("pattern")
-    kit = fields.get("kit")
+    kit = normalize_kit(fields.get("kit"))
     if not mode or not pattern_text or not kit:
         return None
     platform_text = fields.get("minecraft", "")
@@ -167,7 +194,7 @@ def parse_embed(embed):
     uuid_match = re.search(r"uuid\s+([0-9a-f-]{8,})", footer, re.IGNORECASE)
     if not uuid_match:
         return None
-    return {"name": title.split(" - new PB", 1)[0].strip()[:256], "platform": platform, "mode": mode.lower()[:64], "pattern": pattern, "kit": kit[:64], "stage": int(match.group(1)), "time_ms": time_ms, "uuid": uuid_match.group(1).lower()}
+    return {"name": title.split(" - new PB", 1)[0].strip()[:256], "platform": platform, "mode": mode.lower()[:64], "pattern": pattern, "kit": kit, "stage": int(match.group(1)), "time_ms": time_ms, "uuid": uuid_match.group(1).lower()}
 
 
 def _competition_timezone(cfg):
@@ -183,12 +210,10 @@ def _week_window(now, tz):
     local = now.astimezone(tz)
     start = (local - timedelta(days=local.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=7)
-    week_key = start.strftime("%G-W%V")
-    return start, end, week_key
+    return start, end, start.strftime("%G-W%V")
 
 
 def _competition_kits(mode):
-    # Original has no QOL kits; all other configured modes allow the full kit pool.
     return [kit for kit in KITS if not (mode.lower() == "original" and kit == "Maverick")]
 
 
@@ -198,27 +223,16 @@ def _next_competition_number(conn, platform):
 
 
 def _choose_competition(conn, platform, modes):
-    if not modes:
-        return None
     recent = conn.execute("SELECT mode, pattern, kit FROM competitions WHERE platform=? ORDER BY number DESC LIMIT ?", (platform, COMPETITION_HISTORY_WINDOW)).fetchall()
     recent_keys = {(row[0], row[1], row[2]) for row in recent}
     candidates = [(mode.lower(), pattern, kit) for mode in modes for pattern in range(PATTERNS) for kit in _competition_kits(mode)]
-    if not candidates:
-        return None
     fresh = [candidate for candidate in candidates if candidate not in recent_keys]
-    return random.SystemRandom().choice(fresh or candidates)
+    return random.SystemRandom().choice(fresh or candidates) if candidates else None
 
 
-def get_current_competition(platform, cfg):
-    tz = _competition_timezone(cfg)
-    now = datetime.now(timezone.utc)
-    start, end, week_key = _week_window(now, tz)
-    conn = db()
-    row = conn.execute("SELECT platform, number, week_key, mode, pattern, kit, start_ts, end_ts, channel_id, msg_id, status FROM competitions WHERE platform=? AND week_key=?", (platform, week_key)).fetchone()
-    conn.close()
-    if row:
-        return dict(zip(("platform", "number", "week_key", "mode", "pattern", "kit", "start_ts", "end_ts", "channel_id", "msg_id", "status"), row))
-    return None
+def _competition_dict(row):
+    keys = ("platform", "number", "week_key", "mode", "pattern", "kit", "start_ts", "end_ts", "channel_id", "msg_id", "status", "standings_json")
+    return dict(zip(keys, row))
 
 
 def create_competition(platform, cfg):
@@ -227,20 +241,22 @@ def create_competition(platform, cfg):
     start, end, week_key = _week_window(now, tz)
     modes = list(cfg.get("platform_modes", {}).get(platform, cfg.get("modes", [])))
     conn = db()
-    existing = conn.execute("SELECT platform, number, week_key, mode, pattern, kit, start_ts, end_ts, channel_id, msg_id, status FROM competitions WHERE platform=? AND week_key=?", (platform, week_key)).fetchone()
+    existing = conn.execute("SELECT platform, number, week_key, mode, pattern, kit, start_ts, end_ts, channel_id, msg_id, status, standings_json FROM competitions WHERE platform=? AND week_key=?", (platform, week_key)).fetchone()
     if existing:
         conn.close()
-        return dict(zip(("platform", "number", "week_key", "mode", "pattern", "kit", "start_ts", "end_ts", "channel_id", "msg_id", "status"), existing))
+        return _competition_dict(existing)
     chosen = _choose_competition(conn, platform, modes)
     if chosen is None:
         conn.close()
         return None
     mode, pattern, kit = chosen
     number = _next_competition_number(conn, platform)
-    conn.execute("INSERT INTO competitions (platform, number, week_key, mode, pattern, kit, start_ts, end_ts, channel_id, msg_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'current')", (platform, number, week_key, mode, pattern, kit, start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()))
+    start_ts = start.astimezone(timezone.utc).isoformat()
+    end_ts = end.astimezone(timezone.utc).isoformat()
+    conn.execute("INSERT INTO competitions (platform, number, week_key, mode, pattern, kit, start_ts, end_ts, channel_id, msg_id, status, standings_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'current', NULL)", (platform, number, week_key, mode, pattern, kit, start_ts, end_ts))
     conn.commit()
     conn.close()
-    return {"platform": platform, "number": number, "week_key": week_key, "mode": mode, "pattern": pattern, "kit": kit, "start_ts": start.astimezone(timezone.utc).isoformat(), "end_ts": end.astimezone(timezone.utc).isoformat(), "channel_id": None, "msg_id": None, "status": "current"}
+    return {"platform": platform, "number": number, "week_key": week_key, "mode": mode, "pattern": pattern, "kit": kit, "start_ts": start_ts, "end_ts": end_ts, "channel_id": None, "msg_id": None, "status": "current", "standings_json": None}
 
 
 def set_competition_message(platform, week_key, channel_id, msg_id):
@@ -250,11 +266,28 @@ def set_competition_message(platform, week_key, channel_id, msg_id):
     conn.close()
 
 
-def mark_competition_archived(platform, week_key):
+def archive_competition(competition):
+    if competition.get("status") == "archived" and competition.get("standings_json"):
+        return competition
+    rows = competition_rows(competition["platform"], competition["mode"], competition["pattern"], competition["kit"], 25)
+    snapshot = [{"name": name, "stage": stage, "time_ms": time_ms} for name, stage, time_ms in rows]
+    encoded = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
     conn = db()
-    conn.execute("UPDATE competitions SET status='archived' WHERE platform=? AND week_key=?", (platform, week_key))
+    conn.execute("UPDATE competitions SET status='archived', standings_json=? WHERE platform=? AND week_key=? AND status!='archived'", (encoded, competition["platform"], competition["week_key"]))
     conn.commit()
     conn.close()
+    competition["status"] = "archived"
+    competition["standings_json"] = encoded
+    return competition
+
+
+def _competition_standings(competition, top_n):
+    if competition.get("status") == "archived" and competition.get("standings_json"):
+        try:
+            return [(row.get("name", "Unknown"), int(row.get("stage", 0)), int(row.get("time_ms", 0))) for row in json.loads(competition["standings_json"])[:top_n]]
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+    return competition_rows(competition["platform"], competition["mode"], competition["pattern"], competition["kit"], top_n)
 
 
 def competition_embed(bot, competition, archived=False):
@@ -262,14 +295,14 @@ def competition_embed(bot, competition, archived=False):
     pattern = competition["pattern"]
     title_prefix = "ARCHIVED" if archived else "CURRENT"
     embed = discord.Embed(title=f"{title_prefix} COMPETITION — {PLATFORM_LABELS[platform]}", color=0xF1C40F)
-    embed.add_field(name="Challenge", value=f"**{competition['mode'].capitalize()}**\nMaze Pattern **{pattern + 1}**\nKit **{competition['kit']}**", inline=False)
+    embed.add_field(name="Challenge", value=f"**{competition['mode'].capitalize()}**\nMaze Pattern **{pattern + 1}**\nKit **{kit_label(competition['kit'])}**", inline=False)
+    end_dt = datetime.fromisoformat(competition["end_ts"]).astimezone(bot.competition_tz)
     if archived:
-        end_dt = datetime.fromisoformat(competition["end_ts"]).astimezone(bot.competition_tz)
-        embed.add_field(name="Competition", value=f"#{competition['number']:03d} • {competition['week_key']}\nEnded {discord.utils.format_dt(end_dt, 'F')}", inline=False)
+        text = f"#{competition['number']:03d} • {competition['week_key']}\nEnded {discord.utils.format_dt(end_dt, 'F')}"
     else:
-        end_dt = datetime.fromisoformat(competition["end_ts"]).astimezone(bot.competition_tz)
-        embed.add_field(name="Competition", value=f"#{competition['number']:03d} • {competition['week_key']}\nEnds {discord.utils.format_dt(end_dt, 'R')} ({discord.utils.format_dt(end_dt, 'F')})", inline=False)
-    rows = competition_rows(platform, competition["mode"], pattern, competition["kit"], bot.top_n)
+        text = f"#{competition['number']:03d} • {competition['week_key']}\nEnds {discord.utils.format_dt(end_dt, 'R')} ({discord.utils.format_dt(end_dt, 'F')})"
+    embed.add_field(name="Competition", value=text, inline=False)
+    rows = _competition_standings(competition, bot.top_n)
     if rows:
         lines = []
         for i, (name, stage, time_ms) in enumerate(rows, 1):
@@ -297,7 +330,6 @@ class MonsterBot(discord.Client):
         self.ready_once = False
         self.competition_tz = _competition_timezone(cfg)
         self.competition_task = None
-        self.competition_refresh_task = None
 
     def resolve_channel(self, ref):
         if ref is None or ref == "":
@@ -319,8 +351,7 @@ class MonsterBot(discord.Client):
         return self.cfg.get("channels", {}).get(platform, {})
 
     def competition_channel(self):
-        ref = self.cfg.get("competition_channel", DEFAULT_COMPETITION_CHANNEL)
-        return self.resolve_channel(ref)
+        return self.resolve_channel(self.cfg.get("competition_channel", DEFAULT_COMPETITION_CHANNEL))
 
     def schedule_refresh(self, platform, mode):
         key = (platform, mode)
@@ -351,8 +382,7 @@ class MonsterBot(discord.Client):
 
     async def rebuild_all(self):
         async with self.rebuild_lock:
-            seen = 0
-            accepted = 0
+            seen = accepted = 0
             for channel in self.feed_channels():
                 async for message in channel.history(limit=None, oldest_first=False):
                     for embed in message.embeds:
@@ -383,7 +413,8 @@ class MonsterBot(discord.Client):
     async def on_message(self, message):
         if message.author == self.user:
             return
-        if message.content.strip().lower() == "!rebuild":
+        command = message.content.strip().lower()
+        if command == "!rebuild":
             await message.channel.send("Rebuilding standings from complete feed history...")
             try:
                 await self.rebuild_all()
@@ -392,11 +423,9 @@ class MonsterBot(discord.Client):
                 print(f"manual rebuild failed: {exc!r}")
                 await message.channel.send(f"Rebuild failed: `{str(exc)[:1800]}`")
             return
-        if message.content.strip().lower() == "!competition":
+        if command == "!competition":
             await self.refresh_competitions()
-            channel = self.competition_channel()
-            if channel:
-                await message.channel.send("Weekly competitions refreshed.")
+            await message.channel.send("Weekly competitions refreshed.")
             return
         feed_refs = {str(ref) for ref in self.cfg.get("feed_channels", [])}
         if str(message.channel.id) not in feed_refs and message.channel.name not in feed_refs:
@@ -412,8 +441,7 @@ class MonsterBot(discord.Client):
                 await self.refresh_competitions()
                 now = datetime.now(timezone.utc).astimezone(self.competition_tz)
                 next_week = (now - timedelta(days=now.weekday()) + timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
-                delay = max(30.0, (next_week - now).total_seconds() + 2.0)
-                await asyncio.sleep(delay)
+                await asyncio.sleep(max(30.0, (next_week - now).total_seconds() + 2.0))
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -428,7 +456,6 @@ class MonsterBot(discord.Client):
         for platform in PLATFORMS:
             competition = create_competition(platform, self.cfg)
             if competition is None:
-                print(f"No valid competition candidates for {platform}")
                 continue
             await self._ensure_current_competition_message(channel, competition)
         await self._refresh_competition_message_standings(channel)
@@ -439,7 +466,7 @@ class MonsterBot(discord.Client):
             try:
                 message = await self.discord_call(lambda: channel.fetch_message(int(competition["msg_id"])), f"fetch competition {competition['platform']}")
             except discord.NotFound:
-                message = None
+                pass
             except discord.HTTPException as exc:
                 print(f"failed to fetch current competition {competition['platform']}: {exc}")
                 return
@@ -460,28 +487,25 @@ class MonsterBot(discord.Client):
             except discord.HTTPException as exc:
                 print(f"failed to pin current competition {competition['platform']}: {exc}")
             set_competition_message(competition["platform"], competition["week_key"], channel.id, new_message.id)
-            print(f"posted+pinned current competition {competition['platform']} #{competition['number']:03d}")
         except discord.HTTPException as exc:
             print(f"failed to post current competition {competition['platform']}: {exc}")
 
     async def _refresh_competition_message_standings(self, channel):
         conn = db()
-        rows = conn.execute("SELECT platform, number, week_key, mode, pattern, kit, start_ts, end_ts, channel_id, msg_id, status FROM competitions ORDER BY number DESC").fetchall()
+        rows = conn.execute("SELECT platform, number, week_key, mode, pattern, kit, start_ts, end_ts, channel_id, msg_id, status, standings_json FROM competitions ORDER BY number DESC").fetchall()
         conn.close()
         for row in rows:
-            competition = dict(zip(("platform", "number", "week_key", "mode", "pattern", "kit", "start_ts", "end_ts", "channel_id", "msg_id", "status"), row))
+            competition = _competition_dict(row)
             if not competition.get("msg_id"):
                 continue
             try:
-                message = await self.discord_call(lambda: channel.fetch_message(int(competition["msg_id"])), f"fetch competition archive {competition['platform']} #{competition['number']}")
+                message = await self.discord_call(lambda: channel.fetch_message(int(competition["msg_id"])), f"fetch competition {competition['platform']} #{competition['number']}")
             except (discord.NotFound, discord.HTTPException):
                 continue
             archived = competition["status"] == "archived"
-            if not archived:
-                end = datetime.fromisoformat(competition["end_ts"])
-                if datetime.now(timezone.utc) >= end:
-                    archived = True
-                    mark_competition_archived(competition["platform"], competition["week_key"])
+            if not archived and datetime.now(timezone.utc) >= datetime.fromisoformat(competition["end_ts"]):
+                competition = archive_competition(competition)
+                archived = True
             try:
                 await self.discord_call(lambda: message.edit(embed=competition_embed(self, competition, archived=archived)), f"refresh competition {competition['platform']} #{competition['number']}")
             except discord.HTTPException as exc:
@@ -491,7 +515,7 @@ class MonsterBot(discord.Client):
         lines = []
         for i, (name, kit, stage) in enumerate(rows, 1):
             medal = {1: ":first_place:", 2: ":second_place:", 3: ":third_place:"}.get(i, f"{i}.")
-            lines.append(f"{medal} **{name}** — stage {stage}" + (f" ({kit})" if kit else ""))
+            lines.append(f"{medal} **{name}** — stage {stage}" + (f" ({kit_label(kit)})" if kit else ""))
         return lines or ["No runs yet."]
 
     def _mode_title(self, platform, mode):
@@ -512,29 +536,24 @@ class MonsterBot(discord.Client):
         embed = discord.Embed(title=f"{self._mode_title(platform, mode)} — Kits", color=0x33AA66)
         for pattern in range(PATTERNS):
             for kit in KITS:
-                embed.add_field(name=f"Pattern {pattern + 1} — {kit}", value="\n".join(self._lines(kit_board(platform, mode, pattern, kit, self.top_n))), inline=False)
+                embed.add_field(name=f"Pattern {pattern + 1} — {kit_label(kit)}", value="\n".join(self._lines(kit_board(platform, mode, pattern, kit, self.top_n))), inline=False)
         return embed
 
     async def refresh_platform(self, platform):
         channels = self.leaderboard_channels(platform)
         if not channels:
-            print(f"No leaderboard channels configured for {platform}")
             return
-        modes = self.platform_modes.get(platform, [])
-        if channels.get("overall"):
-            for mode in modes:
+        for mode in self.platform_modes.get(platform, []):
+            if channels.get("overall"):
                 await self._post_or_edit(f"{platform}|overall|{mode}", channels["overall"], self.overall_embed(platform, mode), f"{platform} overall {mode}")
-        if channels.get("mazepattern"):
-            for mode in modes:
+            if channels.get("mazepattern"):
                 await self._post_or_edit(f"{platform}|mazepattern|{mode}", channels["mazepattern"], self.patterns_embed(platform, mode), f"{platform} mazepattern {mode}")
-        if channels.get("kits"):
-            for mode in modes:
+            if channels.get("kits"):
                 await self._post_or_edit(f"{platform}|kits|{mode}", channels["kits"], self.kits_embed(platform, mode), f"{platform} kits {mode}")
 
     async def _post_or_edit(self, board_key, channel_ref, embed, label):
         channel = self.resolve_channel(channel_ref)
         if channel is None:
-            print(f"channel not found for board {label} (ref {channel_ref})")
             return
         stored = get_board_msg(board_key)
         message = None
@@ -542,14 +561,13 @@ class MonsterBot(discord.Client):
             try:
                 message = await self.discord_call(lambda: channel.fetch_message(int(stored[1])), f"fetch {label}")
             except discord.NotFound:
-                message = None
+                pass
             except discord.HTTPException as exc:
                 print(f"failed to fetch board {label}: {exc}")
                 return
         if message is not None:
             try:
                 await self.discord_call(lambda: message.edit(embed=embed), f"edit {label}")
-                print(f"edited {label}")
                 return
             except discord.NotFound:
                 pass
@@ -560,10 +578,9 @@ class MonsterBot(discord.Client):
             new_message = await self.discord_call(lambda: channel.send(embed=embed), f"post {label}")
             try:
                 await self.discord_call(lambda: new_message.pin(), f"pin {label}")
-            except discord.HTTPException as exc:
-                print(f"failed to pin {label}: {exc}")
+            except discord.HTTPException:
+                pass
             set_board_msg(board_key, channel.id, new_message.id)
-            print(f"posted+pinned {label}")
         except discord.HTTPException as exc:
             print(f"failed to post {label}: {exc}")
 
