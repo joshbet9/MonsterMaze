@@ -19,8 +19,8 @@ public final class MonsterEntityController {
     public static final double HITBOX_WIDTH = 0.7D;
     /** 1.8 EntitySnowman gameplay height. */
     public static final double HITBOX_HEIGHT = 1.9D;
-    /** Common movement attribute used by the Monster Maze controller. */
-    public static final double MOVEMENT_SPEED = 0.1D;
+    /** 1.8 EntitySnowman movement attribute. */
+    public static final double MOVEMENT_SPEED = 0.2D;
 
     private static boolean resolved;
     private static Method getHandle;
@@ -54,11 +54,7 @@ public final class MonsterEntityController {
 
         if (entity instanceof Slime) ((Slime) entity).setSize(1);
 
-        AttributeInstance movement = null;
-        try { movement = entity.getAttribute(Attribute.MOVEMENT_SPEED); } catch (Throwable ignored) { }
-        if (movement != null) {
-            try { movement.setBaseValue(MOVEMENT_SPEED); } catch (Throwable ignored) { }
-        }
+        setMovementSpeed(entity);
         normalizeHitbox(entity);
     }
 
@@ -71,7 +67,15 @@ public final class MonsterEntityController {
             zombie.setAdult();
             try { zombie.setShouldBurnInDay(false); } catch (Throwable ignored) { }
         }
+        setMovementSpeed(entity);
         normalizeHitbox(entity);
+    }
+
+    private static void setMovementSpeed(LivingEntity entity) {
+        try {
+            AttributeInstance movement = entity.getAttribute(Attribute.MOVEMENT_SPEED);
+            if (movement != null) movement.setBaseValue(MOVEMENT_SPEED);
+        } catch (Throwable ignored) { }
     }
 
     /** Force the NMS bounding box to the 1.8 Snowman dimensions. */
