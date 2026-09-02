@@ -1,7 +1,7 @@
 package me.monstermaze.game;
 
 import me.monstermaze.MonsterMazePlugin;
-import org.bukkit.Location;
+import me.monstermaze.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -20,23 +20,20 @@ import java.util.List;
 
 /** Beacon safe pad. */
 public class SafePad implements Listener {
-    private final Location center;
+    private final org.bukkit.Location center;
     private final int surfaceY;
     private final boolean qol;
     private final List<BlockSnapshot> snapshots = new ArrayList<BlockSnapshot>();
     private int decayCount = 11;
     private boolean active = true;
 
-    public SafePad(Location pathLocation) { this(pathLocation, false); }
+    public SafePad(org.bukkit.Location pathLocation) { this(pathLocation, false); }
 
-    public SafePad(Location pathLocation, boolean qol) {
+    public SafePad(org.bukkit.Location pathLocation, boolean qol) {
         this.center = pathLocation.clone();
         this.surfaceY = pathLocation.getBlockY() - 1;
         this.qol = qol;
 
-        // The maze is generated asynchronously. Make sure the map palette has been applied
-        // BEFORE taking snapshots, otherwise removing this pad later restores the temporary
-        // quartz generation palette and relies on the next MapThemeApplier tick to fix it.
         MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
         if (plugin != null && plugin.getMapThemeApplier() != null) {
             plugin.getMapThemeApplier().refresh();
@@ -83,7 +80,6 @@ public class SafePad implements Listener {
         }
     }
 
-    /** Reassert beacon and its block state after maze/pad generation. */
     public void ensureBeacon() {
         World world = center.getWorld();
         if (world == null) return;
@@ -103,11 +99,11 @@ public class SafePad implements Listener {
     private void setBlock(Block block, Material mat) { snapshots.add(new BlockSnapshot(block)); block.setType(mat, false); }
     private void setBlock(Block block, BlockData data) { snapshots.add(new BlockSnapshot(block)); block.setBlockData(data, false); }
 
-    public Location getLocation() { return center.clone(); }
+    public org.bukkit.Location getLocation() { return center.clone(); }
     public boolean isActive() { return active; }
 
     public boolean isOn(Entity entity) {
-        Location loc = entity.getLocation();
+        org.bukkit.Location loc = entity.getLocation();
         int by = surfaceY;
         if (qol) {
             double dx = loc.getX() - center.getX(), dz = loc.getZ() - center.getZ();
@@ -141,8 +137,6 @@ public class SafePad implements Listener {
         active = false;
         for (int i = snapshots.size() - 1; i >= 0; i--) snapshots.get(i).restore();
         snapshots.clear();
-        // MapThemeApplier runs after maze generation, so restore its palette after the pad's
-        // snapshots put the original pre-pad/test blocks back.
         MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
         if (plugin != null && plugin.getMapThemeApplier() != null) plugin.getMapThemeApplier().refresh();
     }
@@ -152,10 +146,10 @@ public class SafePad implements Listener {
         int cx = center.getBlockX(), cy = surfaceY, cz = center.getBlockZ();
         Block beacon = world.getBlockAt(cx, cy, cz);
         if (beacon.getType() == Material.BEACON) beacon.setType(Material.LIME_TERRACOTTA, false);
-        for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) {
-            Block iron = world.getBlockAt(cx + x, cy - 1, cz + z);
-            if (iron.getType() == Material.IRON_BLOCK) iron.setType(Material.QUARTZ_BLOCK, false);
-        }
+        // Do not convert the iron base to quartz here. The quartz is only the decorative
+        // frame around the pad; changing the 3x3 base to quartz creates a visible flash of
+        // quartz when the active pad is removed. The snapshots retain the actual maze blocks
+        // that were underneath the pad and restore them when the old pad is finally destroyed.
     }
 
     private static class BlockSnapshot {
