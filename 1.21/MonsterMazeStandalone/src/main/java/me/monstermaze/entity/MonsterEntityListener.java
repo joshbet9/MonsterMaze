@@ -3,6 +3,7 @@ package me.monstermaze.entity;
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.game.GameManager;
 import org.bukkit.Bukkit;
+import org.bukkit.entity.Enderman;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.event.EventHandler;
@@ -47,6 +48,7 @@ public final class MonsterEntityListener implements Listener {
     /** Endermen must never use their vanilla random teleport behaviour. */
     @EventHandler
     public void onTeleport(EntityTeleportEvent event) {
+        if (!(event.getEntity() instanceof Enderman)) return;
         if (isMonster(event.getEntity())) event.setCancelled(true);
     }
 
