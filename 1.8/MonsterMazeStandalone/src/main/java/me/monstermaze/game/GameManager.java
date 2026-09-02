@@ -339,8 +339,8 @@ public class GameManager implements Listener {
                 checkPlayersOnSafePad();
                 updateCompasses();
                 updateExpBars(aliveNow);
-                kitManager.tickJumperFlight();
-                kitManager.tickJumpLock();
+                // kitManager.tickJumperFlight();
+                // kitManager.tickJumpLock();
 
                 if ((liveTick % 10) == 1) {
                     int pattern = getPatternIndex();
