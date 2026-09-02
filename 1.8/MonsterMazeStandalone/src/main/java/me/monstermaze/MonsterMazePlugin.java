@@ -7,6 +7,7 @@ import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.stats.RunRecorder;
+import me.monstermaze.stats.SoloRunCompletionListener;
 import me.monstermaze.util.UtilEnt;
 import me.monstermaze.world.MapManager;
 import me.monstermaze.world.VoidWorldManager;
@@ -26,6 +27,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private me.monstermaze.stats.LeaderboardManager leaderboards;
     private boolean soloMode;
     private RunRecorder runRecorder;
+    private SoloRunCompletionListener soloRunCompletionListener;
 
     @Override
     public void onEnable() {
@@ -52,6 +54,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         mapManager.loadActiveMapFromConfig();
         mapManager.ensureActiveWorld();
         this.gameManager = new GameManager(this);
+        this.soloRunCompletionListener = new SoloRunCompletionListener(this);
         gameManager.applyMap();
         new LobbyListener(this, gameManager, voidWorlds);
         new BuildBypassListener(this);
@@ -67,6 +70,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     }
 
     @Override public void onDisable() {
+        if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown();
         if (gameManager != null) gameManager.forceStop();
         getLogger().info("MonsterMazeStandalone disabled.");
     }
