@@ -29,10 +29,6 @@ def load_config():
         return json.load(fh)
 
 
-# ---------------------------------------------------------------------------
-# Database
-# ---------------------------------------------------------------------------
-
 def db():
     conn = sqlite3.connect(DB)
     conn.execute("PRAGMA journal_mode=WAL")
@@ -43,7 +39,6 @@ def db():
 
 
 def _migrate_runs(conn):
-    """Upgrade the old schema and preserve every existing row as 1.8."""
     columns = [row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()]
     if not columns:
         conn.execute(
@@ -55,7 +50,6 @@ def _migrate_runs(conn):
         return
     if "platform" in columns:
         return
-
     conn.execute("ALTER TABLE runs RENAME TO runs_legacy")
     conn.execute(
         "CREATE TABLE runs (platform TEXT NOT NULL, mode TEXT NOT NULL, pattern INTEGER NOT NULL, "
@@ -85,17 +79,14 @@ def upsert_run(run):
         return False
     if run["platform"] not in PLATFORMS or not run["uuid"]:
         return False
-
     key = (run["platform"], run["mode"], run["pattern"], run["kit"], run["uuid"])
     conn = db()
     current = conn.execute(
-        "SELECT stage FROM runs WHERE platform=? AND mode=? AND pattern=? AND kit=? AND uuid=?",
-        key,
+        "SELECT stage FROM runs WHERE platform=? AND mode=? AND pattern=? AND kit=? AND uuid=?", key
     ).fetchone()
     if current and run["stage"] <= current[0]:
         conn.close()
         return False
-
     conn.execute(
         "INSERT INTO runs (platform, mode, pattern, kit, uuid, name, stage, time_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(platform, mode, pattern, kit, uuid) DO UPDATE SET name=excluded.name, stage=excluded.stage, time_ms=excluded.time_ms",
@@ -149,23 +140,17 @@ def set_board_msg(board_key, channel_id, msg_id):
     conn.close()
 
 
-# ---------------------------------------------------------------------------
-# Submission parsing
-# ---------------------------------------------------------------------------
-
 def parse_embed(embed):
     title = embed.title or ""
     match = re.search(r"new PB \(stage (\d+)\)", title, re.IGNORECASE)
     if not match:
         return None
-
     fields = {field.name.strip().lower(): field.value.strip() for field in embed.fields}
     mode = fields.get("mode")
     pattern_text = fields.get("pattern")
     kit = fields.get("kit")
     if not mode or not pattern_text or not kit:
         return None
-
     platform_text = fields.get("minecraft", "")
     if platform_text.startswith("1.8"):
         platform = "1.8"
@@ -175,24 +160,20 @@ def parse_embed(embed):
         footer = embed.footer.text if embed.footer and embed.footer.text else ""
         platform_match = re.search(r"platform\s+(1\.8|1\.21)", footer, re.IGNORECASE)
         platform = platform_match.group(1) if platform_match else "1.8"
-
     pattern_match = re.search(r"Maze\s+(\d+)", pattern_text, re.IGNORECASE)
     if not pattern_match:
         return None
     pattern = int(pattern_match.group(1)) - 1
     if pattern < 0 or pattern >= PATTERNS:
         return None
-
     time_ms = 0
     time_match = re.search(r"(\d+)m\s+(\d+)s", fields.get("time", "0m 0s"))
     if time_match:
         time_ms = int(time_match.group(1)) * 60000 + int(time_match.group(2)) * 1000
-
     footer = embed.footer.text if embed.footer and embed.footer.text else ""
     uuid_match = re.search(r"uuid\s+([0-9a-f-]{8,})", footer, re.IGNORECASE)
     if not uuid_match:
         return None
-
     return {
         "name": title.split(" - new PB", 1)[0].strip()[:256],
         "platform": platform,
@@ -205,10 +186,6 @@ def parse_embed(embed):
     }
 
 
-# ---------------------------------------------------------------------------
-# Discord bot
-# ---------------------------------------------------------------------------
-
 class MonsterBot(discord.Client):
     def __init__(self, cfg):
         intents = discord.Intents.default()
@@ -216,7 +193,11 @@ class MonsterBot(discord.Client):
         super().__init__(intents=intents)
         self.cfg = cfg
         self.top_n = max(1, min(int(cfg.get("top_n", 10)), 25))
-        self.modes = list(cfg.get("modes", ["modern"]))
+        default_modes = list(cfg.get("modes", ["modern"]))
+        self.platform_modes = {
+            platform: list(cfg.get("platform_modes", {}).get(platform, default_modes))
+            for platform in PLATFORMS
+        }
         self.refresh_tasks = {}
         self.rebuild_lock = asyncio.Lock()
         self.ready_once = False
@@ -277,7 +258,6 @@ class MonsterBot(discord.Client):
             seen = 0
             accepted = 0
             for channel in self.feed_channels():
-                # No 500-message cap: Discord.py paginates through the complete history.
                 async for message in channel.history(limit=None, oldest_first=False):
                     for embed in message.embeds:
                         run = parse_embed(embed)
@@ -286,13 +266,11 @@ class MonsterBot(discord.Client):
                         seen += 1
                         if upsert_run(run):
                             accepted += 1
-
             print(f"rescanned {seen} PB submissions ({accepted} database updates)")
             for platform in PLATFORMS:
-                if platform not in self.platform_configs():
-                    continue
-                for mode in self.modes:
-                    await self.refresh_all_boards(platform, mode)
+                for mode in self.platform_modes.get(platform, []):
+                    if self.mode_channels(platform, mode):
+                        await self.refresh_all_boards(platform, mode)
 
     async def on_ready(self):
         print(f"Logged in as {self.user} (id {self.user.id})")
@@ -309,7 +287,6 @@ class MonsterBot(discord.Client):
     async def on_message(self, message):
         if message.author == self.user:
             return
-
         if message.content.strip().lower() == "!rebuild":
             await message.channel.send("Rebuilding standings from complete feed history...")
             try:
@@ -319,19 +296,13 @@ class MonsterBot(discord.Client):
                 print(f"manual rebuild failed: {exc!r}")
                 await message.channel.send(f"Rebuild failed: `{str(exc)[:1800]}`")
             return
-
         feed_refs = {str(ref) for ref in self.cfg.get("feed_channels", [])}
         if str(message.channel.id) not in feed_refs and message.channel.name not in feed_refs:
             return
-
         for embed in message.embeds:
             run = parse_embed(embed)
             if run and upsert_run(run):
                 self.schedule_refresh(run["platform"], run["mode"])
-
-    # -----------------------------------------------------------------------
-    # Boards
-    # -----------------------------------------------------------------------
 
     def _lines(self, rows):
         lines = []
@@ -362,7 +333,6 @@ class MonsterBot(discord.Client):
         overall_ref = channels.get("overall")
         patterns_ref = channels.get("patterns")
         kits_ref = channels.get("kits")
-
         if overall_ref:
             await self._post_or_edit(f"{platform}|{mode}|overall", overall_ref, self.overall_embed(platform, mode), f"{platform} overall {mode}")
         if patterns_ref:
@@ -378,7 +348,6 @@ class MonsterBot(discord.Client):
         if channel is None:
             print(f"channel not found for board {label} (ref {channel_ref})")
             return
-
         stored = get_board_msg(board_key)
         message = None
         if stored:
@@ -389,7 +358,6 @@ class MonsterBot(discord.Client):
             except discord.HTTPException as exc:
                 print(f"failed to fetch board {label}: {exc}")
                 return
-
         if message is not None:
             try:
                 await self.discord_call(lambda: message.edit(embed=embed), f"edit {label}")
@@ -400,7 +368,6 @@ class MonsterBot(discord.Client):
             except discord.HTTPException as exc:
                 print(f"failed to edit board {label}: {exc}")
                 return
-
         try:
             new_message = await self.discord_call(lambda: channel.send(embed=embed), f"post {label}")
             try:
