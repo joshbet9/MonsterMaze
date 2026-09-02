@@ -9,13 +9,16 @@ $maps = Join-Path $here 'maps'
 $paper = if ($env:MM_PAPER_JAR) { $env:MM_PAPER_JAR } else { Join-Path $here 'tools\paper-1.21.11.jar' }
 $protocol = if ($env:MM_PROTOCOLLIB_JAR) { $env:MM_PROTOCOLLIB_JAR } else { Join-Path $here 'tools\ProtocolLib.jar' }
 $jdk21 = if ($env:MM_JDK21) { $env:MM_JDK21 } else { 'C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium\jdk-21' }
-$requiredMaps = @('mm_colombia','mm_sandycoast','mm_siberian','mm_swampland','mm_tesorohundido','mm_volcano')
+$requiredMaps = @('mm_colombia','mm_sandycoast','mm_siberian','mm_swampland','mm_tesorohundido','mm_volcano','mm_void')
 
 if (-not (Test-Path (Join-Path $project 'pom.xml'))) { throw "1.21 source project not found: $project" }
 if (-not (Test-Path $paper)) { throw "Paper 1.21.11 jar not found: $paper" }
 if (-not (Test-Path $protocol)) { throw "ProtocolLib.jar not found: $protocol" }
 if (-not (Test-Path $jdk21)) { throw "JDK 21 directory not found: $jdk21" }
-foreach ($map in $requiredMaps) { if (-not (Test-Path (Join-Path $maps $map))) { throw "Converted 1.21 map missing: $map. Run convert-maps.ps1 first." } }
+foreach ($map in $requiredMaps) {
+    $mapPath = Join-Path $maps $map
+    if (-not (Test-Path (Join-Path $mapPath 'level.dat'))) { throw "1.21 map world missing or invalid: $map" }
+}
 
 Write-Host "Building 1.21 MonsterMazeStandalone..."
 Push-Location $project
