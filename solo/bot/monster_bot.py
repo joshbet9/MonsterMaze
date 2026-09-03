@@ -81,6 +81,7 @@ def configure_api():
         upsert_run=impl.upsert_run,
         create_competition=lambda platform: impl.create_competition(platform, impl.load_config()),
         board_rows=impl.board_rows,
+        competition_rows=impl.competition_rows,
         refresh_bot=refresh_bot,
         post_feed=post_feed,
     )
