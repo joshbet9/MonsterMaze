@@ -55,15 +55,32 @@ public class MonsterManager {
     /** Entities launched by Repulsor – removed when grounded / timed out. */
     private final Map<LivingEntity, Long> launched = new HashMap<LivingEntity, Long>();
 
+    /** Entities frozen by Slowballer "Cryo Blitz" – value = thaw timestamp (ms epoch).
+     *  Frozen mobs stop moving but still bump/deal knockback (a standing hazard). */
+    private final Map<LivingEntity, Long> frozen = new HashMap<LivingEntity, Long>();
+
+    /**
+     * Global mob movement speed multiplier (Lagless difficulty). Base movement is 1.4f;
+     * this scales it as the match progresses. 1.0 for non-Lagless modes (never touched).
+     */
+    private float speedMultiplier = 1.0f;
+
     public MonsterManager(MonsterMazePlugin plugin, GameManager game) {
         this.plugin = plugin;
         this.game = game;
     }
 
+    /** Set the global mob speed multiplier (used by Lagless's every-5-stage speed step). */
+    public void setSpeedMultiplier(float multiplier) {
+        this.speedMultiplier = multiplier;
+    }
+
     public void start(MazeGenerator maze) {
         clear();
         this.maze = maze;
-        int starter = game.getMode() == MazeMode.MODERN ? 225 : 150;
+        int starter = game.getMode() == MazeMode.MODERN ? 225
+                : game.getMode() == MazeMode.LAGLESS ? 500
+                : 150;
 
         // PERF: stagger the initial monster spawn (~25 per tick) instead of firing one
         // 150-225 monster spawn-packet burst to every client at once (start-of-match spike).
@@ -91,6 +108,7 @@ public class MonsterManager {
                 move();
                 bump();
                 tickLaunched();
+                tickFrozen();
             }
         }, 1L, 1L);
     }
@@ -114,7 +132,9 @@ public class MonsterManager {
         }
         ents.clear();
         launched.clear();
+        frozen.clear();
         bumpCooldown.clear();
+        speedMultiplier = 1.0f;
     }
 
     public void fillSpawn(int numToSpawn) {
@@ -154,6 +174,8 @@ public class MonsterManager {
 
     public void spawnMore(int count) {
         if (maze == null) return;
+        // Lagless uses a fixed starting pool: per-stage additions are disabled entirely.
+        if (game.getMode() == MazeMode.LAGLESS) return;
         List<Location> spawns = maze.getSpawnPoints();
         List<Location> pool = spawns.isEmpty() ? maze.getPathPoints() : spawns;
         if (pool.isEmpty()) return;
@@ -182,6 +204,7 @@ public class MonsterManager {
             LivingEntity en = e.getKey();
             if (en != null && en.isValid() && pad.isOn(en)) {
                 launched.remove(en);
+                frozen.remove(en);
                 en.remove();
                 it.remove();
             }
@@ -205,6 +228,7 @@ public class MonsterManager {
             }
 
             if (launched.containsKey(ent)) continue;
+            if (frozen.containsKey(ent)) continue;
 
             if (wp.Target == null || ent.getLocation().getY() < wp.Target.getBlockY()) {
                 Location loc = maze.getClosestPath(ent.getLocation());
@@ -254,7 +278,7 @@ public class MonsterManager {
                 else if (west != null && nextLoc.equals(west.getLocation())) wp.Direction = CardinalDirection.WEST;
             }
 
-            UtilEnt.CreatureMoveFast(ent, wp.Target, 1.4f);
+            UtilEnt.CreatureMoveFast(ent, wp.Target, 1.4f * speedMultiplier);
         }
     }
 
@@ -336,6 +360,23 @@ public class MonsterManager {
                 LivingEntity ent = mobs[i];
                 markBump(player);
 
+                // Body Builder Body Rush (QOL only): a contacting mob is deflected away like a
+                // Repulsor launch — no knockback, no damage, full immunity — and consumes one use.
+                me.monstermaze.kit.KitManager km = game.getKitManager();
+                if (km != null && km.isBodyRushActive(player)) {
+                    Vector away = ent.getLocation().toVector().subtract(player.getLocation().toVector());
+                    away.setY(0);
+                    if (away.lengthSquared() <= 1e-6) away = new Vector(1, 0, 0);
+                    UtilAction.velocity(ent, away.normalize(), 1, true, 0, 0.8, 2, true);
+                    launch(ent, ent.getVelocity());
+                    km.consumeBodyRushUse(player);
+                    // Impact feedback: a sharp damage-tick hit sound so the deflect feels
+                    // impactful even though Body Rush deals no damage.
+                    player.getWorld().playSound(ent.getLocation(), org.bukkit.Sound.HURT_FLESH, 1.2f, 0.8f);
+                    Bukkit.getPluginManager().callEvent(new MonsterBumpPlayerEvent(player));
+                    break;
+                }
+
                 // Anti-bonk, ping-independent: lift the player ABOVE the maze floor before applying
                 // the single velocity packet, so the client never applies ground friction to the
                 // launch and eats the horizontal knock. Catching anyone near the floor (not just
@@ -414,12 +455,38 @@ public class MonsterManager {
 
     public void launch(LivingEntity ent, Vector velocity) {
         if (!ents.containsKey(ent)) return;
+        frozen.remove(ent);
         ent.setVelocity(velocity);
         launched.put(ent, System.currentTimeMillis());
     }
 
     public Iterable<LivingEntity> getMonsters() {
         return ents.keySet();
+    }
+
+    /**
+     * Freeze a monster (Cryo Blitz) so it stops moving until {@code thawAt}. A frozen mob
+     * remains a standing hazard: it no longer moves, but still bumps/deals knockback to
+     * players who touch it.
+     */
+    public void freeze(LivingEntity ent, long thawAt) {
+        if (!ents.containsKey(ent)) return;
+        launched.remove(ent);
+        frozen.put(ent, thawAt);
+    }
+
+    /** Thaw any frozen monster whose freeze duration has elapsed. */
+    private void tickFrozen() {
+        if (frozen.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        Iterator<Entry<LivingEntity, Long>> it = frozen.entrySet().iterator();
+        while (it.hasNext()) {
+            Entry<LivingEntity, Long> e = it.next();
+            LivingEntity ent = e.getKey();
+            if (ent == null || !ent.isValid() || now >= e.getValue()) {
+                it.remove();
+            }
+        }
     }
 
     private void tickLaunched() {
@@ -432,6 +499,7 @@ public class MonsterManager {
 
             if (ent == null || !ent.isValid()) {
                 it.remove();
+                frozen.remove(ent);
                 ents.remove(ent);
                 continue;
             }
@@ -440,6 +508,7 @@ public class MonsterManager {
             boolean timeout = now - started > 1500;
             if (grounded || timeout) {
                 it.remove();
+                frozen.remove(ent);
                 ents.remove(ent);
                 ent.remove();
             }

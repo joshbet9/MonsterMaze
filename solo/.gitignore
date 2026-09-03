@@ -1,0 +1,28 @@
+# Solo distribution - exclude large/generated files from git.
+# Keep the game/plugin template tracked; keep binaries and world data out.
+
+# Bundled Java runtime (downloaded separately to keep the repo small)
+/runtime/
+
+# Built distribution (assembled by pack.ps1) - don't commit the big zip/folder
+/solo-dist/
+/solo-dist.zip
+
+# Server binaries (copy spigot-1.8.8.jar per install; ~21 MB, don't commit)
+/server/spigot-1.8.8.jar
+
+# Auto-generated worlds and running state
+/server/world/
+/server/world_nether/
+/server/world_the_end/
+/server/mm_void/
+/server/logs/
+/server/*.log
+/server/*.out
+/server/*.dat
+/server/*.json
+/server/server.log
+
+# Recorded solo runs + submitted archive
+submitter/submitted/
+/server/plugins/MonsterMazeStandalone/solo-runs/

@@ -1,0 +1,4 @@
+# Monster Maze backend artifacts (generated at runtime - don't commit)
+/backend/leaderboard.db
+/backend/state.json
+/backend/__pycache__/
