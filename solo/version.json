@@ -1,7 +1,7 @@
 {
-    "install-version":  "1.0.3",
-    "note":  "Solo release: separated map definitions from user configuration and fixed player hunger",
-    "updated":  "2026-09-01 21:26 UTC+10:00",
+    "install-version":  "1.0.4",
+    "note":  "Solo release: added /mm exportpbs to recover previously stored PBs for Solo submission",
+    "updated":  "2026-09-01 22:25 UTC+10:00",
     "files":  {
                   "launcher/play.bat":  {
                                             "sha256":  "7de3fbba965033cde03e16fbae8f7c4ca75dc85b4703454649b692e9f4da3a70",
@@ -24,8 +24,8 @@
                                                "size":  3562
                                            },
                   "server/plugins/MonsterMazeStandalone.jar":  {
-                                                                   "sha256":  "1d08449ed9649a868b54310702f8f43802ef19d799116677f3cd99116d25609c",
-                                                                   "size":  180195
+                                                                   "sha256":  "3f292078ac88ea1bd36d90c119a9052f08d110ddce348234c0cdb217a8172428",
+                                                                   "size":  181087
                                                                },
                   "server/bukkit.yml":  {
                                             "sha256":  "21b96c77f0489646e394465b67c3d2dbbe56951fd405a394ce97461b5c948bc0",
@@ -60,8 +60,8 @@
                                                            "size":  650
                                                        },
                   "server/mm_colombia/WorldDownloader.txt":  {
-                                                                 "sha256":  "08a502158038f8c2163781028e6060e374486d17b97a49821f58cdd8689845c8",
-                                                                 "size":  251
+                                                                 "sha256":  "67042d849b53531dab8a2821dda49055921eede90701c75f04a8b72d5c35ef95",
+                                                                 "size":  255
                                                              },
                   "server/mm_colombia/data/villages.dat":  {
                                                                "sha256":  "307504fb851d7a01cab9ec9124af030cf9e548ce413edd84462a9b47daf2a414",
@@ -92,8 +92,8 @@
                                                              "size":  649
                                                          },
                   "server/mm_sandycoast/WorldDownloader.txt":  {
-                                                                   "sha256":  "6605d76ab16253ceffb05996ae0adee6d772d21aa6e7f469eb90201f0ed2866f",
-                                                                   "size":  251
+                                                                   "sha256":  "8bdfa362afaca765fb162cd9b438ef6cd20303032316128e3fdd014aa76e4c52",
+                                                                   "size":  255
                                                                },
                   "server/mm_sandycoast/data/villages.dat":  {
                                                                  "sha256":  "57057e91c8c69766315cfd4ab693346b1119e8d01e1f9de5eb924158b5ac873e",
@@ -124,8 +124,8 @@
                                                            "size":  651
                                                        },
                   "server/mm_siberian/WorldDownloader.txt":  {
-                                                                 "sha256":  "14658ce23be096e61d95ed52795f055f31f36b36145d8f757e74bc912225f20e",
-                                                                 "size":  251
+                                                                 "sha256":  "3007f622d7da33a0aa73756076aca14ae72b301ac69f9b716fa69f53ad7f81b6",
+                                                                 "size":  255
                                                              },
                   "server/mm_siberian/data/villages.dat":  {
                                                                "sha256":  "5e89b10d033526d729fd8b3910da9735864f9f346cb1dd992e3ae07203990b96",
@@ -156,8 +156,8 @@
                                                             "size":  654
                                                         },
                   "server/mm_swampland/WorldDownloader.txt":  {
-                                                                  "sha256":  "8c261b6abaf82dc19b441dff2c5185d51451c059916d7f9d03a67388e1b47534",
-                                                                  "size":  251
+                                                                  "sha256":  "590df90a1bef562e2ec82e4eb587f8bfb3634aaed66c85005b95983bd283cb9a",
+                                                                  "size":  255
                                                               },
                   "server/mm_swampland/data/villages.dat":  {
                                                                 "sha256":  "984a230baa6638ce17e5c4d5a561321465e502967cf35cbaae80efd94427b52a",
@@ -188,8 +188,8 @@
                                                                 "size":  648
                                                             },
                   "server/mm_tesorohundido/WorldDownloader.txt":  {
-                                                                      "sha256":  "ea18930217805830caa774d9f12939b7fb5f124dc903845ca6a26240316db0ec",
-                                                                      "size":  251
+                                                                      "sha256":  "4c1ea15956b2ecbbcdad48bb5b13cce6a31504216c6f9c8e67ca820d224c415e",
+                                                                      "size":  255
                                                                   },
                   "server/mm_tesorohundido/data/villages.dat":  {
                                                                     "sha256":  "306292f3e698f311bd1a94107f670cdf9d34ba2b2103bf5b617b45f428003b2f",
