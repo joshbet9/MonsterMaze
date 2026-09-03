@@ -45,11 +45,12 @@ public final class ChallengeManager {
                     Challenge c = parseChallenge(backend.get("/api/v1/challenge/1.8"));
                     ChallengeStandings s = parseStandings(backend.get("/api/v1/challenge/1.8/leaderboard"));
                     if (c == null || s == null) throw new IllegalStateException("invalid challenge response");
-                    if (!c.week.equals(s.challenge.week) || c.number != s.challenge.number) {
-                        throw new IllegalStateException("challenge changed while syncing");
-                    }
+                    if (!c.week.equals(s.challenge.week) || c.number != s.challenge.number) throw new IllegalStateException("challenge changed while syncing");
                     challenge = c;
                     rows = s.rows;
+                    Bukkit.getScheduler().runTask(plugin, new Runnable() {
+                        @Override public void run() { if (plugin.getGameManager() != null) plugin.getGameManager().rerenderLeaderboardBoard(); }
+                    });
                 } catch (Exception e) {
                     plugin.getLogger().warning("Weekly challenge sync failed: " + e.getMessage());
                 }
