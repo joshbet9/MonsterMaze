@@ -4,6 +4,8 @@
 
 mode: Original
 solo-mode: false
+# Emit every completed player's run to solo-runs/ for competition submission.
+record-runs: true
 
 # Active map selected by the player/admin. Persisted across restarts.
 map: eyeofender
