@@ -98,57 +98,40 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("unsupported platform")
                 comp = CREATE_COMPETITION(platform)
                 send_json(self, 200, {
-                    "ok": True,
-                    "platform": platform,
-                    "week": comp["week_key"],
-                    "number": comp["number"],
-                    "mode": comp["mode"],
-                    "pattern": int(comp["pattern"]),
-                    "kit": comp["kit"],
-                    "start": comp["start_ts"],
-                    "end": comp["end_ts"],
-                    "status": comp["status"],
+                    "ok": True, "platform": platform, "week": comp["week_key"], "number": comp["number"],
+                    "mode": comp["mode"], "pattern": int(comp["pattern"]), "kit": comp["kit"],
+                    "start": comp["start_ts"], "end": comp["end_ts"], "status": comp["status"],
                 })
                 return
 
-            if len(parts) in (6, 7, 8) and parts[:3] == ["api", "v1", "leaderboard"]:
+            if len(parts) in (6, 7) and parts[:3] == ["api", "v1", "leaderboard"]:
                 platform, mode = parts[3], parts[4]
                 if platform not in ("1.8", "1.21"):
                     raise ValueError("unsupported platform")
-
                 if len(parts) == 6 and parts[5] == "overall":
                     rows = BOARD_ROWS("platform=? AND mode=?", [platform, mode], 10)
-                    kind = "overall"
-                    pattern = None
+                    kind, pattern = "overall", None
                 elif len(parts) == 7 and parts[5] == "pattern":
                     pattern = int(parts[6])
-                    if not 0 <= pattern < 3:
-                        raise ValueError("invalid pattern")
+                    if not 0 <= pattern < 3: raise ValueError("invalid pattern")
                     rows = BOARD_ROWS("platform=? AND mode=? AND pattern=?", [platform, mode, pattern], 10)
                     kind = "pattern"
                 elif len(parts) == 7 and parts[5] == "kit":
                     kit = str(parts[6])
-                    if kit.lower() == "slowballer":
-                        kit = "Slowball"
+                    if kit.lower() == "slowballer": kit = "Slowball"
                     if kit not in ("Jumper", "Slowball", "Body Builder", "Repulsor", "Maverick"):
                         raise ValueError("invalid kit")
                     rows = BOARD_ROWS("platform=? AND mode=? AND kit=?", [platform, mode, kit], 10)
-                    kind = "kit"
-                    pattern = None
+                    kind, pattern = "kit", None
                 else:
                     raise ValueError("unsupported leaderboard route")
-
                 send_json(self, 200, {
-                    "ok": True,
-                    "platform": platform,
-                    "mode": mode,
-                    "kind": kind,
-                    "pattern": pattern,
+                    "ok": True, "platform": platform, "mode": mode, "kind": kind, "pattern": pattern,
                     "rows": [{"name": n, "kit": k, "stage": s} for n, k, s in rows],
                 })
                 return
 
-            if len(parts) == 7 and parts[:3] == ["api", "v1", "pb"]:
+            if len(parts) == 6 and parts[:3] == ["api", "v1", "pb"]:
                 platform, mode, uuid = parts[3], parts[4], parts[5]
                 if platform not in ("1.8", "1.21"):
                     raise ValueError("unsupported platform")
@@ -162,10 +145,7 @@ class Handler(BaseHTTPRequestHandler):
                 ).fetchall()
                 c.close()
                 send_json(self, 200, {
-                    "ok": True,
-                    "platform": platform,
-                    "mode": mode.lower(),
-                    "uuid": uuid.lower(),
+                    "ok": True, "platform": platform, "mode": mode.lower(), "uuid": uuid.lower(),
                     "rows": [{"pattern": int(p), "kit": k, "stage": int(s), "timeMs": int(t)} for p, k, s, t in rows],
                 })
                 return
@@ -187,55 +167,37 @@ class Handler(BaseHTTPRequestHandler):
         if not token_ok(self):
             send_json(self, 401, {"ok": False, "error": "unauthorized"})
             return
-
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if length <= 0 or length > 64 * 1024:
-                raise ValueError("invalid content length")
+            if length <= 0 or length > 64 * 1024: raise ValueError("invalid content length")
             raw = self.rfile.read(length)
             run = json.loads(raw.decode("utf-8"))
             required = ("submissionId", "platform", "mode", "pattern", "kit", "uuid", "name", "stage", "timeMs")
             missing = [key for key in required if key not in run]
-            if missing:
-                raise ValueError("missing fields: " + ",".join(missing))
+            if missing: raise ValueError("missing fields: " + ",".join(missing))
             platform = str(run["platform"])
-            if platform not in ("1.8", "1.21"):
-                raise ValueError("unsupported platform")
+            if platform not in ("1.8", "1.21"): raise ValueError("unsupported platform")
             pattern = int(run["pattern"])
-            if not 0 <= pattern < 3:
-                raise ValueError("invalid pattern")
+            if not 0 <= pattern < 3: raise ValueError("invalid pattern")
             stage = int(run["stage"])
-            if stage < 1 or stage > 10000:
-                raise ValueError("invalid stage")
+            if stage < 1 or stage > 10000: raise ValueError("invalid stage")
             kit = str(run["kit"])
-            if kit.lower() == "slowballer":
-                kit = "Slowball"
+            if kit.lower() == "slowballer": kit = "Slowball"
             if kit not in ("Jumper", "Slowball", "Body Builder", "Repulsor", "Maverick"):
                 raise ValueError("invalid kit")
-
             normalized = {
-                "submission_id": str(run["submissionId"])[:256],
-                "platform": platform,
-                "plugin": str(run.get("plugin", "1.0.0"))[:64],
-                "mode": str(run["mode"]).lower()[:64],
-                "pattern": pattern,
-                "kit": kit,
-                "uuid": str(run["uuid"]).lower()[:64],
-                "name": str(run["name"])[:256],
-                "stage": stage,
-                "time_ms": max(0, int(run.get("timeMs", 0))),
-                "config_hash": str(run.get("configHash", ""))[:128],
+                "submission_id": str(run["submissionId"])[:256], "platform": platform,
+                "plugin": str(run.get("plugin", "1.0.0"))[:64], "mode": str(run["mode"]).lower()[:64],
+                "pattern": pattern, "kit": kit, "uuid": str(run["uuid"]).lower()[:64],
+                "name": str(run["name"])[:256], "stage": stage,
+                "time_ms": max(0, int(run.get("timeMs", 0))), "config_hash": str(run.get("configHash", ""))[:128],
                 "submitted_at": max(0, int(run.get("submittedAt", 0))),
             }
             if not normalized["submitted_at"]:
                 import time
                 normalized["submitted_at"] = int(time.time() * 1000)
-
             inserted = INSERT_SUBMISSION(normalized)
             improved = UPSERT_RUN(normalized)
-
-            # A run is now durable in the backend. Do not make the Minecraft server
-            # wait for Discord or leaderboard message edits before acknowledging it.
             send_json(self, 200, {"ok": True, "accepted": True,
                                   "newSubmission": bool(inserted), "newLifetimePB": bool(improved)})
             background_updates(platform, normalized, bool(inserted))
