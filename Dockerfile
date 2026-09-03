@@ -17,7 +17,10 @@ COPY docker/entrypoint.sh /entrypoint.sh
 COPY docker/submitter.py /opt/monstermaze-submitter.py
 COPY docker/logrotate.conf /etc/logrotate.d/monstermaze
 
-RUN chmod +x /entrypoint.sh \
+# Windows checkouts may contain CRLF line endings. Normalize the shell script
+# inside the Linux image so its shebang is interpreted correctly.
+RUN sed -i 's/\r$//' /entrypoint.sh \
+    && chmod +x /entrypoint.sh \
     && mkdir -p /data/1.8 /data/1.21
 
 VOLUME ["/data"]
