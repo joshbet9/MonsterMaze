@@ -19,6 +19,14 @@ case "$TARGET" in 1.8|1.21|all) ;; *) usage ;; esac
 
 mkdir -p "$TMP_ROOT" "$VERSIONS" "$SUBMITTER" "$SUBMITTER/submitted/1.8" "$SUBMITTER/submitted/1.21"
 
+service_name() {
+  case "$1" in
+    1.8) echo "monstermaze-18.service" ;;
+    1.21) echo "monstermaze-21.service" ;;
+    *) return 1 ;;
+  esac
+}
+
 latest_release_json() {
   local platform="$1"
   python3 - "$platform" <<'PY'
@@ -53,12 +61,12 @@ json_field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[
 
 stop_service() {
   local platform="$1"
-  sudo systemctl stop "monstermaze-${platform//./}.service" 2>/dev/null || true
+  sudo systemctl stop "$(service_name "$platform")" 2>/dev/null || true
 }
 
 start_service() {
   local platform="$1"
-  sudo systemctl start "monstermaze-${platform//./}.service" 2>/dev/null || true
+  sudo systemctl start "$(service_name "$platform")" 2>/dev/null || true
 }
 
 backup_before_update() {
@@ -86,7 +94,7 @@ install_submitter() {
 update_one() {
   local platform="$1"
   local live="$SERVER_ROOT/$platform"
-  local meta release_tag asset_url asset_digest zip extract_root source
+  local meta release_tag asset_url asset_digest zip extract_root source expected actual map name
 
   echo
   echo "=== Monster Maze $platform VM update ==="
