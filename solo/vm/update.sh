@@ -69,20 +69,33 @@ start_service() {
   sudo systemctl start "$(service_name "$platform")" 2>/dev/null || true
 }
 
+ensure_services_started() {
+  case "$TARGET" in
+    1.8) start_service 1.8 ;;
+    1.21) start_service 1.21 ;;
+    all) start_service 1.8; start_service 1.21 ;;
+  esac
+}
+
 backup_before_update() {
   local platform="$1"
   if [[ -x "$HOME_DIR/backup-servers.sh" ]]; then
     "$HOME_DIR/backup-servers.sh" "$platform"
   else
-    echo "WARNING: $HOME_DIR/backup-servers.sh not found; continuing without automatic backup."
+    echo "WARNING: $HOME_DIR/backup-servers.sh not found; continuing without automatic server backup."
   fi
 }
 
 install_submitter() {
   local tmp="$TMP_ROOT/submit.py.tmp"
+  local submit_backup_dir="$HOME_DIR/backups/submitter/$(date +%Y%m%d-%H%M%S)"
   echo "Updating Linux submitter..."
   curl -fsSL --retry 3 --connect-timeout 15 --max-time 120 "$RAW/submit.py" -o "$tmp"
   python3 -m py_compile "$tmp"
+  if [[ -f "$SUBMITTER/submit.py" ]]; then
+    mkdir -p "$submit_backup_dir"
+    cp "$SUBMITTER/submit.py" "$submit_backup_dir/submit.py"
+  fi
   install -m 0755 "$tmp" "$SUBMITTER/submit.py"
   rm -f "$tmp"
   if systemctl list-unit-files | grep -q '^monstermaze-submitter\.service'; then
@@ -167,13 +180,14 @@ update_one() {
 
 cleanup() { rm -rf "$TMP_ROOT"; }
 trap cleanup EXIT
+trap ensure_services_started EXIT
 
 install_submitter
 
 case "$TARGET" in
-  1.8) update_one 1.8; start_service 1.8 ;;
-  1.21) update_one 1.21; start_service 1.21 ;;
-  all) update_one 1.8; update_one 1.21; start_service 1.8; start_service 1.21 ;;
+  1.8) update_one 1.8 ;;
+  1.21) update_one 1.21 ;;
+  all) update_one 1.8; update_one 1.21 ;;
 esac
 
 echo
