@@ -9,7 +9,7 @@ softdepend:
 commands:
   mm:
     description: Monster Maze commands
-    usage: /mm <start|stop|setcenter|status|kit|kits>
+    usage: /mm <start|stop|setcenter|status|kit|kits|pb|lb|challenge>
 permissions:
   monstermaze.admin:
     description: Allows control of Monster Maze
