@@ -17,17 +17,19 @@ UPSERT_RUN = None
 CREATE_COMPETITION = None
 BOARD_ROWS = None
 REFRESH_BOT = None
+POST_FEED = None
 
 
 def configure(*, db_fn, insert_submission, upsert_run, create_competition,
-              board_rows, refresh_bot=None):
-    global DB, INSERT_SUBMISSION, UPSERT_RUN, CREATE_COMPETITION, BOARD_ROWS, REFRESH_BOT
+              board_rows, refresh_bot=None, post_feed=None):
+    global DB, INSERT_SUBMISSION, UPSERT_RUN, CREATE_COMPETITION, BOARD_ROWS, REFRESH_BOT, POST_FEED
     DB = db_fn
     INSERT_SUBMISSION = insert_submission
     UPSERT_RUN = upsert_run
     CREATE_COMPETITION = create_competition
     BOARD_ROWS = board_rows
     REFRESH_BOT = refresh_bot
+    POST_FEED = post_feed
 
 
 def token_ok(handler: BaseHTTPRequestHandler) -> bool:
@@ -55,6 +57,14 @@ def refresh_bot(platform: str):
             print(f"[api] leaderboard refresh failed: {exc}", flush=True)
 
 
+def post_feed(run: dict):
+    if POST_FEED:
+        try:
+            POST_FEED(run)
+        except Exception as exc:
+            print(f"[api] feed post failed: {exc}", flush=True)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MonsterMazeAPI/1.0"
 
@@ -73,7 +83,6 @@ class Handler(BaseHTTPRequestHandler):
 
         parts = path.strip("/").split("/")
         try:
-            # /api/v1/challenge/{platform}
             if len(parts) == 4 and parts[:3] == ["api", "v1", "challenge"]:
                 platform = parts[3]
                 if platform not in ("1.8", "1.21"):
@@ -93,8 +102,6 @@ class Handler(BaseHTTPRequestHandler):
                 })
                 return
 
-            # /api/v1/leaderboard/{platform}/{mode}/overall
-            # /api/v1/leaderboard/{platform}/{mode}/pattern/{pattern}
             if len(parts) in (6, 7) and parts[:3] == ["api", "v1", "leaderboard"]:
                 platform, mode, kind = parts[3], parts[4], parts[5]
                 if platform not in ("1.8", "1.21"):
@@ -165,6 +172,7 @@ class Handler(BaseHTTPRequestHandler):
             normalized = {
                 "submission_id": str(run["submissionId"])[:256],
                 "platform": platform,
+                "plugin": str(run.get("plugin", "1.0.0"))[:64],
                 "mode": str(run["mode"]).lower()[:64],
                 "pattern": pattern,
                 "kit": kit,
@@ -172,6 +180,7 @@ class Handler(BaseHTTPRequestHandler):
                 "name": str(run["name"])[:256],
                 "stage": stage,
                 "time_ms": max(0, int(run.get("timeMs", 0))),
+                "config_hash": str(run.get("configHash", ""))[:128],
                 "submitted_at": max(0, int(run.get("submittedAt", 0))),
             }
             if not normalized["submitted_at"]:
@@ -180,6 +189,8 @@ class Handler(BaseHTTPRequestHandler):
 
             inserted = INSERT_SUBMISSION(normalized)
             improved = UPSERT_RUN(normalized)
+            if inserted:
+                post_feed(normalized)
             refresh_bot(platform)
             send_json(self, 200, {"ok": True, "accepted": True,
                                   "newSubmission": bool(inserted), "newLifetimePB": bool(improved)})
