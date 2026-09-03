@@ -1,0 +1,15 @@
+[Unit]
+Description=Monster Maze Solo Submission Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=monstermaze
+WorkingDirectory=/home/monstermaze/submitter
+ExecStart=/usr/bin/python3 /home/monstermaze/submitter/submit.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
