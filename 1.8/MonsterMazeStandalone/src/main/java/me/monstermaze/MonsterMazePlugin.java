@@ -7,6 +7,7 @@ import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.stats.BackendClient;
+import me.monstermaze.stats.ChallengeManager;
 import me.monstermaze.stats.RunRecorder;
 import me.monstermaze.stats.SoloRunCompletionListener;
 import me.monstermaze.util.UtilEnt;
@@ -31,6 +32,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private BackendClient backendClient;
     private RunRecorder runRecorder;
     private SoloRunCompletionListener soloRunCompletionListener;
+    private ChallengeManager challengeManager;
 
     @Override
     public void onEnable() {
@@ -40,6 +42,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.voidWorlds = new VoidWorldManager(this);
         this.mapManager = new MapManager(this, voidWorlds);
         this.leaderboards = new me.monstermaze.stats.LeaderboardManager(this);
+        this.challengeManager = new ChallengeManager(this);
         FileConfiguration cfg = getConfig();
         MazeMode stored = MazeMode.byName(cfg.getString("mode", "Original"));
         if (stored == null) stored = MazeMode.ORIGINAL;
@@ -90,6 +93,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     public VoidWorldManager getVoidWorlds() { return voidWorlds; }
     public MapManager getMapManager() { return mapManager; }
     public me.monstermaze.stats.LeaderboardManager getLeaderboards() { return leaderboards; }
+    public ChallengeManager getChallengeManager() { return challengeManager; }
     public boolean isSoloMode() { return soloMode; }
     public boolean isRecordRuns() { return recordRuns; }
     public BackendClient getBackendClient() { return backendClient; }
