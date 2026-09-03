@@ -17,13 +17,13 @@ COPY docker/entrypoint.sh /entrypoint.sh
 COPY docker/submitter.py /opt/monstermaze-submitter.py
 COPY docker/logrotate.conf /etc/logrotate.d/monstermaze
 
-# Windows checkouts may contain CRLF line endings. Normalize the shell script
-# inside the Linux image so its shebang is interpreted correctly.
-RUN sed -i 's/\r$//' /entrypoint.sh \
+# Never depend on the source checkout's line-ending mode at runtime. Normalize
+# both Linux scripts in the image, then execute the entrypoint through Bash.
+RUN sed -i 's/\r$//' /entrypoint.sh /opt/monstermaze-submitter.py \
     && chmod +x /entrypoint.sh \
     && mkdir -p /data/1.8 /data/1.21
 
 VOLUME ["/data"]
 EXPOSE 25565/tcp 25566/tcp
 
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/bin/bash", "-c", "sed -i 's/\\r$//' /entrypoint.sh /opt/monstermaze-submitter.py && exec /bin/bash /entrypoint.sh"]
