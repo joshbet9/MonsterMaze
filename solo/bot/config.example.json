@@ -1,33 +1,24 @@
 {
-  "_comment": "Copy this file to config.json and fill in your values. Channel refs can be a channel ID (number) or a unique channel name (string). See README.md",
+  "_comment": "Copy this file to config.json and fill in your values. Channel refs can be Discord channel IDs or unique channel names.",
   "token": "YOUR_BOT_TOKEN",
-
   "feed_channels": ["YOUR_SOLO_RUNS_CHANNEL_ID"],
-
   "modes": ["modern", "speed", "lagless", "original"],
-
+  "platform_modes": {
+    "1.8": ["modern", "speed", "lagless", "original"],
+    "1.21": ["original", "modern", "classic"]
+  },
   "channels": {
-    "modern": {
-      "overall":  "leaderboard-modern",
-      "patterns": "leaderboard-modern-mazepatterns",
-      "kits":     "leaderboard-modern-kits"
+    "1.8": {
+      "modern": {"overall": "leaderboard-modern-1-8", "patterns": "leaderboard-modern-1-8-mazepatterns", "kits": "leaderboard-modern-1-8-kits"},
+      "speed": {"overall": "leaderboard-speed-1-8", "patterns": "leaderboard-speed-1-8-mazepatterns", "kits": "leaderboard-speed-1-8-kits"},
+      "lagless": {"overall": "leaderboard-lagless-1-8", "patterns": "leaderboard-lagless-1-8-mazepatterns", "kits": "leaderboard-lagless-1-8-kits"},
+      "original": {"overall": "leaderboard-original-1-8", "patterns": "leaderboard-original-1-8-mazepatterns", "kits": "leaderboard-original-1-8-kits"}
     },
-    "speed": {
-      "overall":  "leaderboard-speed",
-      "patterns": "leaderboard-speed-mazepatterns",
-      "kits":     "leaderboard-speed-kits"
-    },
-    "lagless": {
-      "overall":  "leaderboard-lagless",
-      "patterns": "leaderboard-lagless-mazepatterns",
-      "kits":     "leaderboard-lagless-kits"
-    },
-    "original": {
-      "overall":  "leaderboard-original",
-      "patterns": "leaderboard-original-mazepatterns",
-      "kits":     "leaderboard-original-kits"
+    "1.21": {
+      "original": {"overall": "leaderboard-original-1-21", "patterns": "leaderboard-original-1-21-mazepatterns", "kits": "leaderboard-original-1-21-kits"},
+      "modern": {"overall": "leaderboard-modern-1-21", "patterns": "leaderboard-modern-1-21-mazepatterns", "kits": "leaderboard-modern-1-21-kits"},
+      "classic": {"overall": "leaderboard-classic-1-21", "patterns": "leaderboard-classic-1-21-mazepatterns", "kits": "leaderboard-classic-1-21-kits"}
     }
   },
-
   "top_n": 10
 }

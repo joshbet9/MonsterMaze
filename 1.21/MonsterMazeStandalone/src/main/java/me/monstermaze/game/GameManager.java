@@ -609,9 +609,9 @@ public void startGame(Location preferCenter, int requestedPattern) {
             if (centerSafeZoneDecay == 1) {
                 it.remove();
                 if (mazeGenerator.getCenterSafeZonePaths().contains(cur)) {
-                    // Real path cell: rebuild as maze block and re-enable its waypoint
-                    // (the maze shows through underneath).
-                    floor.setType(Material.QUARTZ_BLOCK, false);
+                    // Real path cell: rebuild as the active map's actual maze surface.
+                    me.monstermaze.maze.MazeBlockData theme = plugin.getMapManager().activeTheme();
+                    floor.setType(theme.top, false);
                     mazeGenerator.enableWaypoint(cur);
                 } else {
                     // Decorative/barrier center cell: falls away into the void.
