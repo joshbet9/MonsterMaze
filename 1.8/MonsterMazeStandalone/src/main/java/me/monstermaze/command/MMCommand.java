@@ -6,6 +6,7 @@ import me.monstermaze.game.GameManager;
 import me.monstermaze.game.GameState;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.kit.KitType;
+import me.monstermaze.stats.ChallengeManager;
 import me.monstermaze.stats.LeaderboardManager;
 import me.monstermaze.stats.RunRecorder;
 import org.bukkit.ChatColor;
@@ -30,6 +31,8 @@ public class MMCommand implements CommandExecutor {
             sender.sendMessage(ChatColor.YELLOW + "/mm kit <jumper|slowball|body|repulsor|maverick>");
             sender.sendMessage(ChatColor.YELLOW + "/mm kits " + ChatColor.GRAY + "- list kits");
             sender.sendMessage(ChatColor.YELLOW + "/mm pb " + ChatColor.GRAY + "- your bests per pattern");
+            sender.sendMessage(ChatColor.YELLOW + "/mm challenge " + ChatColor.GRAY + "- this week's hosted challenge");
+            sender.sendMessage(ChatColor.YELLOW + "/mm challenge lb " + ChatColor.GRAY + "- challenge standings");
             sender.sendMessage(ChatColor.YELLOW + "/mm exportpbs " + ChatColor.GRAY + "- export all stored PBs for submission");
             sender.sendMessage(ChatColor.YELLOW + "/mm lb [1|2|3] " + ChatColor.GRAY + "- leaderboard");
             sender.sendMessage(ChatColor.AQUA + "Current mode: " + plugin.getMode().color + plugin.getMode().id + ChatColor.GRAY + " (/mm mode <original|speed|modern>)");
@@ -39,6 +42,11 @@ public class MMCommand implements CommandExecutor {
         }
 
         String sub = args[0].toLowerCase();
+        if (sub.equals("challenge") || sub.equals("competition")) {
+            if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Players only."); return true; }
+            plugin.getChallengeManager().show((Player) sender, args.length >= 2 && args[1].equalsIgnoreCase("lb"));
+            return true;
+        }
         if (sub.equals("kit") || sub.equals("kits")) {
             if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Players only."); return true; }
             Player p = (Player) sender;
@@ -63,25 +71,16 @@ public class MMCommand implements CommandExecutor {
 
         if (sub.equals("exportpbs") || sub.equals("exportpb") || sub.equals("export")) {
             if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Players only."); return true; }
-            exportPBs((Player) sender);
-            return true;
+            exportPBs((Player) sender); return true;
         }
-
         if (!sender.hasPermission("monstermaze.admin")) { sender.sendMessage(ChatColor.RED + "No permission."); return true; }
-
         if (sub.equals("build") || sub.equals("buildmode")) {
             if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Players only."); return true; }
             Player p = (Player) sender;
-            if (p.hasMetadata(BuildBypassListener.METADATA)) {
-                p.removeMetadata(BuildBypassListener.METADATA, plugin);
-                p.sendMessage(ChatColor.YELLOW + "Monster Maze build bypass " + ChatColor.RED + "DISABLED" + ChatColor.YELLOW + ".");
-            } else {
-                p.setMetadata(BuildBypassListener.METADATA, new FixedMetadataValue(plugin, true));
-                p.sendMessage(ChatColor.YELLOW + "Monster Maze build bypass " + ChatColor.GREEN + "ENABLED" + ChatColor.YELLOW + ". You can edit the active arena in Creative.");
-            }
+            if (p.hasMetadata(BuildBypassListener.METADATA)) { p.removeMetadata(BuildBypassListener.METADATA, plugin); p.sendMessage(ChatColor.YELLOW + "Monster Maze build bypass " + ChatColor.RED + "DISABLED" + ChatColor.YELLOW + "."); }
+            else { p.setMetadata(BuildBypassListener.METADATA, new FixedMetadataValue(plugin, true)); p.sendMessage(ChatColor.YELLOW + "Monster Maze build bypass " + ChatColor.GREEN + "ENABLED" + ChatColor.YELLOW + ". You can edit the active arena in Creative."); }
             return true;
         }
-
         switch (sub) {
             case "void": case "voidworld": case "lobby":
                 if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Players only."); return true; }
@@ -93,20 +92,16 @@ public class MMCommand implements CommandExecutor {
             case "stop": case "force": gm.forceStop(); sender.sendMessage(ChatColor.GREEN + "Monster Maze force stopped."); break;
             case "setcenter":
                 if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Only players can set the center."); return true; }
-                Player pl = (Player) sender; gm.setCenter(pl.getLocation());
-                sender.sendMessage(ChatColor.GREEN + "Lobby box placed at " + pl.getLocation().getBlockX() + ", " + pl.getLocation().getBlockY() + ", " + pl.getLocation().getBlockZ());
-                sender.sendMessage(ChatColor.GRAY + "World stays empty except this box. Then /mm start"); break;
+                Player pl = (Player) sender; gm.setCenter(pl.getLocation()); sender.sendMessage(ChatColor.GREEN + "Lobby box placed at " + pl.getLocation().getBlockX() + ", " + pl.getLocation().getBlockY() + ", " + pl.getLocation().getBlockZ()); sender.sendMessage(ChatColor.GRAY + "World stays empty except this box. Then /mm start"); break;
             case "mode":
                 if (args.length < 2) { sender.sendMessage(ChatColor.RED + "Usage: /mm mode <original|speed|modern>"); sender.sendMessage(ChatColor.AQUA + "Current: " + plugin.getMode().color + plugin.getMode().id); for (MazeMode mode : MazeMode.values()) sender.sendMessage(ChatColor.GRAY + " - " + mode.color + mode.id + ChatColor.GRAY + ": " + mode.description); return true; }
                 if (gm.isRunning()) { sender.sendMessage(ChatColor.RED + "Change the mode when no game is running."); return true; }
-                MazeMode mode = MazeMode.byName(args[1]);
-                if (mode == null) { sender.sendMessage(ChatColor.RED + "Unknown mode. Try original, speed, or modern."); return true; }
+                MazeMode mode = MazeMode.byName(args[1]); if (mode == null) { sender.sendMessage(ChatColor.RED + "Unknown mode. Try original, speed, or modern."); return true; }
                 plugin.setMode(mode); gm.rerenderLeaderboardBoard(); sender.sendMessage(ChatColor.GREEN + "Mode set to " + mode.color + mode.id + ChatColor.GREEN + ". It will apply on the next /mm start."); break;
             case "pattern": case "maze":
                 if (args.length < 2) { sender.sendMessage(ChatColor.YELLOW + "Usage: /mm pattern <1|2|3|random>"); sender.sendMessage(ChatColor.GRAY + "Current next pattern: " + formatPattern(gm.getMazeGenerator().getForcedPattern())); return true; }
                 if (gm.isRunning()) { sender.sendMessage(ChatColor.RED + "Change the pattern when no game is running."); return true; }
-                String patternArg = args[1].toLowerCase();
-                if (patternArg.equals("random")) { gm.getMazeGenerator().setForcedPattern(-1); sender.sendMessage(ChatColor.GREEN + "Maze pattern set to random for the next game."); return true; }
+                String patternArg = args[1].toLowerCase(); if (patternArg.equals("random")) { gm.getMazeGenerator().setForcedPattern(-1); sender.sendMessage(ChatColor.GREEN + "Maze pattern set to random for the next game."); return true; }
                 int pattern; try { pattern = Integer.parseInt(patternArg); } catch (NumberFormatException e) { sender.sendMessage(ChatColor.RED + "Invalid pattern. Use 1, 2, 3, or random."); return true; }
                 if (pattern < 1 || pattern > 3) { sender.sendMessage(ChatColor.RED + "Invalid pattern. Use 1, 2, 3, or random."); return true; }
                 gm.getMazeGenerator().setForcedPattern(pattern - 1); sender.sendMessage(ChatColor.GREEN + "Maze pattern set to " + ChatColor.WHITE + pattern + ChatColor.GREEN + " for the next game."); break;
@@ -115,70 +110,17 @@ public class MMCommand implements CommandExecutor {
             case "map": case "arena":
                 if (args.length < 2) { sender.sendMessage(ChatColor.RED + "Usage: /mm map <name>"); sender.sendMessage(ChatColor.GRAY + "Available: " + String.join(", ", plugin.getMapManager().knownMaps())); return true; }
                 if (gm.isRunning()) { sender.sendMessage(ChatColor.RED + "Change the map when no game is running."); return true; }
-                String want = args[1].toLowerCase();
-                if (!plugin.getMapManager().setActiveMap(want)) { sender.sendMessage(ChatColor.RED + "Unknown map '" + args[1] + "'. Try: " + String.join(", ", plugin.getMapManager().knownMaps())); return true; }
+                String want = args[1].toLowerCase(); if (!plugin.getMapManager().setActiveMap(want)) { sender.sendMessage(ChatColor.RED + "Unknown map '" + args[1] + "'. Try: " + String.join(", ", plugin.getMapManager().knownMaps())); return true; }
                 plugin.getMapManager().ensureActiveWorld(); gm.applyMap(); sender.sendMessage(ChatColor.GREEN + "Map set to " + ChatColor.WHITE + want + ChatColor.GREEN + ". Lobby moved; run /mm start."); break;
             default: sender.sendMessage(ChatColor.RED + "Unknown subcommand. Try /mm"); break;
         }
         return true;
     }
 
-    private void showKits(Player p, GameManager gm) {
-        p.sendMessage(ChatColor.GOLD + "Kits:");
-        boolean qol = plugin.getMode() != MazeMode.ORIGINAL;
-        for (KitType k : KitType.available(qol)) p.sendMessage(ChatColor.GRAY + " - " + k.display + ChatColor.DARK_GRAY + " (/mm kit " + k.name().toLowerCase() + ")");
-    }
+    private void showKits(Player p, GameManager gm) { p.sendMessage(ChatColor.GOLD + "Kits:"); boolean qol = plugin.getMode() != MazeMode.ORIGINAL; for (KitType k : KitType.available(qol)) p.sendMessage(ChatColor.GRAY + " - " + k.display + ChatColor.DARK_GRAY + " (/mm kit " + k.name().toLowerCase() + ")"); }
     private String formatPattern(int pattern) { return pattern < 0 ? "random" : "Maze " + (pattern + 1); }
-    private void exportPBs(Player p) {
-        if (!plugin.isSoloMode()) {
-            p.sendMessage(ChatColor.RED + "PB export is only available in Solo Mode.");
-            return;
-        }
-
-        LeaderboardManager lb = plugin.getLeaderboards();
-        RunRecorder recorder = plugin.getRunRecorder();
-        int exported = 0;
-
-        for (MazeMode mode : MazeMode.values()) {
-            for (int pat = 0; pat < LeaderboardManager.PATTERN_COUNT; pat++) {
-                for (KitType kit : KitType.values()) {
-                    int stage = lb.getKitPB(mode, pat, p.getUniqueId(), kit.id);
-                    if (stage < 1) continue;
-                    if (recorder.recordHistorical(p, mode, pat, kit.id, stage)) exported++;
-                }
-            }
-        }
-
-        if (exported == 0) {
-            p.sendMessage(ChatColor.YELLOW + "No stored personal bests found to export.");
-        } else {
-            p.sendMessage(ChatColor.GREEN + "Exported " + exported + " stored personal best(s) for submission.");
-            p.sendMessage(ChatColor.GRAY + "Run the Solo submitter to send them to Discord.");
-        }
-    }
-    private void showPB(Player p) {
-        LeaderboardManager lb = plugin.getLeaderboards(); MazeMode mode = plugin.getMode();
-        p.sendMessage(ChatColor.GOLD + "=== Personal Bests (" + mode.color + mode.id + ChatColor.GOLD + ") ==="); boolean any = false;
-        for (int pat = 0; pat < LeaderboardManager.PATTERN_COUNT; pat++) {
-            LeaderboardManager.PBInfo best = lb.getBest(mode, pat, p.getUniqueId()); if (best != null) any = true;
-            p.sendMessage(ChatColor.YELLOW + LeaderboardManager.patternName(pat) + ":" + (best != null ? ChatColor.WHITE + " Stage " + best.stage + kitSuffix(best.kit) : ChatColor.GRAY + " no PB yet"));
-            if (best != null) for (KitType k : KitType.available(mode != MazeMode.ORIGINAL)) { int per = lb.getKitPB(mode, pat, p.getUniqueId(), k.id); if (per > 0) p.sendMessage("   " + k.display + ChatColor.GRAY + ": " + ChatColor.WHITE + "Stage " + per); }
-        }
-        if (!any) p.sendMessage(ChatColor.GRAY + "Play a game to set a personal best!");
-    }
-    private void showLeaderboard(Player p, String[] args) {
-        LeaderboardManager lb = plugin.getLeaderboards(); MazeMode mode = plugin.getMode(); Integer want = null;
-        if (args.length >= 2) try { int v = Integer.parseInt(args[1]); if (v >= 1 && v <= LeaderboardManager.PATTERN_COUNT) want = v - 1; } catch (NumberFormatException ignored) { }
-        int start = want != null ? want : 0, end = want != null ? want + 1 : LeaderboardManager.PATTERN_COUNT;
-        for (int pat = start; pat < end; pat++) {
-            p.sendMessage(""); p.sendMessage(ChatColor.GOLD + "=== " + LeaderboardManager.patternName(pat) + " (" + mode.color + mode.id + ChatColor.GOLD + ") ===");
-            List<LeaderboardManager.Entry> rows = lb.getLeaderboard(mode, pat, 10); if (rows.isEmpty()) { p.sendMessage(ChatColor.GRAY + "No scores yet."); continue; }
-            int rank = 1; for (LeaderboardManager.Entry e : rows) { p.sendMessage(ChatColor.GRAY + "#" + rank + " " + ChatColor.WHITE + e.name + ChatColor.DARK_GRAY + " — Stage " + ChatColor.GOLD + e.stage + kitSuffix(e.kit)); rank++; }
-        }
-    }
-    private String kitSuffix(String kitId) {
-        if (kitId == null || kitId.isEmpty()) return "";
-        KitType k = KitType.byName(kitId);
-        return ChatColor.DARK_GRAY + " (" + (k != null ? k.display : kitId) + ChatColor.DARK_GRAY + ")";
-    }
+    private void exportPBs(Player p) { if (!plugin.isSoloMode()) { p.sendMessage(ChatColor.RED + "PB export is only available in Solo Mode."); return; } LeaderboardManager lb = plugin.getLeaderboards(); RunRecorder recorder = plugin.getRunRecorder(); int exported = 0; for (MazeMode mode : MazeMode.values()) for (int pat = 0; pat < LeaderboardManager.PATTERN_COUNT; pat++) for (KitType kit : KitType.values()) { int stage = lb.getKitPB(mode, pat, p.getUniqueId(), kit.id); if (stage < 1) continue; if (recorder.recordHistorical(p, mode, pat, kit.id, stage)) exported++; } if (exported == 0) p.sendMessage(ChatColor.YELLOW + "No stored personal bests found to export."); else { p.sendMessage(ChatColor.GREEN + "Exported " + exported + " stored personal best(s) for submission."); p.sendMessage(ChatColor.GRAY + "Run the Solo submitter to send them to Discord."); } }
+    private void showPB(Player p) { LeaderboardManager lb = plugin.getLeaderboards(); MazeMode mode = plugin.getMode(); p.sendMessage(ChatColor.GOLD + "=== Personal Bests (" + mode.color + mode.id + ChatColor.GOLD + ") ==="); boolean any = false; for (int pat = 0; pat < LeaderboardManager.PATTERN_COUNT; pat++) { LeaderboardManager.PBInfo best = lb.getBest(mode, pat, p.getUniqueId()); if (best != null) any = true; p.sendMessage(ChatColor.YELLOW + LeaderboardManager.patternName(pat) + ":" + (best != null ? ChatColor.WHITE + " Stage " + best.stage + kitSuffix(best.kit) : ChatColor.GRAY + " no PB yet")); if (best != null) for (KitType k : KitType.available(mode != MazeMode.ORIGINAL)) { int per = lb.getKitPB(mode, pat, p.getUniqueId(), k.id); if (per > 0) p.sendMessage("   " + k.display + ChatColor.GRAY + ": " + ChatColor.WHITE + "Stage " + per); } } if (!any) p.sendMessage(ChatColor.GRAY + "Play a game to set a personal best!"); }
+    private void showLeaderboard(Player p, String[] args) { LeaderboardManager lb = plugin.getLeaderboards(); MazeMode mode = plugin.getMode(); Integer want = null; if (args.length >= 2) try { int v = Integer.parseInt(args[1]); if (v >= 1 && v <= LeaderboardManager.PATTERN_COUNT) want = v - 1; } catch (NumberFormatException ignored) { } int start = want != null ? want : 0, end = want != null ? want + 1 : LeaderboardManager.PATTERN_COUNT; for (int pat = start; pat < end; pat++) { p.sendMessage(""); p.sendMessage(ChatColor.GOLD + "=== " + LeaderboardManager.patternName(pat) + " (" + mode.color + mode.id + ChatColor.GOLD + ") ==="); List<LeaderboardManager.Entry> rows = lb.getLeaderboard(mode, pat, 10); if (rows.isEmpty()) { p.sendMessage(ChatColor.GRAY + "No scores yet."); continue; } int rank = 1; for (LeaderboardManager.Entry e : rows) { p.sendMessage(ChatColor.GRAY + "#" + rank + " " + ChatColor.WHITE + e.name + ChatColor.DARK_GRAY + " — Stage " + ChatColor.GOLD + e.stage + kitSuffix(e.kit)); rank++; } } }
+    private String kitSuffix(String kitId) { if (kitId == null || kitId.isEmpty()) return ""; KitType k = KitType.byName(kitId); return ChatColor.DARK_GRAY + " (" + (k != null ? k.display : kitId) + ChatColor.DARK_GRAY + ")"; }
 }
