@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.TimeZone;
-import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -21,7 +20,9 @@ public final class ChallengeManager {
     private volatile Challenge challenge;
     private volatile List<Row> rows = new ArrayList<Row>();
 
-    private static final Pattern FIELD = Pattern.compile("\\\"%s\\\":(\\\"(?:\\\\.|[^\\\"\\\\])*\\\"|-?\\d+)");
+    /* Backend JSON is deliberately parsed without a third-party dependency so Solo remains self-contained. */
+    private static final Pattern FIELD = Pattern.compile("\\\"%s\\\"\\s*:\\s*(\\\"(?:\\\\.|[^\\\"\\\\])*\\\"|-?\\d+)");
+    private static final Pattern OBJECT = Pattern.compile("\\{([^{}]*)\\}");
 
     public ChallengeManager(MonsterMazePlugin plugin) {
         this.plugin = plugin;
@@ -44,6 +45,9 @@ public final class ChallengeManager {
                     Challenge c = parseChallenge(backend.get("/api/v1/challenge/1.8"));
                     ChallengeStandings s = parseStandings(backend.get("/api/v1/challenge/1.8/leaderboard"));
                     if (c == null || s == null) throw new IllegalStateException("invalid challenge response");
+                    if (!c.week.equals(s.challenge.week) || c.number != s.challenge.number) {
+                        throw new IllegalStateException("challenge changed while syncing");
+                    }
                     challenge = c;
                     rows = s.rows;
                 } catch (Exception e) {
@@ -99,6 +103,7 @@ public final class ChallengeManager {
         int number = integer(json, "number", 0);
         int pattern = integer(json, "pattern", 0);
         if (week == null || mode == null || kit == null || end == null) return null;
+        if (pattern < 0 || pattern >= 3 || number < 1) return null;
         return new Challenge(week, number, mode, pattern, kit, start, end, status);
     }
 
@@ -107,10 +112,28 @@ public final class ChallengeManager {
         Challenge c = parseChallenge(json);
         if (c == null) return null;
         List<Row> out = new ArrayList<Row>();
-        Pattern rowPattern = Pattern.compile("\\{\\\"name\\\":\\\"((?:\\\\.|[^\\\"\\\\])*)\\\",\\\"stage\\\":(\\d+),\\\"timeMs\\\":(\\d+)\\}");
-        Matcher m = rowPattern.matcher(json);
-        while (m.find()) out.add(new Row(unescape(m.group(1)), Integer.parseInt(m.group(2)), Long.parseLong(m.group(3))));
+        String rowsJson = array(json, "rows");
+        if (rowsJson != null) {
+            Matcher objects = OBJECT.matcher(rowsJson);
+            while (objects.find()) {
+                String object = objects.group(1);
+                String name = string(object, "name");
+                int stage = integer(object, "stage", -1);
+                String time = string(object, "timeMs");
+                try {
+                    if (name != null && stage >= 1 && time != null) {
+                        long timeMs = Long.parseLong(time);
+                        if (timeMs >= 0) out.add(new Row(name, stage, timeMs));
+                    }
+                } catch (NumberFormatException ignored) { }
+            }
+        }
         return new ChallengeStandings(c, out);
+    }
+
+    private static String array(String json, String key) {
+        Matcher m = Pattern.compile("\\\"" + Pattern.quote(key) + "\\\"\\s*:\\s*\\[(.*)\\]", Pattern.DOTALL).matcher(json);
+        return m.find() ? m.group(1) : null;
     }
 
     private static String string(String json, String key) {
@@ -131,7 +154,21 @@ public final class ChallengeManager {
     }
 
     private static String pretty(String mode) { if (mode == null || mode.isEmpty()) return "Unknown"; return Character.toUpperCase(mode.charAt(0)) + mode.substring(1); }
-    private static String formatDate(String iso) { if (iso == null) return "Unknown"; return iso.replace('T', ' ').replace("+00:00", " UTC"); }
+
+    private static String formatDate(String iso) {
+        if (iso == null) return "Unknown";
+        try {
+            SimpleDateFormat input = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssX");
+            input.setTimeZone(TimeZone.getTimeZone("UTC"));
+            Date date = input.parse(iso);
+            SimpleDateFormat output = new SimpleDateFormat("EEE d MMM, HH:mm z");
+            output.setTimeZone(TimeZone.getTimeZone("Australia/Brisbane"));
+            return output.format(date);
+        } catch (Exception ignored) {
+            return iso.replace('T', ' ').replace("+00:00", " UTC");
+        }
+    }
+
     private static String formatTime(long ms) { long seconds = Math.max(0L, ms) / 1000L; return (seconds / 60L) + ":" + String.format("%02d", seconds % 60L); }
 
     public static final class Challenge {
