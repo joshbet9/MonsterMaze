@@ -1,5 +1,12 @@
 # Monster Maze SOLO - submission config (Discord webhooks only, no backend/IP).
 #
+# TEMPLATE. Your real webhook URL lives in YOUR config.ps1 (same folder) which is
+# gitignored so secrets never get committed. Copy this template:
+#
+#   Copy-Item config.ps1.example config.ps1
+#
+# then paste your own webhook URL below. The updater NEVER overwrites config.ps1.
+#
 # The submitter posts EVERY PB to the #solo-runs feed (the default webhook below).
 # The leaderboard bot watches #solo-runs, then posts the ranked boards into the
 # per-mode #leaderboard-* channels. Keep the per-mode map EMPTY so runs always
@@ -8,4 +15,4 @@
 $WEBHOOKS = @{ }
 
 # The #solo-runs feed webhook. Every PB lands here and the bot reads it.
-$DEFAULT_WEBHOOK = "https://discord.com/api/webhooks/1543521159709069354/GNCg8Q0ejREVzqpWxV2LBJ8a_DJ7jrLdy7EY9pOPm75LLYuJSphYpjSs3gfH_Ft5de2e"
+$DEFAULT_WEBHOOK = "PASTE_YOUR_SOLO_RUNS_WEBHOOK_URL_HERE"

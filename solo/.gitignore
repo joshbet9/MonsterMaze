@@ -26,3 +26,12 @@
 # Recorded solo runs + submitted archive
 submitter/submitted/
 /server/plugins/MonsterMazeStandalone/solo-runs/
+
+# Auto-updater state (created on each install/update - never commit)
+/installed.version
+/.update-tmp/
+/.update-backup/
+
+# Submitter config real webhook (contains a Discord secret - never commit)
+# The committed config.ps1.example is the template; players keep their own.
+submitter/config.ps1

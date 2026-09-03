@@ -16,6 +16,43 @@ double-clicks `launcher\play.bat`. (Set the `$JDK8` / `$SPIGOT` paths in
 > **Webhook note:** the webhook URL ships inside `submitter\config.ps1` once you
 > set it. Only hand the zip to people you trust — anyone with it can post to your
 > Discord channel. For outsiders, collect the `.json` and post it yourself.
+> `submitter\config.ps1` is **gitignored** (a Discord secret); the committed
+> `config.ps1.example` is the template you copy to make your real one.
+
+## Auto-updates for players
+
+Each `solo-dist.zip` now bundles **`update.bat` + `update.ps1`** and ships an
+`installed.version` marker, so players can patch their install without
+re-downloading the full zip. `launcher\play.bat` runs the same check
+**automatically on every launch** (non-blocking — if GitHub is unreachable it
+just starts the server).
+
+When the player runs `update.bat` (or launches `play.bat`):
+1. It fetches `solo/version.json` from the GitHub repo
+   (`raw.githubusercontent.com/joshbet9/MonsterMaze/main/solo/version.json`).
+2. If the remote `install-version` differs from the local `installed.version`,
+   it hashes each listed file, downloads the changed ones (verified against the
+   manifest's SHA-256), and atomically replaces them.
+3. It **never** overwrites `submitter\config.ps1`, `bot\config.json`, or
+   `server\plugins\MonsterMazeStandalone\config.yml` (verified by an explicit
+   guard), and it refuses to run while the Minecraft server is active
+   (for the manual `update.bat` path; `play.bat` runs before the server starts).
+4. It only records a successful update in `installed.version` (gitignored).
+
+**To cut a new release (owner):**
+1. Make your changes (plugin jar, docs, server config templates, etc.).
+2. Run `powershell -File .\updater_tools\make_manifest.ps1 -Version <new-ver>
+   -Note "<what changed>"` — this rehashes the updateable files and writes
+   `solo/version.json`.
+3. Commit `version.json` (and your source changes) to `main`. Players' next
+   `update.bat` sees the new version and patches only what changed.
+4. Run `pack.bat` only if you're onboarding *new* players (fresh zip).
+
+> The manifest's updateable set is `launcher/`, `submitter/submit.*`,
+> `server/plugins/MonsterMazeStandalone.jar`, `server/*.yml`/`.properties`/
+> `eula.txt`, `HOW_TO_PLAY.txt`, `README.md`. Runtime data (worlds, logs,
+> `solo-runs\`, `submitted\`, `runtime\`, the spigot jar) is never updated —
+> those ship only in the initial zip.
 
 ## For the developer
 
@@ -93,9 +130,14 @@ auto-updated **ranked board per pattern + kit** in each mode channel, run the
 Discord bot in `solo/bot/`:
 
 - It **watches the feed channel(s)** for PB embeds, extracts each run, stores the
-  best (mode, pattern, kit, player) in SQLite, and maintains a **pinned standings
-  message per (mode, pattern)** — one ranked section per kit — in that mode's
-  leaderboard channel.
+  best (mode, pattern, kit, player) in SQLite, and maintains **three tiers of
+  pinned, bot-edited ranked boards per mode**:
+  - **Overall** — top stages across all patterns & kits.
+  - **Pattern** — one board per pattern (Maze 1/2/3), all kits.
+  - **Kit** — one board per pattern × kit (3 × 5 = 15).
+  
+  Boards are pinned embeds edited in place (no threads — threads auto-archive and
+  break auto-editing).
 - It's a *client* that connects **out** to Discord, so it needs **no public IP**
   and no open ports. It just needs to keep running (a free-tier VPS works).
 
@@ -104,11 +146,15 @@ Setup:
    Application → Bot → copy the token. Enable the **Message Content Intent**.
 2. Invite it to your server (Send Messages, Embed Links, Read Messages, Read
    Message History, Manage Messages to pin/edit standings).
-3. `cd solo/bot && pip install -r requirements.txt`
-4. `cp config.example.json config.json`, fill in:
+3. Create **three channels per mode** you want boards for:
+   - an **overall** channel (`#lb-modern`), a **patterns** channel
+     (`#lb-modern-patterns`), and a **kit records** channel (`#lb-modern-kits`).
+4. `cd solo/bot && pip install -r requirements.txt`
+5. `cp config.example.json config.json`, fill in:
    - `feed_channels`: the channel(s) PBs are posted to (e.g. `#solo-runs`).
-   - `mode_channels`: each mode's leaderboard channel ID.
-5. `python monster_bot.py` (run under systemd/tmux for always-on).
+   - `channels.<mode>.overall|patterns|kits`: each of the 3 channels per mode.
+   - `modes`: which modes to emit boards for.
+6. `python monster_bot.py` (run under systemd/tmux for always-on).
 
 `.gitignore` excludes `config.json` and `leaderboard.db` (they hold live data).
 
