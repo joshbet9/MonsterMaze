@@ -62,7 +62,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.soloRunCompletionListener = new SoloRunCompletionListener(this);
         gameManager.applyMap();
         new LobbyListener(this, gameManager, voidWorlds);
-        new BuildBypassListener(this, gameManager);
+        new BuildBypassListener(this);
         getCommand("mm").setExecutor(new MMCommand(this));
         getCommand("mmdebug").setExecutor(new MMDebugCommand(this));
         Bukkit.getScheduler().runTaskLater(this, new Runnable() {
