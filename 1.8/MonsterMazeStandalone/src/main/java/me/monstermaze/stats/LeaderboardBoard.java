@@ -105,19 +105,30 @@ public class LeaderboardBoard implements Listener {
                 ? lb.getModeLeaderboard(mode, LINES - 2)
                 : lb.getModeAndKitLeaderboard(mode, activeKit, LINES - 2);
         String kitLabel = (activeKit == null) ? "All Kits" : activeKit.display;
+        ChallengeManager cm = plugin.getChallengeManager();
+        ChallengeManager.Challenge challenge = cm == null ? null : cm.getChallenge();
         for (int i = 0; i < stands.size(); i++) {
             ArmorStand stand = stands.get(i);
             String text;
             if (i == 0) {
                 text = ChatColor.GOLD + "" + ChatColor.BOLD + "Leaderboard (" + mode.color + mode.id
                         + ChatColor.GRAY + " - " + ChatColor.YELLOW + kitLabel + ChatColor.GOLD + ")";
-            } else if (i - 1 < rows.size()) {
+            } else if (i - 1 < rows.size() && i < LINES - 1) {
                 LeaderboardManager.OverallEntry e = rows.get(i - 1);
                 text = ChatColor.GRAY + "#" + i + " " + ChatColor.WHITE + e.name
                         + ChatColor.DARK_GRAY + " - Stage " + ChatColor.GOLD + e.stage;
+            } else if (i == LINES - 1 && challenge != null) {
+                text = ChatColor.AQUA + "Weekly Challenge #" + challenge.number
+                        + ChatColor.GRAY + " — " + ChatColor.WHITE + pretty(challenge.mode)
+                        + ChatColor.GRAY + " / Maze " + (challenge.pattern + 1)
+                        + ChatColor.GRAY + " / " + ChatColor.WHITE + challenge.kit;
             } else text = "";
             stand.setCustomName(text);
         }
+    }
+
+    private static String pretty(String mode) {
+        return mode == null || mode.isEmpty() ? "Unknown" : Character.toUpperCase(mode.charAt(0)) + mode.substring(1);
     }
 
     private boolean isBoardEntity(Entity entity) {
