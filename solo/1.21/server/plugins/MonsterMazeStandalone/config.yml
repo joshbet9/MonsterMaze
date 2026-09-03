@@ -1,0 +1,7 @@
+# MonsterMazeStandalone configuration (solo build)
+# This is a player installation setting and is preserved by the updater.
+mode: Modern
+solo-mode: true
+map: eyeofender
+forced-pattern: -1
+mob-overrides: {}
