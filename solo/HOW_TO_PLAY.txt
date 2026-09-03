@@ -11,6 +11,19 @@ gets posted to the Discord leaderboard automatically.
 
 
 --------------------------------------------
+STEP 0 - Updates (automatic)
+--------------------------------------------
+Your game checks for updates automatically every time you start it
+(launcher\play.bat). If a newer version exists it downloads the changes
+before your server starts. It never touches your scores, worlds, or
+settings.
+
+No internet? No problem - the game just starts anyway and you can play.
+You can also run the check manually any time by double-clicking
+update.bat.
+
+
+--------------------------------------------
 STEP 1 - Start your server
 --------------------------------------------
   Double-click:     launcher\play.bat
@@ -74,6 +87,14 @@ Q: The black window says something about "Done" not appearing
 Q: The score didn't post to Discord
    Run submitter\submit.bat again. If it still doesn't post, the
    webhook may not be set up yet - tell the group owner.
+
+Q: play.bat or update.bat says the server is running
+   Close the server first: double-click launcher\stop.bat, then start
+   it again.
+
+Q: play.bat or update.bat says "could not reach the update server"
+   Check your internet. The game still starts and runs fine without
+   updating.
 
 That's it. Have fun!
 ============================================

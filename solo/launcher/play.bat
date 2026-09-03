@@ -3,9 +3,20 @@ REM ============================================================
 REM  Monster Maze SOLO - launcher
 REM  Windows 7 / 8 / 10 / 11
 REM  One double-click to start your own solo Monster Maze server.
+REM  Checks for game updates automatically (update.bat is the manual
+REM  way to run the same check).
 REM ============================================================
 setlocal
 cd /d "%~dp0"
+
+REM ---- Auto-update check -------------------------------------------------
+REM Quick and non-blocking. If GitHub is unreachable it just continues and
+REM starts the server. If a newer version exists, it patches only what
+REM changed (never your scores/settings) and then starts.
+if exist "..\update.ps1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "..\update.ps1"
+    echo.
+)
 
 REM ---- Locate Java 8 --------------------------------------------------
 REM Order: 1) bundled runtime\jdk8  2) config.bat JAVA_BIN  3) PATH
