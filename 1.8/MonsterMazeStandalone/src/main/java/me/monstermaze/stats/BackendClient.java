@@ -1,9 +1,14 @@
 package me.monstermaze.stats;
 
 import me.monstermaze.MonsterMazePlugin;
+import org.bukkit.Bukkit;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -17,13 +22,18 @@ public final class BackendClient {
     private final MonsterMazePlugin plugin;
     private final String baseUrl;
     private final String token;
+    private final File pendingDir;
 
     public BackendClient(MonsterMazePlugin plugin) {
         this.plugin = plugin;
         this.baseUrl = normalize(System.getenv("MM_API_URL"));
         this.token = trim(System.getenv("MM_API_TOKEN"));
+        this.pendingDir = new File(plugin.getDataFolder(), "backend-pending");
         if (isEnabled()) {
             plugin.getLogger().info("Monster Maze backend API enabled: " + baseUrl);
+            Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+                @Override public void run() { flushPending(); }
+            }, 40L);
         }
     }
 
@@ -31,7 +41,7 @@ public final class BackendClient {
         return !baseUrl.isEmpty() && !token.isEmpty();
     }
 
-    /** Submit a completed run without blocking the Minecraft server thread. */
+    /** Queue a completed run and submit it asynchronously without blocking the server thread. */
     public void submit(final String submissionId, final UUID uuid, final String name,
                        final String mode, final int pattern, final String kit,
                        final int stage, final long elapsedMs, final String platform,
@@ -39,33 +49,99 @@ public final class BackendClient {
                        final long submittedAt) {
         if (!isEnabled()) return;
 
+        final String payload = buildPayload(submissionId, uuid, name, mode, pattern, kit,
+                stage, elapsedMs, platform, pluginVersion, configHash, submittedAt);
+        final File pending = new File(pendingDir, "backend-" + safeFileName(submissionId) + ".json");
+
         new BukkitRunnable() {
             @Override public void run() {
-                String payload = buildPayload(submissionId, uuid, name, mode, pattern, kit,
-                        stage, elapsedMs, platform, pluginVersion, configHash, submittedAt);
-                int attempts = 0;
-                long delay = 1000L;
-                while (attempts < 4) {
-                    attempts++;
-                    try {
-                        post(payload);
-                        plugin.getLogger().info("Run submitted to Monster Maze backend: " + submissionId);
-                        return;
-                    } catch (Exception e) {
-                        if (attempts >= 4) {
-                            plugin.getLogger().warning("Backend submission failed for " + submissionId
-                                    + " after " + attempts + " attempts: " + e.getMessage());
-                            return;
-                        }
-                        try { Thread.sleep(delay); } catch (InterruptedException interrupted) {
-                            Thread.currentThread().interrupt();
-                            return;
-                        }
-                        delay *= 2L;
-                    }
+                if (!queuePayload(pending, payload)) return;
+                trySubmitPending(pending);
+            }
+        }.runTaskAsynchronously(plugin);
+    }
+
+    private void flushPending() {
+        if (!isEnabled() || !pendingDir.exists()) return;
+        File[] files = pendingDir.listFiles();
+        if (files == null) return;
+        new BukkitRunnable() {
+            @Override public void run() {
+                File[] current = pendingDir.listFiles();
+                if (current == null) return;
+                for (File pending : current) {
+                    if (!pending.isFile() || !pending.getName().startsWith("backend-") || !pending.getName().endsWith(".json")) continue;
+                    trySubmitPending(pending);
                 }
             }
         }.runTaskAsynchronously(plugin);
+    }
+
+    private boolean queuePayload(File pending, String payload) {
+        if (pending.exists()) return true;
+        if (!pendingDir.exists() && !pendingDir.mkdirs()) {
+            plugin.getLogger().warning("Could not create backend retry directory: " + pendingDir);
+            return false;
+        }
+        try {
+            OutputStreamWriterWithClose writer = new OutputStreamWriterWithClose(pending);
+            try { writer.write(payload); } finally { writer.close(); }
+            return true;
+        } catch (IOException e) {
+            plugin.getLogger().warning("Could not queue backend submission: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private void trySubmitPending(File pending) {
+        String payload;
+        try {
+            payload = readFile(pending);
+        } catch (IOException e) {
+            plugin.getLogger().warning("Could not read backend queue file " + pending.getName() + ": " + e.getMessage());
+            return;
+        }
+
+        int attempts = 0;
+        long delay = 1000L;
+        while (attempts < 4) {
+            attempts++;
+            try {
+                post(payload);
+                if (!pending.delete() && pending.exists()) {
+                    plugin.getLogger().warning("Backend accepted " + pending.getName() + " but it could not be deleted.");
+                }
+                plugin.getLogger().info("Run submitted to Monster Maze backend: " + pending.getName());
+                return;
+            } catch (Exception e) {
+                if (attempts >= 4) {
+                    plugin.getLogger().warning("Backend submission failed for " + pending.getName()
+                            + " after " + attempts + " attempts: " + e.getMessage());
+                    return;
+                }
+                try { Thread.sleep(delay); } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                delay *= 2L;
+            }
+        }
+    }
+
+    private String readFile(File file) throws IOException {
+        FileInputStream in = new FileInputStream(file);
+        try {
+            byte[] data = new byte[(int) Math.min(Integer.MAX_VALUE, file.length())];
+            int offset = 0;
+            while (offset < data.length) {
+                int read = in.read(data, offset, data.length - offset);
+                if (read < 0) break;
+                offset += read;
+            }
+            return new String(data, 0, offset, StandardCharsets.UTF_8);
+        } finally {
+            in.close();
+        }
     }
 
     private void post(String payload) throws Exception {
@@ -81,11 +157,7 @@ public final class BackendClient {
 
         byte[] body = payload.getBytes(StandardCharsets.UTF_8);
         OutputStream out = connection.getOutputStream();
-        try {
-            out.write(body);
-        } finally {
-            out.close();
-        }
+        try { out.write(body); } finally { out.close(); }
 
         int status = connection.getResponseCode();
         if (status < 200 || status >= 300) {
@@ -133,6 +205,10 @@ public final class BackendClient {
         if (comma) sb.append(",");
     }
 
+    private static String safeFileName(String value) {
+        return value.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
     private static String normalize(String value) {
         String v = trim(value);
         while (v.endsWith("/")) v = v.substring(0, v.length() - 1);
@@ -150,5 +226,17 @@ public final class BackendClient {
                 .replace("\n", "\\n")
                 .replace("\r", "\\r")
                 .replace("\t", "\\t");
+    }
+
+    /** Small Java-8-compatible UTF-8 file writer wrapper. */
+    private static final class OutputStreamWriterWithClose {
+        private final java.io.OutputStreamWriter writer;
+
+        OutputStreamWriterWithClose(File file) throws IOException {
+            this.writer = new java.io.OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8);
+        }
+
+        void write(String value) throws IOException { writer.write(value); }
+        void close() throws IOException { writer.close(); }
     }
 }
