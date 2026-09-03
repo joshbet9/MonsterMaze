@@ -6,30 +6,21 @@ import me.monstermaze.kit.KitType;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.AbstractMap;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
-import java.util.UUID;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Leaderboards and personal bests.
  *
- * When the public backend is enabled, the backend is authoritative and this
- * class maintains a short-lived in-memory mirror for the 1.8 lobby/game UI.
- * The existing YAML file remains the offline/local fallback.
+ * The hosted/public server uses the backend as its source of truth. YAML is
+ * retained only for standalone/offline implementations and during the short
+ * period before the first successful backend refresh.
  */
 public class LeaderboardManager {
-
     public static final int PATTERN_COUNT = 3;
 
     private final MonsterMazePlugin plugin;
@@ -39,6 +30,7 @@ public class LeaderboardManager {
 
     private volatile boolean remoteReady;
     private volatile Map<String, List<OverallEntry>> remoteOverall = new HashMap<String, List<OverallEntry>>();
+    private volatile Map<String, Map<Integer, List<OverallEntry>>> remotePattern = new HashMap<String, Map<Integer, List<OverallEntry>>>();
     private volatile Map<String, Map<String, List<OverallEntry>>> remoteKit = new HashMap<String, Map<String, List<OverallEntry>>>();
     private volatile Map<String, Map<Integer, Map<String, PBInfo>>> remotePB = new HashMap<String, Map<Integer, Map<String, PBInfo>>>();
 
@@ -70,7 +62,7 @@ public class LeaderboardManager {
         }
     }
 
-    public LeaderboardManager(MonsterMazePlugin plugin) {
+    public LeaderboardManager(final MonsterMazePlugin plugin) {
         this.plugin = plugin;
         this.file = new File(plugin.getDataFolder(), "leaderboards.yml");
         this.backend = plugin.getBackendClient();
@@ -85,58 +77,73 @@ public class LeaderboardManager {
         }
     }
 
-    public void reload() {
-        this.data = YamlConfiguration.loadConfiguration(file);
-    }
+    public void reload() { data = YamlConfiguration.loadConfiguration(file); }
 
     private static String modeKey(MazeMode mode) { return mode.id.toLowerCase(); }
     private static String patternKey(int pattern) { return "pattern" + pattern; }
     public static String patternName(int pattern) { return "Maze " + (pattern + 1); }
 
-    /** Refresh the public mirror without blocking the Minecraft server thread. */
+    /** Capture Bukkit state on the main thread, then do all HTTP work asynchronously. */
     public void refreshFromBackend() {
         if (backend == null || !backend.isEnabled()) return;
-        new BukkitRunnable() {
+        Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override public void run() {
-                try {
-                    Map<String, List<OverallEntry>> overall = new HashMap<String, List<OverallEntry>>();
-                    Map<String, Map<String, List<OverallEntry>>> kits = new HashMap<String, Map<String, List<OverallEntry>>>();
-                    Map<String, Map<Integer, Map<String, PBInfo>>> pbs = new HashMap<String, Map<Integer, Map<String, PBInfo>>>();
+                final List<UUID> players = new ArrayList<UUID>();
+                for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) players.add(player.getUniqueId());
+                Bukkit.getScheduler().runTaskAsynchronously(plugin, new Runnable() {
+                    @Override public void run() { refreshFromBackendAsync(players); }
+                });
+            }
+        });
+    }
 
-                    for (MazeMode mode : MazeMode.values()) {
-                        String mk = modeKey(mode);
-                        overall.put(mk, parseBoard(backend.get("/api/v1/leaderboard/1.8/" + mk + "/overall")));
-                        Map<String, List<OverallEntry>> modeKits = new HashMap<String, List<OverallEntry>>();
-                        for (KitType kit : KitType.values()) {
-                            String id = kit.id;
-                            modeKits.put(id, parseBoard(backend.get("/api/v1/leaderboard/1.8/" + mk + "/kit/" + id)));
-                        }
-                        kits.put(mk, modeKits);
+    private void refreshFromBackendAsync(List<UUID> players) {
+        try {
+            Map<String, List<OverallEntry>> overall = new HashMap<String, List<OverallEntry>>();
+            Map<String, Map<Integer, List<OverallEntry>>> patterns = new HashMap<String, Map<Integer, List<OverallEntry>>>();
+            Map<String, Map<String, List<OverallEntry>>> kits = new HashMap<String, Map<String, List<OverallEntry>>>();
+            Map<String, Map<Integer, Map<String, PBInfo>>> pbs = new HashMap<String, Map<Integer, Map<String, PBInfo>>>();
 
-                        for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
-                            String raw = backend.get("/api/v1/pb/1.8/" + mk + "/" + player.getUniqueId().toString());
-                            Map<Integer, Map<String, PBInfo>> byPattern = parsePB(raw);
-                            pbs.put(mk + "|" + player.getUniqueId().toString(), byPattern);
-                        }
-                    }
+            for (MazeMode mode : MazeMode.values()) {
+                String mk = modeKey(mode);
+                overall.put(mk, parseBoard(backend.get("/api/v1/leaderboard/1.8/" + mk + "/overall")));
 
-                    remoteOverall = overall;
-                    remoteKit = kits;
-                    remotePB = pbs;
-                    remoteReady = true;
-                    plugin.getLogger().fine("Monster Maze backend leaderboards/PBs refreshed.");
-                } catch (Exception e) {
-                    plugin.getLogger().warning("Backend leaderboard sync failed: " + e.getMessage());
+                Map<Integer, List<OverallEntry>> modePatterns = new HashMap<Integer, List<OverallEntry>>();
+                for (int pattern = 0; pattern < PATTERN_COUNT; pattern++) {
+                    modePatterns.put(pattern, parseBoard(backend.get("/api/v1/leaderboard/1.8/" + mk + "/pattern/" + pattern)));
+                }
+                patterns.put(mk, modePatterns);
+
+                Map<String, List<OverallEntry>> modeKits = new HashMap<String, List<OverallEntry>>();
+                for (KitType kit : KitType.values()) {
+                    modeKits.put(kit.id, parseBoard(backend.get("/api/v1/leaderboard/1.8/" + mk + "/kit/" + kit.id)));
+                }
+                kits.put(mk, modeKits);
+
+                for (UUID player : players) {
+                    String raw = backend.get("/api/v1/pb/1.8/" + mk + "/" + player.toString());
+                    pbs.put(mk + "|" + player.toString(), parsePB(raw));
                 }
             }
-        }.runTaskAsynchronously(plugin);
+
+            remoteOverall = overall;
+            remotePattern = patterns;
+            remoteKit = kits;
+            remotePB = pbs;
+            remoteReady = true;
+            plugin.getLogger().fine("Monster Maze backend leaderboards/PBs refreshed.");
+        } catch (Exception e) {
+            plugin.getLogger().warning("Backend leaderboard sync failed: " + e.getMessage());
+        }
     }
 
     private static List<OverallEntry> parseBoard(String json) {
         List<OverallEntry> out = new ArrayList<OverallEntry>();
         if (json == null) return out;
         Matcher m = JSON_ROW.matcher(json);
-        while (m.find()) out.add(new OverallEntry(unescape(m.group(1)), Integer.parseInt(m.group(3)), unescape(m.group(2)), -1));
+        while (m.find()) {
+            out.add(new OverallEntry(unescape(m.group(1)), Integer.parseInt(m.group(3)), unescape(m.group(2)), -1));
+        }
         return out;
     }
 
@@ -169,15 +176,13 @@ public class LeaderboardManager {
         if (kitId == null) return 0;
         if (remoteReady) {
             Map<Integer, Map<String, PBInfo>> byPattern = remotePlayer(mode, player);
-            if (byPattern != null) {
-                Map<String, PBInfo> kits = byPattern.get(pattern);
-                if (kits != null) {
-                    PBInfo info = kits.get(kitId);
-                    if (info == null) {
-                        for (Map.Entry<String, PBInfo> e : kits.entrySet()) if (e.getKey().equalsIgnoreCase(kitId)) return e.getValue().stage;
-                    } else return info.stage;
-                }
-            }
+            if (byPattern == null) return 0;
+            Map<String, PBInfo> kits = byPattern.get(pattern);
+            if (kits == null) return 0;
+            PBInfo info = kits.get(kitId);
+            if (info != null) return info.stage;
+            for (Map.Entry<String, PBInfo> e : kits.entrySet()) if (e.getKey().equalsIgnoreCase(kitId)) return e.getValue().stage;
+            return 0;
         }
         ConfigurationSection ps = playerSection(mode, pattern, player);
         return ps == null ? 0 : ps.getInt(kitId, 0);
@@ -191,14 +196,12 @@ public class LeaderboardManager {
     public PBInfo getBest(MazeMode mode, int pattern, UUID player) {
         if (remoteReady) {
             Map<Integer, Map<String, PBInfo>> byPattern = remotePlayer(mode, player);
-            if (byPattern != null) {
-                Map<String, PBInfo> kits = byPattern.get(pattern);
-                if (kits != null) {
-                    PBInfo best = null;
-                    for (PBInfo info : kits.values()) if (best == null || info.stage > best.stage) best = info;
-                    if (best != null) return best;
-                }
-            }
+            if (byPattern == null) return null;
+            Map<String, PBInfo> kits = byPattern.get(pattern);
+            if (kits == null) return null;
+            PBInfo best = null;
+            for (PBInfo info : kits.values()) if (best == null || info.stage > best.stage) best = info;
+            return best;
         }
         ConfigurationSection ps = playerSection(mode, pattern, player);
         if (ps == null) return null;
@@ -223,11 +226,24 @@ public class LeaderboardManager {
         if (kit != null) recordRun(mode, pattern, player, stage, kit.id);
     }
 
+    /** Pattern-specific leaderboard; backend data is authoritative when configured. */
     public List<Entry> getLeaderboard(MazeMode mode, int pattern, int limit) {
+        if (remoteReady) {
+            Map<Integer, List<OverallEntry>> byPattern = remotePattern.get(modeKey(mode));
+            List<OverallEntry> rows = byPattern == null ? null : byPattern.get(pattern);
+            List<Entry> out = new ArrayList<Entry>();
+            if (rows != null) for (OverallEntry row : rows) {
+                if (out.size() >= limit) break;
+                out.add(new Entry(row.name, row.stage, row.kit));
+            }
+            return out;
+        }
+        return localPatternLeaderboard(mode, pattern, limit);
+    }
+
+    private List<Entry> localPatternLeaderboard(MazeMode mode, int pattern, int limit) {
         reload();
-        Map<Integer, List<Map.Entry<UUID, String>>> byStage = new TreeMap<Integer, List<Map.Entry<UUID, String>>(new Comparator<Integer>() {
-            @Override public int compare(Integer a, Integer b) { return b.compareTo(a); }
-        });
+        Map<Integer, List<Map.Entry<UUID, String>>> byStage = new TreeMap<Integer, List<Map.Entry<UUID, String>>(Collections.reverseOrder());
         ConfigurationSection m = data.getConfigurationSection(modeKey(mode));
         if (m != null) {
             ConfigurationSection p = m.getConfigurationSection(patternKey(pattern));
@@ -253,7 +269,7 @@ public class LeaderboardManager {
     public List<OverallEntry> getModeLeaderboard(MazeMode mode, int limit) {
         if (remoteReady) {
             List<OverallEntry> rows = remoteOverall.get(modeKey(mode));
-            if (rows != null) return new ArrayList<OverallEntry>(rows.subList(0, Math.min(limit, rows.size())));
+            return rows == null ? new ArrayList<OverallEntry>() : new ArrayList<OverallEntry>(rows.subList(0, Math.min(limit, rows.size())));
         }
         return localModeLeaderboard(mode, limit, null);
     }
@@ -262,11 +278,9 @@ public class LeaderboardManager {
         if (kit == null) return getModeLeaderboard(mode, limit);
         if (remoteReady) {
             Map<String, List<OverallEntry>> modeKits = remoteKit.get(modeKey(mode));
-            if (modeKits != null) {
-                List<OverallEntry> rows = modeKits.get(kit.id);
-                if (rows == null) for (Map.Entry<String, List<OverallEntry>> e : modeKits.entrySet()) if (e.getKey().equalsIgnoreCase(kit.id)) rows = e.getValue();
-                if (rows != null) return new ArrayList<OverallEntry>(rows.subList(0, Math.min(limit, rows.size())));
-            }
+            List<OverallEntry> rows = modeKits == null ? null : modeKits.get(kit.id);
+            if (rows == null && modeKits != null) for (Map.Entry<String, List<OverallEntry>> e : modeKits.entrySet()) if (e.getKey().equalsIgnoreCase(kit.id)) { rows = e.getValue(); break; }
+            return rows == null ? new ArrayList<OverallEntry>() : new ArrayList<OverallEntry>(rows.subList(0, Math.min(limit, rows.size())));
         }
         return localModeLeaderboard(mode, limit, kit);
     }
@@ -291,7 +305,7 @@ public class LeaderboardManager {
             }
         }
         List<OverallEntry> ranked = new ArrayList<OverallEntry>(bestOf.values());
-        java.util.Collections.sort(ranked, new Comparator<OverallEntry>() { @Override public int compare(OverallEntry a, OverallEntry b) { return b.stage - a.stage; } });
+        Collections.sort(ranked, new Comparator<OverallEntry>() { @Override public int compare(OverallEntry a, OverallEntry b) { return b.stage - a.stage; } });
         return ranked.size() > limit ? new ArrayList<OverallEntry>(ranked.subList(0, limit)) : ranked;
     }
 
