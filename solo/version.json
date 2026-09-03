@@ -1,55 +1,55 @@
 {
-    "install-version":  "1.0.4",
+    "install-version":  "1.0.5",
     "note":  "Solo release: added /mm exportpbs to recover previously stored PBs for Solo submission",
-    "updated":  "2026-09-01 22:25 UTC+10:00",
+    "updated":  "2026-09-03 16:50 UTC+10:00",
     "files":  {
                   "launcher/play.bat":  {
-                                            "sha256":  "7de3fbba965033cde03e16fbae8f7c4ca75dc85b4703454649b692e9f4da3a70",
-                                            "size":  2626
+                                            "sha256":  "f94342f438a4857018a907ce88fd183d3a383b3f5ba678c783342c6415ffdfba",
+                                            "size":  2682
                                         },
                   "launcher/stop.bat":  {
-                                            "sha256":  "b0568170e30d8f615d023cfc6807db8d934817d3fc9038169f6815d9cdf49ac5",
-                                            "size":  950
+                                            "sha256":  "d195fec78d5b97101a0c86c43a0dd59f59bf67687206ecce97e8fef5d40ecb60",
+                                            "size":  973
                                         },
                   "launcher/config.bat":  {
-                                              "sha256":  "7e0cf32650756a863ff027eced6d618ea35f6b6e77836e8ceb54932f9255873e",
-                                              "size":  333
+                                              "sha256":  "17826dc0722cd6511f4659336d07ee9608ecc8a281765c1f8f78ffaef686806f",
+                                              "size":  338
                                           },
                   "submitter/submit.bat":  {
-                                               "sha256":  "70b071735c9a0eeaf92c268ec24bf0a853db80642ed4bbef4d839fa70d2a3eff",
-                                               "size":  191
+                                               "sha256":  "2ab16a61f157e2294a025342f802fa9b4018ff58a6dff96ad5a692088e1d4901",
+                                               "size":  198
                                            },
                   "submitter/submit.ps1":  {
-                                               "sha256":  "cd257314b579804e752fceea6728a25e02b11eeefae18ccc033079ad901623f3",
-                                               "size":  3562
+                                               "sha256":  "cf5f3a9ac5925e3a415b29e723fc503726953392d356444abce5617d54ee8fbd",
+                                               "size":  4081
                                            },
                   "server/plugins/MonsterMazeStandalone.jar":  {
-                                                                   "sha256":  "3f292078ac88ea1bd36d90c119a9052f08d110ddce348234c0cdb217a8172428",
-                                                                   "size":  181087
+                                                                   "sha256":  "c2ec7022e64f57b8cc0e5923a70262b4e682ae25260dc65ece41190dc28e196f",
+                                                                   "size":  182703
                                                                },
                   "server/bukkit.yml":  {
-                                            "sha256":  "21b96c77f0489646e394465b67c3d2dbbe56951fd405a394ce97461b5c948bc0",
-                                            "size":  1182
+                                            "sha256":  "90ed9e6f74fdc17e5dfa256860364610017b48abfdbd527172d0a01bcacf1fe9",
+                                            "size":  1225
                                         },
                   "server/eula.txt":  {
-                                          "sha256":  "ee27072e4a23e088522f740ddaab0c7c4145c186969e90a86254faa3a5ec5ce6",
-                                          "size":  10
+                                          "sha256":  "e4db182aa77b5e31657f4b83f8973c79a8c65217a4383200f9f59f7c94752fad",
+                                          "size":  11
                                       },
                   "server/server.properties":  {
                                                    "sha256":  "40d746bd09141b013980ddf0051f018bbafb364914e03c90c6f70d09345bef97",
                                                    "size":  810
                                                },
                   "server/spigot.yml":  {
-                                            "sha256":  "022f904ed48f165edd3f60855de6bd058e7e80cf4602c57886c60090686fbfd8",
-                                            "size":  3254
+                                            "sha256":  "92e9f7f943f887edbda5c3313c55852d2b4c2a737584c88d04ae578a2e34dd2c",
+                                            "size":  3387
                                         },
                   "HOW_TO_PLAY.txt":  {
-                                          "sha256":  "d38fd1de38efe7fccc7566f6f2f2778c4252c104aab0428be40ff12c1fa6926a",
-                                          "size":  3280
+                                          "sha256":  "0f9b250217bb6e288ea1c7836127739d84e6953a1c9547e02ee8916b7cff031a",
+                                          "size":  3380
                                       },
                   "README.md":  {
-                                    "sha256":  "66801ad402dd363b2c3b5aadcd3b23f88d1d43e03cbff47c3e797e8dab8edbf2",
-                                    "size":  7899
+                                    "sha256":  "67434b345ffe083e7ad30d539fe621eaf61c27acf959e88e0f4edf17a18e5fa8",
+                                    "size":  7042
                                 },
                   "server/mm_colombia/level.dat":  {
                                                        "sha256":  "12723855599f2df99999bee9540c94ad38eff7de3d0af2113c402668f88b3cdf",
