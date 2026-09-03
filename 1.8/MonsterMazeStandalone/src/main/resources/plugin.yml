@@ -6,7 +6,7 @@ description: Standalone Monster Maze for local testing (ported from Mineplex)
 commands:
   mm:
     description: Monster Maze commands
-    usage: /mm <start|stop|setcenter|status|kit|kits>
+    usage: /mm <start|stop|setcenter|status|kit|kits|pb|lb|challenge>
   mmdebug:
     description: Monster Maze map-test diagnostics
     usage: /mmdebug [mobs]
