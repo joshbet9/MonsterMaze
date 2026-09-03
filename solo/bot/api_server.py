@@ -65,6 +65,15 @@ def post_feed(run: dict):
             print(f"[api] feed post failed: {exc}", flush=True)
 
 
+def background_updates(platform: str, run: dict, should_feed: bool):
+    """Perform Discord work after the HTTP client has received its acknowledgement."""
+    def work():
+        if should_feed:
+            post_feed(run)
+        refresh_bot(platform)
+    threading.Thread(target=work, name="MonsterMazeAPIUpdate", daemon=True).start()
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MonsterMazeAPI/1.0"
 
@@ -102,20 +111,33 @@ class Handler(BaseHTTPRequestHandler):
                 })
                 return
 
-            if len(parts) in (6, 7) and parts[:3] == ["api", "v1", "leaderboard"]:
-                platform, mode, kind = parts[3], parts[4], parts[5]
+            if len(parts) in (6, 7, 8) and parts[:3] == ["api", "v1", "leaderboard"]:
+                platform, mode = parts[3], parts[4]
                 if platform not in ("1.8", "1.21"):
                     raise ValueError("unsupported platform")
-                if kind == "overall" and len(parts) == 6:
+
+                if len(parts) == 6 and parts[5] == "overall":
                     rows = BOARD_ROWS("platform=? AND mode=?", [platform, mode], 10)
+                    kind = "overall"
                     pattern = None
-                elif kind == "pattern" and len(parts) == 7:
+                elif len(parts) == 7 and parts[5] == "pattern":
                     pattern = int(parts[6])
                     if not 0 <= pattern < 3:
                         raise ValueError("invalid pattern")
                     rows = BOARD_ROWS("platform=? AND mode=? AND pattern=?", [platform, mode, pattern], 10)
+                    kind = "pattern"
+                elif len(parts) == 7 and parts[5] == "kit":
+                    kit = str(parts[6])
+                    if kit.lower() == "slowballer":
+                        kit = "Slowball"
+                    if kit not in ("Jumper", "Slowball", "Body Builder", "Repulsor", "Maverick"):
+                        raise ValueError("invalid kit")
+                    rows = BOARD_ROWS("platform=? AND mode=? AND kit=?", [platform, mode, kit], 10)
+                    kind = "kit"
+                    pattern = None
                 else:
                     raise ValueError("unsupported leaderboard route")
+
                 send_json(self, 200, {
                     "ok": True,
                     "platform": platform,
@@ -123,6 +145,28 @@ class Handler(BaseHTTPRequestHandler):
                     "kind": kind,
                     "pattern": pattern,
                     "rows": [{"name": n, "kit": k, "stage": s} for n, k, s in rows],
+                })
+                return
+
+            if len(parts) == 7 and parts[:3] == ["api", "v1", "pb"]:
+                platform, mode, uuid = parts[3], parts[4], parts[5]
+                if platform not in ("1.8", "1.21"):
+                    raise ValueError("unsupported platform")
+                if not uuid or len(uuid) > 64:
+                    raise ValueError("invalid uuid")
+                c = DB()
+                rows = c.execute(
+                    "SELECT pattern,kit,stage,time_ms FROM runs WHERE platform=? AND mode=? AND uuid=? "
+                    "ORDER BY pattern ASC, stage DESC, time_ms ASC, kit ASC",
+                    (platform, mode.lower(), uuid.lower()),
+                ).fetchall()
+                c.close()
+                send_json(self, 200, {
+                    "ok": True,
+                    "platform": platform,
+                    "mode": mode.lower(),
+                    "uuid": uuid.lower(),
+                    "rows": [{"pattern": int(p), "kit": k, "stage": int(s), "timeMs": int(t)} for p, k, s, t in rows],
                 })
                 return
         except (ValueError, TypeError, KeyError, IndexError) as exc:
@@ -189,11 +233,12 @@ class Handler(BaseHTTPRequestHandler):
 
             inserted = INSERT_SUBMISSION(normalized)
             improved = UPSERT_RUN(normalized)
-            if inserted:
-                post_feed(normalized)
-            refresh_bot(platform)
+
+            # A run is now durable in the backend. Do not make the Minecraft server
+            # wait for Discord or leaderboard message edits before acknowledging it.
             send_json(self, 200, {"ok": True, "accepted": True,
                                   "newSubmission": bool(inserted), "newLifetimePB": bool(improved)})
+            background_updates(platform, normalized, bool(inserted))
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             send_json(self, 400, {"ok": False, "error": str(exc)})
         except Exception as exc:
