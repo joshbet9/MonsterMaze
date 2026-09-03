@@ -159,7 +159,7 @@ public final class ChallengeManager {
     private static String formatDate(String iso) {
         if (iso == null) return "Unknown";
         try {
-            SimpleDateFormat input = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssX");
+            SimpleDateFormat input = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX");
             input.setTimeZone(TimeZone.getTimeZone("UTC"));
             Date date = input.parse(iso);
             SimpleDateFormat output = new SimpleDateFormat("EEE d MMM, HH:mm z");
