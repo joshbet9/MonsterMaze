@@ -6,6 +6,7 @@ import me.monstermaze.game.BuildBypassListener;
 import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
 import me.monstermaze.game.MazeMode;
+import me.monstermaze.stats.BackendClient;
 import me.monstermaze.stats.RunRecorder;
 import me.monstermaze.stats.SoloRunCompletionListener;
 import me.monstermaze.util.UtilEnt;
@@ -27,6 +28,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private me.monstermaze.stats.LeaderboardManager leaderboards;
     private boolean soloMode;
     private boolean recordRuns;
+    private BackendClient backendClient;
     private RunRecorder runRecorder;
     private SoloRunCompletionListener soloRunCompletionListener;
 
@@ -34,6 +36,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     public void onEnable() {
         instance = this;
         saveDefaultConfig();
+        this.backendClient = new BackendClient(this);
         this.voidWorlds = new VoidWorldManager(this);
         this.mapManager = new MapManager(this, voidWorlds);
         this.leaderboards = new me.monstermaze.stats.LeaderboardManager(this);
@@ -43,7 +46,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.mode = stored;
         this.soloMode = cfg.getBoolean("solo-mode", false);
         this.recordRuns = cfg.getBoolean("record-runs", true);
-        this.runRecorder = new me.monstermaze.stats.RunRecorder(this);
+        this.runRecorder = new RunRecorder(this);
         for (MazeMode m : MazeMode.values()) {
             try {
                 if (getResource("modes/" + m.id + ".txt") != null) {
@@ -59,7 +62,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.soloRunCompletionListener = new SoloRunCompletionListener(this);
         gameManager.applyMap();
         new LobbyListener(this, gameManager, voidWorlds);
-        new BuildBypassListener(this);
+        new BuildBypassListener(this, gameManager);
         getCommand("mm").setExecutor(new MMCommand(this));
         getCommand("mmdebug").setExecutor(new MMDebugCommand(this));
         Bukkit.getScheduler().runTaskLater(this, new Runnable() {
@@ -69,6 +72,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         }, 20L);
         getLogger().info("MonsterMazeStandalone enabled ('" + mapManager.getActiveMap() + "' map).");
         getLogger().info("Players join into the lobby. Admin: /mm start");
+        getLogger().info("Run backend: " + (backendClient.isEnabled() ? "enabled" : "Solo/local webhook mode"));
     }
 
     @Override public void onDisable() {
@@ -88,5 +92,6 @@ public class MonsterMazePlugin extends JavaPlugin {
     public me.monstermaze.stats.LeaderboardManager getLeaderboards() { return leaderboards; }
     public boolean isSoloMode() { return soloMode; }
     public boolean isRecordRuns() { return recordRuns; }
-    public me.monstermaze.stats.RunRecorder getRunRecorder() { return runRecorder; }
+    public BackendClient getBackendClient() { return backendClient; }
+    public RunRecorder getRunRecorder() { return runRecorder; }
 }
