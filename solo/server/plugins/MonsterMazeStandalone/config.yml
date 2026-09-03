@@ -3,5 +3,7 @@
 # Solo players should run Modern (the official board) unless otherwise agreed.
 mode: Modern
 
-# Solo mode ON: the plugin records a run record to solo-runs/ when a solo run ends.
+# Solo mode ON: the plugin uses Solo-specific player conveniences.
 solo-mode: true
+# Emit every completed Solo run to solo-runs/ for competition submission.
+record-runs: true
