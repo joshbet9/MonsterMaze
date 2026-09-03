@@ -43,14 +43,15 @@ public class MonsterManager {
     private final GameManager game;
     private MazeGenerator maze;
 
+    /** Configured per-map monster (Phase 1: only "snowman" is implemented). */
+    private String mobType = "snowman";
+
     private final Map<LivingEntity, MazeMobWaypoint> ents = new HashMap<LivingEntity, MazeMobWaypoint>();
     private final Map<UUID, Long> bumpCooldown = new HashMap<UUID, Long>();
     private final Random random = new Random();
     private BukkitTask tickTask;
     private BukkitTask spawnTask;
 
-    /** PERF: monsters re-decide navigation at 10Hz; actual movement stays 20Hz and smooth. */
-    private int moveTick;
 
     /** Entities launched by Repulsor – removed when grounded / timed out. */
     private final Map<LivingEntity, Long> launched = new HashMap<LivingEntity, Long>();
@@ -73,6 +74,15 @@ public class MonsterManager {
     /** Set the global mob speed multiplier (used by Lagless's every-5-stage speed step). */
     public void setSpeedMultiplier(float multiplier) {
         this.speedMultiplier = multiplier;
+    }
+
+    /** Set the configured monster type for the active map. Phase 1 implements "snowman" only. */
+    public void setMobType(String type) {
+        this.mobType = type != null && !type.isEmpty() ? type : "snowman";
+        if (!"snowman".equalsIgnoreCase(this.mobType)) {
+            plugin.getLogger().warning("[MonsterMaze] Map mob '" + this.mobType
+                    + "' is not implemented yet; using ghost snowman for now.");
+        }
     }
 
     public void start(MazeGenerator maze) {
@@ -213,8 +223,6 @@ public class MonsterManager {
 
     private void move() {
         if (maze == null) return;
-        moveTick++;
-        if ((moveTick & 1) == 0) return; // PERF: re-decide navigation at 10Hz only
 
         Iterator<Entry<LivingEntity, MazeMobWaypoint>> it = ents.entrySet().iterator();
         while (it.hasNext()) {

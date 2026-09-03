@@ -1,0 +1,64 @@
+MONSTER MAZE - MODE: MODERN
+===========================
+
+Modern mode applies the gameplay QOL fixes plus heavy tuning to reduce game
+length and increase difficulty. Proposed for Mineplex to re-add.
+
+Global safety fix (also applies to Original/Speed):
+  - Pre-glass-fall jump lock: before the glass drops only the Jumper kit can
+    move/jump on the spawn platform; every other kit is grounded.
+
+Global feature (PBs/leaderboards also apply to Original and Speed):
+  - Personal bests (PB): each player's best stage is saved per mode, per maze
+    pattern, AND per kit. A PB line on the in-game scoreboard shows the best stage
+    for the pattern being played (with the kit that achieved it). /mm pb shows all
+    your bests; /mm lb shows the leaderboard; the lobby has a hologram leaderboard.
+
+All gameplay QOL fixes (shared with Speed):
+  - Mob hitbox restored to the original source in every mode: a 3-D centre-distance
+    circle (< 1 block), so mob contact matches Original exactly (no crouch-dodge fix).
+  - Mob knockback: a single source launch velocity packet (str 1 / y 0.75 / maxY 1.2),
+    applied after lifting the player above the maze floor. Velocity packets are "set, not
+    add", so the impulse launches identically on any ping. The Jump -10 lock is never
+    removed - players gain no jump ability.
+  - Mob knockback is always the same horizontal velocity regardless of how/where
+    you are hit (side hits are no longer softer than head-on hits).
+  - Slowball now slows OTHER PLAYERS, not monsters (matches intended source kit).
+    In QOL mode it also skips a player who was just hit by a mob (1s grace) or who
+    is above the exact floor y-level (e.g. mid-jump).
+  - Off-centre safe pads fixed: on-pad detection uses a symmetric 5x5 box that
+    exactly matches the visible clay pad, instead of the source's off-centre box
+    that could judge a player standing on an edge block as off-pad.
+  - The 'pad skip' exploit is fixed: surviving a timer-end now requires actually
+    being on the safe pad when the timer runs out.
+  - Jumper jumps do NOT count down while standing on a safe pad (jumping in
+    safety is free).
+  - New kit: Maverick (a mob hit always knocks you toward the next safe pad).
+
+Modern-specific changes:
+  - Faster timer: the phase timer starts at 35 seconds on stage 1 and ramps down
+    linearly to 15 seconds by stage 10 (15 second floor after that).
+  - +50% starter mobs: 225 maze monsters spawn at the start (was 150/180).
+  - Increased ongoing spawn rate: every phase transition adds +30 monsters
+    (other modes add +15), for heavier late-game density.
+
+The 'speeding' (jump-spam boost) mechanic remains active in Modern mode.
+
+KNOWN LIMITATION - THE "BONK" (1.8 protocol-bound):
+  A grounded, jump-locked (Jump -10) player who spam-presses space into a mob rarely
+  gets the intended launch - they get a low "bonk" instead. Diagnosed to be a 1.8.8
+  protocol limitation, NOT a bug in the knockback values:
+    - The server always sends the correct single source impulse (verified via client-side
+      logs: sentH 1.0 / sentY 0.95).
+    - Re-asserting the launch velocity over a few ticks defeats the jump-lock wipe on low
+      ping but makes 250ms+ clients receive the packets batched and apply them additively,
+      producing a 2-3x horizontal over-knock.
+    - A position-teleport ride is latency-safe (teleports SET, never add) and defeats the
+      bonk, but it removes the player's in-air control (they just get teleported to the
+      ground), which is unacceptable.
+  Conclusion: no mechanism in 1.8.8 gives velocity-feel AND latency-safety together, so
+  the single source packet is shipped and the bonk is accepted as part of the game.
+  REVISIT ON MODERN VERSIONS: on 1.21+ / later, Paper's velocity handling, proper packet
+  ordering/interpolation, and server-authoritative movement should allow overriding the
+  jump-lock wipe and re-applying a clean single impulse (e.g. via PacketEvents) without
+  either the stacking or the air-control loss - so the bonk is likely fixable there.

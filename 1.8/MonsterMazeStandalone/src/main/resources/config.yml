@@ -1,9 +1,14 @@
-# MonsterMazeStandalone configuration
-# Active game mode: Original, Speed, Modern, or Lagless
-mode: Original
+# MonsterMazeStandalone user configuration.
+# These settings belong to the player installation and are preserved by the Solo updater.
+# Map definitions are bundled in maps.yml and are updated with the plugin release.
 
-# Solo mode: when true, the plugin records a run record (JSON) to the
-# solo-runs/ data folder whenever a solo run ends. Used by the standalone
-# solo launcher for crowd-sourced leaderboards. Safe to leave false on the
-# normal hosted multiplayer server.
+mode: Original
 solo-mode: false
+
+# Active map selected by the player/admin. Persisted across restarts.
+map: eyeofender
+
+# Optional per-map mob overrides selected by the player/admin.
+# Example:
+# mob-overrides:
+#   siberian: creeper

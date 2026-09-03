@@ -5,6 +5,7 @@ import me.monstermaze.game.GameManager;
 import me.monstermaze.game.GameState;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.kit.KitType;
+import me.monstermaze.maze.MazeLayouts;
 import me.monstermaze.stats.LeaderboardManager;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
@@ -24,11 +25,14 @@ public class MMCommand implements CommandExecutor {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+
         GameManager gm = plugin.getGameManager();
 
         if (args.length == 0) {
             sender.sendMessage(ChatColor.GOLD + "=== Monster Maze ===");
             sender.sendMessage(ChatColor.YELLOW + "/mm void|setcenter|start|stop|status|mode");
+            sender.sendMessage(ChatColor.YELLOW + "/mm start [1|2|3]"
+                    + ChatColor.GRAY + " - start with optional maze pattern");
             sender.sendMessage(ChatColor.YELLOW + "/mm kit <jumper|slowball|body|repulsor|maverick>");
             sender.sendMessage(ChatColor.YELLOW + "/mm kits " + ChatColor.GRAY + "- list kits");
             sender.sendMessage(ChatColor.YELLOW + "/mm pb " + ChatColor.GRAY + "- your bests per pattern");
@@ -43,57 +47,84 @@ public class MMCommand implements CommandExecutor {
 
         // Kit selection – any player
         if (sub.equals("kit") || sub.equals("kits")) {
+
             if (!(sender instanceof Player)) {
                 sender.sendMessage(ChatColor.RED + "Players only.");
                 return true;
             }
+
             Player p = (Player) sender;
+
             if (sub.equals("kits")) {
                 sender.sendMessage(ChatColor.GOLD + "Kits:");
+
                 boolean qol = plugin.getMode() != MazeMode.ORIGINAL;
+
                 for (KitType k : KitType.available(qol)) {
-                    boolean sel = gm.getKitManager().getKit(p) == k && gm.getKitManager().getKit(p) != null;
-                    sender.sendMessage((sel ? ChatColor.GREEN + " > " : ChatColor.GRAY + "   ")
-                            + k.display + ChatColor.DARK_GRAY + " (/mm kit " + k.name().toLowerCase() + ")");
-                    for (String line : k.description) sender.sendMessage("      " + line);
+                    boolean sel = gm.getKitManager().getKit(p) == k
+                            && gm.getKitManager().getKit(p) != null;
+
+                    sender.sendMessage(
+                            (sel ? ChatColor.GREEN + " > " : ChatColor.GRAY + "   ")
+                                    + k.display
+                                    + ChatColor.DARK_GRAY
+                                    + " (/mm kit " + k.name().toLowerCase() + ")"
+                    );
+
+                    for (String line : k.description) {
+                        sender.sendMessage("      " + line);
+                    }
                 }
+
                 return true;
             }
+
             if (args.length < 2) {
-                // Open GUI
                 if (gm.isLive()) {
                     sender.sendMessage(ChatColor.RED + "Can't change kit mid-game.");
                     return true;
                 }
+
                 gm.getKitManager().openSelector(p);
                 return true;
             }
+
             KitType kit = KitType.byName(args[1]);
-            if (kit == null && args[1].equalsIgnoreCase("body")) kit = KitType.BODY_BUILDER;
+
+            if (kit == null && args[1].equalsIgnoreCase("body")) {
+                kit = KitType.BODY_BUILDER;
+            }
+
             if (kit == null) {
                 sender.sendMessage(ChatColor.RED + "Unknown kit. Try /mm kits");
                 return true;
             }
+
             if (gm.isLive()) {
                 sender.sendMessage(ChatColor.RED + "Can't change kit mid-game.");
                 return true;
             }
+
             gm.getKitManager().setKit(p, kit);
             return true;
         }
 
         // Personal bests / leaderboard – any player
         if (sub.equals("pb") || sub.equals("lb") || sub.equals("leaderboard")) {
+
             if (!(sender instanceof Player)) {
                 sender.sendMessage(ChatColor.RED + "Players only.");
                 return true;
             }
+
             Player p = (Player) sender;
+
             if (sub.equals("pb")) {
                 showPB(p);
             } else {
                 showLeaderboard(p, args);
             }
+
             return true;
         }
 
@@ -104,148 +135,437 @@ public class MMCommand implements CommandExecutor {
         }
 
         switch (sub) {
+
             case "void":
             case "voidworld":
             case "lobby":
+
                 if (!(sender instanceof Player)) {
                     sender.sendMessage(ChatColor.RED + "Players only.");
                     return true;
                 }
+
                 plugin.getVoidWorlds().sendToVoid((Player) sender);
                 break;
+
             case "start":
-                if (gm.getState() != GameState.IDLE && gm.getState() != GameState.ENDING) {
-                    sender.sendMessage(ChatColor.RED + "Game already running (" + gm.getState() + ").");
+
+                if (gm.getState() != GameState.IDLE
+                        && gm.getState() != GameState.ENDING) {
+
+                    sender.sendMessage(
+                            ChatColor.RED
+                                    + "Game already running ("
+                                    + gm.getState()
+                                    + ")."
+                    );
+
                     return true;
                 }
-                if (sender instanceof Player) {
-                    gm.startGame(((Player) sender).getLocation());
-                } else {
-                    gm.startGame();
+
+                /*
+                 * Optional pattern selection.
+                 *
+                 * /mm start       -> random pattern
+                 * /mm start 1     -> Maze 1
+                 * /mm start 2     -> Maze 2
+                 * /mm start 3     -> Maze 3
+                 */
+                Integer requestedPattern = null;
+
+                if (args.length >= 2) {
+                    try {
+                        int pattern = Integer.parseInt(args[1]);
+
+                        if (pattern < 1
+                                || pattern > MazeLayouts.ALL_MAZES.length) {
+
+                            sender.sendMessage(
+                                    ChatColor.RED
+                                            + "Invalid maze pattern. "
+                                            + "Choose 1-"
+                                            + MazeLayouts.ALL_MAZES.length
+                                            + "."
+                            );
+
+                            return true;
+                        }
+
+                        requestedPattern = pattern - 1;
+
+                    } catch (NumberFormatException e) {
+
+                        sender.sendMessage(
+                                ChatColor.RED
+                                        + "Invalid maze pattern. "
+                                        + "Use /mm start or /mm start <1|2|3>."
+                        );
+
+                        return true;
+                    }
                 }
-                sender.sendMessage(ChatColor.GREEN + "Starting Monster Maze...");
+
+                if (sender instanceof Player) {
+
+                    if (requestedPattern != null) {
+                        gm.startGame(
+                                ((Player) sender).getLocation(),
+                                requestedPattern
+                        );
+                    } else {
+                        gm.startGame(
+                                ((Player) sender).getLocation()
+                        );
+                    }
+
+                } else {
+
+                    if (requestedPattern != null) {
+                        gm.startGame(requestedPattern);
+                    } else {
+                        gm.startGame();
+                    }
+                }
+
+                if (requestedPattern != null) {
+                    sender.sendMessage(
+                            ChatColor.GREEN
+                                    + "Starting Monster Maze with Maze "
+                                    + (requestedPattern + 1)
+                                    + "..."
+                    );
+                } else {
+                    sender.sendMessage(
+                            ChatColor.GREEN
+                                    + "Starting Monster Maze..."
+                    );
+                }
+
                 break;
+
             case "stop":
             case "force":
+
                 gm.forceStop();
-                sender.sendMessage(ChatColor.GREEN + "Monster Maze force stopped.");
+
+                sender.sendMessage(
+                        ChatColor.GREEN
+                                + "Monster Maze force stopped."
+                );
+
                 break;
+
             case "setcenter":
+
                 if (!(sender instanceof Player)) {
-                    sender.sendMessage(ChatColor.RED + "Only players can set the center.");
+                    sender.sendMessage(
+                            ChatColor.RED
+                                    + "Only players can set the center."
+                    );
+
                     return true;
                 }
+
                 Player pl = (Player) sender;
+
                 gm.setCenter(pl.getLocation());
-                sender.sendMessage(ChatColor.GREEN + "Lobby box placed at "
-                        + pl.getLocation().getBlockX() + ", "
-                        + pl.getLocation().getBlockY() + ", "
-                        + pl.getLocation().getBlockZ());
-                sender.sendMessage(ChatColor.GRAY + "World stays empty except this box. Then /mm start");
+
+                sender.sendMessage(
+                        ChatColor.GREEN
+                                + "Lobby box placed at "
+                                + pl.getLocation().getBlockX()
+                                + ", "
+                                + pl.getLocation().getBlockY()
+                                + ", "
+                                + pl.getLocation().getBlockZ()
+                );
+
+                sender.sendMessage(
+                        ChatColor.GRAY
+                                + "World stays empty except this box. "
+                                + "Then /mm start"
+                );
+
                 break;
+
             case "mode":
+
                 if (args.length < 2) {
-                    sender.sendMessage(ChatColor.RED + "Usage: /mm mode <original|modern|classic>");
-                    sender.sendMessage(ChatColor.AQUA + "Current: " + plugin.getMode().color + plugin.getMode().id);
+                    sender.sendMessage(
+                            ChatColor.RED
+                                    + "Usage: /mm mode <original|modern|classic>"
+                    );
+
+                    sender.sendMessage(
+                            ChatColor.AQUA
+                                    + "Current: "
+                                    + plugin.getMode().color
+                                    + plugin.getMode().id
+                    );
+
                     for (MazeMode m : MazeMode.values()) {
-                        sender.sendMessage(ChatColor.GRAY + " - " + m.color + m.id + ChatColor.GRAY + ": " + m.description);
+                        sender.sendMessage(
+                                ChatColor.GRAY
+                                        + " - "
+                                        + m.color
+                                        + m.id
+                                        + ChatColor.GRAY
+                                        + ": "
+                                        + m.description
+                        );
                     }
+
                     return true;
                 }
+
                 if (gm.isRunning()) {
-                    sender.sendMessage(ChatColor.RED + "Change the mode when no game is running.");
+                    sender.sendMessage(
+                            ChatColor.RED
+                                    + "Change the mode when no game is running."
+                    );
+
                     return true;
                 }
+
                 MazeMode m = MazeMode.byName(args[1]);
+
                 if (m == null) {
-                    sender.sendMessage(ChatColor.RED + "Unknown mode. Try original, modern, or classic.");
+                    sender.sendMessage(
+                            ChatColor.RED
+                                    + "Unknown mode. Try original, modern, or classic."
+                    );
+
                     return true;
                 }
+
                 plugin.setMode(m);
                 gm.rerenderLeaderboardBoard();
-                sender.sendMessage(ChatColor.GREEN + "Mode set to " + m.color + m.id
-                        + ChatColor.GREEN + ". It will apply on the next /mm start.");
+
+                sender.sendMessage(
+                        ChatColor.GREEN
+                                + "Mode set to "
+                                + m.color
+                                + m.id
+                                + ChatColor.GREEN
+                                + ". It will apply on the next /mm start."
+                );
+
                 break;
+
             case "status":
-                sender.sendMessage(ChatColor.AQUA + "State: " + ChatColor.WHITE + gm.getState());
-                sender.sendMessage(ChatColor.AQUA + "Stage: " + ChatColor.WHITE + gm.getStage());
-                sender.sendMessage(ChatColor.AQUA + "Alive: " + ChatColor.WHITE + gm.getAlivePlayers().size());
+
+                sender.sendMessage(
+                        ChatColor.AQUA
+                                + "State: "
+                                + ChatColor.WHITE
+                                + gm.getState()
+                );
+
+                sender.sendMessage(
+                        ChatColor.AQUA
+                                + "Stage: "
+                                + ChatColor.WHITE
+                                + gm.getStage()
+                );
+
+                sender.sendMessage(
+                        ChatColor.AQUA
+                                + "Alive: "
+                                + ChatColor.WHITE
+                                + gm.getAlivePlayers().size()
+                );
+
                 break;
+
             default:
-                sender.sendMessage(ChatColor.RED + "Unknown subcommand. Try /mm");
+
+                sender.sendMessage(
+                        ChatColor.RED
+                                + "Unknown subcommand. Try /mm"
+                );
+
                 break;
         }
+
         return true;
     }
 
     private void showPB(Player p) {
+
         LeaderboardManager lb = plugin.getLeaderboards();
         MazeMode mode = plugin.getMode();
-        p.sendMessage(ChatColor.GOLD + "=== Personal Bests (" + mode.color + mode.id + ChatColor.GOLD + ") ===");
+
+        p.sendMessage(
+                ChatColor.GOLD
+                        + "=== Personal Bests ("
+                        + mode.color
+                        + mode.id
+                        + ChatColor.GOLD
+                        + ") ==="
+        );
+
         boolean any = false;
-        for (int pat = 0; pat < LeaderboardManager.PATTERN_COUNT; pat++) {
-            LeaderboardManager.PBInfo best = lb.getBest(mode, pat, p.getUniqueId());
-            if (best != null) any = true;
-            p.sendMessage(ChatColor.YELLOW + LeaderboardManager.patternName(pat) + ":"
-                    + (best != null
-                        ? ChatColor.WHITE + " Stage " + best.stage + kitSuffix(best.kit)
-                        : ChatColor.GRAY + " no PB yet"));
+
+        for (int pat = 0;
+             pat < LeaderboardManager.PATTERN_COUNT;
+             pat++) {
+
+            LeaderboardManager.PBInfo best =
+                    lb.getBest(
+                            mode,
+                            pat,
+                            p.getUniqueId()
+                    );
+
             if (best != null) {
-                for (KitType k : KitType.available(mode != MazeMode.ORIGINAL)) {
-                    int per = lb.getKitPB(mode, pat, p.getUniqueId(), k.id);
+                any = true;
+            }
+
+            p.sendMessage(
+                    ChatColor.YELLOW
+                            + LeaderboardManager.patternName(pat)
+                            + ":"
+                            + (
+                            best != null
+                                    ? ChatColor.WHITE
+                                    + " Stage "
+                                    + best.stage
+                                    + kitSuffix(best.kit)
+                                    : ChatColor.GRAY
+                                    + " no PB yet"
+                    )
+            );
+
+            if (best != null) {
+
+                for (KitType k :
+                        KitType.available(
+                                mode != MazeMode.ORIGINAL
+                        )) {
+
+                    int per =
+                            lb.getKitPB(
+                                    mode,
+                                    pat,
+                                    p.getUniqueId(),
+                                    k.id
+                            );
+
                     if (per > 0) {
-                        p.sendMessage("   " + k.display + ChatColor.GRAY + ": "
-                                + ChatColor.WHITE + "Stage " + per);
+                        p.sendMessage(
+                                "   "
+                                        + k.display
+                                        + ChatColor.GRAY
+                                        + ": "
+                                        + ChatColor.WHITE
+                                        + "Stage "
+                                        + per
+                        );
                     }
                 }
             }
         }
+
         if (!any) {
-            p.sendMessage(ChatColor.GRAY + "Play a game to set a personal best!");
+            p.sendMessage(
+                    ChatColor.GRAY
+                            + "Play a game to set a personal best!"
+            );
         }
     }
 
     private void showLeaderboard(Player p, String[] args) {
+
         LeaderboardManager lb = plugin.getLeaderboards();
         MazeMode mode = plugin.getMode();
 
-        // Optional pattern argument (1|2|3). Default: all patterns.
         Integer want = null;
+
         if (args.length >= 2) {
             try {
                 int v = Integer.parseInt(args[1]);
-                if (v >= 1 && v <= LeaderboardManager.PATTERN_COUNT) want = v - 1;
+
+                if (v >= 1
+                        && v <= LeaderboardManager.PATTERN_COUNT) {
+
+                    want = v - 1;
+                }
+
             } catch (NumberFormatException ignored) {
             }
         }
 
         int start = want != null ? want : 0;
-        int end = want != null ? want + 1 : LeaderboardManager.PATTERN_COUNT;
+        int end = want != null
+                ? want + 1
+                : LeaderboardManager.PATTERN_COUNT;
 
         for (int pat = start; pat < end; pat++) {
+
             p.sendMessage("");
-            p.sendMessage(ChatColor.GOLD + "=== " + LeaderboardManager.patternName(pat)
-                    + " (" + mode.color + mode.id + ChatColor.GOLD + ") ===");
-            List<LeaderboardManager.Entry> rows = lb.getLeaderboard(mode, pat, 10);
+
+            p.sendMessage(
+                    ChatColor.GOLD
+                            + "=== "
+                            + LeaderboardManager.patternName(pat)
+                            + " ("
+                            + mode.color
+                            + mode.id
+                            + ChatColor.GOLD
+                            + ") ==="
+            );
+
+            List<LeaderboardManager.Entry> rows =
+                    lb.getLeaderboard(
+                            mode,
+                            pat,
+                            10
+                    );
+
             if (rows.isEmpty()) {
-                p.sendMessage(ChatColor.GRAY + "No scores yet.");
+                p.sendMessage(
+                        ChatColor.GRAY
+                                + "No scores yet."
+                );
+
                 continue;
             }
+
             int rank = 1;
+
             for (LeaderboardManager.Entry e : rows) {
-                p.sendMessage(ChatColor.GRAY + "#" + rank + " "
-                        + ChatColor.WHITE + e.name
-                        + ChatColor.DARK_GRAY + " — Stage "
-                        + ChatColor.GOLD + e.stage
-                        + kitSuffix(e.kit));
+
+                p.sendMessage(
+                        ChatColor.GRAY
+                                + "#"
+                                + rank
+                                + " "
+                                + ChatColor.WHITE
+                                + e.name
+                                + ChatColor.DARK_GRAY
+                                + " — Stage "
+                                + ChatColor.GOLD
+                                + e.stage
+                                + kitSuffix(e.kit)
+                );
+
                 rank++;
             }
         }
     }
 
     private String kitSuffix(String kitId) {
-        if (kitId == null || kitId.isEmpty()) return "";
+
+        if (kitId == null || kitId.isEmpty()) {
+            return "";
+        }
+
         KitType k = KitType.byName(kitId);
-        return ChatColor.DARK_GRAY + " (" + (k != null ? k.display : kitId) + ChatColor.DARK_GRAY + ")";
+
+        return ChatColor.DARK_GRAY
+                + " ("
+                + (k != null ? k.display : kitId)
+                + ChatColor.DARK_GRAY
+                + ")";
     }
 }

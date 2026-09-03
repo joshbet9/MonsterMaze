@@ -111,65 +111,117 @@ public class MazeGenerator {
         plugin.getLogger().info("Lobby ready (no shell - void only)");
     }
 
-    // -------------------- Maze pattern only --------------------
+  // -------------------- Maze pattern only --------------------
 
-    public void generateMaze() {
-        generateMazeAsync(null);
+/**
+ * Generate a random maze pattern.
+ * This preserves the original behaviour.
+ */
+public void generateMaze() {
+    generateMazeAsync(-1, null);
+}
+
+/**
+ * Generate a specific maze pattern.
+ *
+ * @param requestedPattern zero-based pattern index (0, 1, 2),
+ *                         or -1 for random
+ */
+public void generateMaze(int requestedPattern) {
+    generateMazeAsync(requestedPattern, null);
+}
+
+/**
+ * Generate a random maze pattern asynchronously.
+ */
+public void generateMazeAsync(final Runnable onDone) {
+    generateMazeAsync(-1, onDone);
+}
+
+/**
+ * Generate a specific or random maze pattern asynchronously.
+ *
+ * @param requestedPattern zero-based pattern index (0, 1, 2),
+ *                         or -1 for random
+ */
+public void generateMazeAsync(final int requestedPattern, final Runnable onDone) {
+    if (center == null) {
+        throw new IllegalStateException("No center - run /mm setcenter first");
     }
 
-    /**
-     * Only places path/center/spawn/barrier glass — shell already exists.
-     */
-    public void generateMazeAsync(final Runnable onDone) {
-        if (center == null) {
-            throw new IllegalStateException("No center - run /mm setcenter first");
-        }
+    if (requestedPattern < -1 || requestedPattern >= MazeLayouts.ALL_MAZES.length) {
+        throw new IllegalArgumentException(
+                "Invalid maze pattern index: " + requestedPattern
+                        + " (valid values: 0-" + (MazeLayouts.ALL_MAZES.length - 1) + ")"
+        );
+    }
 
-        // Clear old maze pattern (lobby is separate, high above, and persists)
-        teardownMazePatternOnly();
+    // Clear old maze pattern (lobby is separate, high above, and persists)
+    teardownMazePatternOnly();
 
-        clearRuntimeLists();
-        mazeBlocks.clear();
+    clearRuntimeLists();
+    mazeBlocks.clear();
+
+    if (requestedPattern == -1) {
         this.patternIndex = random.nextInt(MazeLayouts.ALL_MAZES.length);
-        this.mazeData = MazeLayouts.ALL_MAZES[patternIndex];
-
-        final World world = center.getWorld();
-        final int cx = center.getBlockX();
-        final int cy = center.getBlockY();
-        final int cz = center.getBlockZ();
-
-        final long t0 = System.currentTimeMillis();
-        plugin.getLogger().info("Placing maze pattern...");
-
-        clearShellRegionAsync(world, cx, cy, cz, new Runnable() {
-            @Override
-            public void run() {
-                // Paths only — typically a few thousand blocks, not tens of thousands
-                Bukkit.getScheduler().runTask(plugin, new Runnable() {
-                    int mz = 0;
-
-                    @Override
-                    public void run() {
-                        long slice = System.currentTimeMillis();
-                        while (mz < MAZE_SIZE && System.currentTimeMillis() - slice < 45) {
-                            buildMazeRow(world, cx, cy, cz, mz);
-                            mz++;
-                        }
-                        if (mz < MAZE_SIZE) {
-                            Bukkit.getScheduler().runTaskLater(plugin, this, 1L);
-                            return;
-                        }
-
-                        rebuildPadSpawnList();
-                        mazeLive = true;
-                        plugin.getLogger().info("Maze pattern ready in " + (System.currentTimeMillis() - t0)
-                                + "ms. Paths=" + pathPoints.size() + " blocks=" + mazeBlocks.size());
-                        if (onDone != null) onDone.run();
-                    }
-                });
-            }
-        });
+    } else {
+        this.patternIndex = requestedPattern;
     }
+
+    this.mazeData = MazeLayouts.ALL_MAZES[patternIndex];
+
+    final World world = center.getWorld();
+    final int cx = center.getBlockX();
+    final int cy = center.getBlockY();
+    final int cz = center.getBlockZ();
+    final long t0 = System.currentTimeMillis();
+
+    plugin.getLogger().info(
+            "Placing maze pattern " + (patternIndex + 1)
+                    + (requestedPattern == -1 ? " (random)" : " (requested)")
+                    + "..."
+    );
+
+    clearShellRegionAsync(world, cx, cy, cz, new Runnable() {
+        @Override
+        public void run() {
+            // Paths only — typically a few thousand blocks, not tens of thousands
+            Bukkit.getScheduler().runTask(plugin, new Runnable() {
+                int mz = 0;
+
+                @Override
+                public void run() {
+                    long slice = System.currentTimeMillis();
+
+                    while (mz < MAZE_SIZE && System.currentTimeMillis() - slice < 45) {
+                        buildMazeRow(world, cx, cy, cz, mz);
+                        mz++;
+                    }
+
+                    if (mz < MAZE_SIZE) {
+                        Bukkit.getScheduler().runTaskLater(plugin, this, 1L);
+                        return;
+                    }
+
+                    rebuildPadSpawnList();
+                    mazeLive = true;
+
+                    plugin.getLogger().info(
+                            "Maze pattern " + (patternIndex + 1)
+                                    + " ready in "
+                                    + (System.currentTimeMillis() - t0)
+                                    + "ms. Paths=" + pathPoints.size()
+                                    + " blocks=" + mazeBlocks.size()
+                    );
+
+                    if (onDone != null) {
+                        onDone.run();
+                    }
+                }
+            });
+        }
+    });
+}
 
     /**
      * Carve the (possibly stale) quartz shell back to open void across the maze area.

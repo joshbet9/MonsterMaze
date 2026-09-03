@@ -1,89 +1,57 @@
-# make_manifest.ps1 - Owner-side tool. Regenerates solo/version.json after you
-# change game files and want to cut a new release.
-#
-# What it does:
-#   1. Hashes every file listed in UPDATEABLE below (the set the auto-updater
-#      is allowed to replace on a player's machine).
-#   2. Writes solo/version.json containing that hash table + install-version.
-#
-# What it does NOT touch (the updater also never touches these):
-#   - submitter/config.ps1   (Discord webhook - user secret)
-#   - bot/config.json        (Discord bot token  - user secret)
-#   - server/.../config.yml  (mode choice        - user config)
-#   - worlds, logs, solo-runs/, submitted/, runtime/, spigot jar
-#
-# Usage:
-#   powershell -ExecutionPolicy Bypass -File .\make_manifest.ps1
-#   powershell -ExecutionPolicy Bypass -File .\make_manifest.ps1 -Version 1.0.1 -Note "Slowball patch"
-#
-# Commit solo/version.json afterwards. The updater compares install-version,
-# then replaces any file whose hash differs from this manifest.
-
+# make_manifest.ps1 - Owner-side tool. Regenerates solo/version.json.
 [CmdletBinding()]
 param(
-    # New install-version for this release (default 1.0.0).
     [string]$Version = "1.0.0",
-    # Short human note shown to players in the changelog.
     [string]$Note = "Initial release."
 )
-
 $ErrorActionPreference = "Stop"
-
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$soloRoot = Split-Path -Parent $here        # solo/
+$soloRoot = Split-Path -Parent $here
 
-# The complete set the auto-updater may replace. Paths are relative to solo/.
-# Add any new updateable file here (and to the same list in update.ps1).
+# Complete set the auto-updater may replace. Paths are relative to solo/.
 $UPDATEABLE = @(
-    # Launcher
-    "launcher\play.bat",
-    "launcher\stop.bat",
-    "launcher\config.bat",
-    # Submitter
-    "submitter\submit.bat",
-    "submitter\submit.ps1",
-    # Server template (plugin jar, server configs)
+    "launcher\play.bat", "launcher\stop.bat", "launcher\config.bat",
+    "submitter\submit.bat", "submitter\submit.ps1",
     "server\plugins\MonsterMazeStandalone.jar",
-    "server\bukkit.yml",
-    "server\eula.txt",
-    "server\server.properties",
-    "server\spigot.yml",
-    # Docs
-    "HOW_TO_PLAY.txt",
-    "README.md"
+    "server\bukkit.yml", "server\eula.txt", "server\server.properties", "server\spigot.yml",
+    "HOW_TO_PLAY.txt", "README.md"
 )
 
-function Get-Sha256([string]$path) {
-    $full = Join-Path $soloRoot $path
-    if (-not (Test-Path -LiteralPath $full)) {
-        throw "Updateable file missing: $path"
+function Add-ManifestFile([System.Collections.IDictionary]$files, [string]$manifestPath, [string]$sourcePath) {
+    if (-not (Test-Path -LiteralPath $sourcePath)) { throw "Updateable file missing: $sourcePath" }
+    $norm = $manifestPath -replace "\\", "/"
+    $files[$norm] = [ordered]@{
+        sha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        size = (Get-Item -LiteralPath $sourcePath).Length
     }
-    $hash = Get-FileHash -LiteralPath $full -Algorithm SHA256
-    return $hash.Hash.ToLowerInvariant()
 }
 
-$files = @{}
+$files = [ordered]@{}
 foreach ($rel in $UPDATEABLE) {
-    $norm = $rel -replace "\\", "/"
-    $files[$norm] = @{
-        sha256 = (Get-Sha256 $rel)
-        size   = (Get-Item -LiteralPath (Join-Path $soloRoot $rel)).Length
+    Add-ManifestFile $files $rel (Join-Path $soloRoot $rel)
+}
+
+# Canonical arena maps live in solo/maps, but are installed under server/mm_*.
+# Hash the canonical source directly so the manifest can be generated before pack.ps1.
+$mapsRoot = Join-Path $soloRoot "maps"
+if (-not (Test-Path $mapsRoot)) { throw "Canonical maps directory missing: $mapsRoot" }
+$mapNames = @("mm_colombia","mm_sandycoast","mm_siberian","mm_swampland","mm_tesorohundido","mm_void","mm_volcano")
+foreach ($map in $mapNames) {
+    $mapRoot = Join-Path $mapsRoot $map
+    if (-not (Test-Path $mapRoot)) { throw "Required map missing: $map" }
+    Get-ChildItem -LiteralPath $mapRoot -Recurse -File | ForEach-Object {
+        $relative = $_.FullName.Substring($mapsRoot.Length).TrimStart('\','/')
+        Add-ManifestFile $files ("server\$relative") $_.FullName
     }
 }
 
-$manifest = @{
+$manifest = [ordered]@{
     "install-version" = $Version
-    "note"            = $Note
-    "updated"         = (Get-Date -Format "yyyy-MM-dd HH:mm 'UTC'K")
-    "files"           = $files
+    "note" = $Note
+    "updated" = (Get-Date -Format "yyyy-MM-dd HH:mm 'UTC'K")
+    "files" = $files
 }
-
 $out = Join-Path $soloRoot "version.json"
-# UTF-8 WITHOUT BOM (PowerShell 5.1's Set-Content -Encoding UTF8 writes a BOM,
-# which breaks ConvertFrom-Json on some clients). Use UTF8Encoding(false).
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($out, ($manifest | ConvertTo-Json -Depth 4), $utf8NoBom)
+[System.IO.File]::WriteAllText($out, ($manifest | ConvertTo-Json -Depth 10), $utf8NoBom)
 Write-Host "Wrote $out (install-version=$Version, $($files.Count) files)"
-
-# The updater NEVER replaces these even though they sit next to updateable files.
-Write-Host "The updater never replaces: submitter\config.ps1, bot\config.json, server\plugins\MonsterMazeStandalone\config.yml"
