@@ -4,20 +4,13 @@ import me.monstermaze.MonsterMazePlugin;
 import org.bukkit.Bukkit;
 import org.bukkit.scheduler.BukkitRunnable;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
-/** Direct HTTPS client used by public servers. Solo installs remain file/webhook based. */
+/** Direct HTTPS client used by public servers. */
 public final class BackendClient {
     private final MonsterMazePlugin plugin;
     private final String baseUrl;
@@ -37,9 +30,7 @@ public final class BackendClient {
         }
     }
 
-    public boolean isEnabled() {
-        return !baseUrl.isEmpty() && !token.isEmpty();
-    }
+    public boolean isEnabled() { return !baseUrl.isEmpty() && !token.isEmpty(); }
 
     public void submit(final String submissionId, final UUID uuid, final String name,
                        final String mode, final int pattern, final String kit,
@@ -47,11 +38,9 @@ public final class BackendClient {
                        final String pluginVersion, final String configHash,
                        final long submittedAt) {
         if (!isEnabled()) return;
-
         final String payload = buildPayload(submissionId, uuid, name, mode, pattern, kit,
                 stage, elapsedMs, platform, pluginVersion, configHash, submittedAt);
         final File pending = new File(pendingDir, "backend-" + safeFileName(submissionId) + ".json");
-
         new BukkitRunnable() {
             @Override public void run() {
                 if (!queuePayload(pending, payload)) return;
@@ -60,172 +49,63 @@ public final class BackendClient {
         }.runTaskAsynchronously(plugin);
     }
 
+    public String get(String path) throws Exception {
+        if (!isEnabled()) return null;
+        String suffix = path == null ? "" : path;
+        if (!suffix.startsWith("/")) suffix = "/" + suffix;
+        HttpURLConnection c = (HttpURLConnection) new URL(baseUrl + suffix).openConnection();
+        c.setRequestMethod("GET"); c.setConnectTimeout(5000); c.setReadTimeout(10000);
+        c.setRequestProperty("Authorization", "Bearer " + token); c.setRequestProperty("Accept", "application/json");
+        try {
+            int status = c.getResponseCode();
+            InputStream stream = status >= 200 && status < 300 ? c.getInputStream() : c.getErrorStream();
+            StringBuilder body = new StringBuilder();
+            if (stream != null) { BufferedReader r = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8)); try { String line; while ((line=r.readLine())!=null) body.append(line); } finally { r.close(); } }
+            if (status < 200 || status >= 300) throw new IllegalStateException("HTTP " + status + (body.length()>0 ? " " + body : ""));
+            return body.toString();
+        } finally { c.disconnect(); }
+    }
+
     private void flushPending() {
         if (!isEnabled() || !pendingDir.exists()) return;
-        new BukkitRunnable() {
-            @Override public void run() {
-                File[] current = pendingDir.listFiles();
-                if (current == null) return;
-                for (File pending : current) {
-                    if (!pending.isFile() || !pending.getName().startsWith("backend-") || !pending.getName().endsWith(".json")) continue;
-                    trySubmitPending(pending);
-                }
-            }
-        }.runTaskAsynchronously(plugin);
+        new BukkitRunnable() { @Override public void run() {
+            File[] files = pendingDir.listFiles(); if (files == null) return;
+            for (File f : files) if (f.isFile() && f.getName().startsWith("backend-") && f.getName().endsWith(".json")) trySubmitPending(f);
+        }}.runTaskAsynchronously(plugin);
     }
 
     private boolean queuePayload(File pending, String payload) {
         if (pending.exists()) return true;
-        if (!pendingDir.exists() && !pendingDir.mkdirs()) {
-            plugin.getLogger().warning("Could not create backend retry directory: " + pendingDir);
-            return false;
-        }
+        if (!pendingDir.exists() && !pendingDir.mkdirs()) { plugin.getLogger().warning("Could not create backend retry directory: " + pendingDir); return false; }
         FileOutputStream out = null;
-        try {
-            out = new FileOutputStream(pending);
-            out.write(payload.getBytes(StandardCharsets.UTF_8));
-            out.flush();
-            return true;
-        } catch (IOException e) {
-            plugin.getLogger().warning("Could not queue backend submission: " + e.getMessage());
-            return false;
-        } finally {
-            if (out != null) try { out.close(); } catch (IOException ignored) { }
-        }
+        try { out = new FileOutputStream(pending); out.write(payload.getBytes(StandardCharsets.UTF_8)); out.flush(); return true; }
+        catch (IOException e) { plugin.getLogger().warning("Could not queue backend submission: " + e.getMessage()); return false; }
+        finally { if (out != null) try { out.close(); } catch (IOException ignored) {} }
     }
 
     private void trySubmitPending(File pending) {
         String payload;
-        try {
-            payload = readFile(pending);
-        } catch (IOException e) {
-            plugin.getLogger().warning("Could not read backend queue file " + pending.getName() + ": " + e.getMessage());
-            return;
-        }
-
-        int attempts = 0;
-        long delay = 1000L;
-        while (attempts < 4) {
-            attempts++;
-            try {
-                post(payload);
-                if (!pending.delete() && pending.exists()) {
-                    plugin.getLogger().warning("Backend accepted " + pending.getName() + " but it could not be deleted.");
-                }
-                plugin.getLogger().info("Run submitted to Monster Maze backend: " + pending.getName());
-                return;
-            } catch (Exception e) {
-                if (attempts >= 4) {
-                    plugin.getLogger().warning("Backend submission failed for " + pending.getName()
-                            + " after " + attempts + " attempts: " + e.getMessage());
-                    return;
-                }
-                try { Thread.sleep(delay); } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-                delay *= 2L;
+        try { payload = readFile(pending); } catch (IOException e) { plugin.getLogger().warning("Could not read backend queue file " + pending.getName() + ": " + e.getMessage()); return; }
+        int attempts=0; long delay=1000L;
+        while (attempts<4) { attempts++;
+            try { post(payload); if (!pending.delete() && pending.exists()) plugin.getLogger().warning("Backend accepted " + pending.getName() + " but it could not be deleted."); plugin.getLogger().info("Run submitted to Monster Maze backend: " + pending.getName()); return; }
+            catch (Exception e) {
+                if (attempts>=4) { plugin.getLogger().warning("Backend submission failed for " + pending.getName() + " after " + attempts + " attempts: " + e.getMessage()); return; }
+                try { Thread.sleep(delay); } catch (InterruptedException x) { Thread.currentThread().interrupt(); return; } delay*=2L;
             }
         }
     }
 
-    private String readFile(File file) throws IOException {
-        FileInputStream in = new FileInputStream(file);
-        try {
-            byte[] data = new byte[(int) Math.min(Integer.MAX_VALUE, file.length())];
-            int offset = 0;
-            while (offset < data.length) {
-                int read = in.read(data, offset, data.length - offset);
-                if (read < 0) break;
-                offset += read;
-            }
-            return new String(data, 0, offset, StandardCharsets.UTF_8);
-        } finally {
-            in.close();
-        }
+    private String readFile(File f) throws IOException { FileInputStream in=new FileInputStream(f); try { byte[] d=new byte[(int)Math.min(Integer.MAX_VALUE,f.length())]; int o=0,r; while(o<d.length&&(r=in.read(d,o,d.length-o))>=0)o+=r; return new String(d,0,o,StandardCharsets.UTF_8); } finally { in.close(); } }
+    private void post(String payload) throws Exception { HttpURLConnection c=(HttpURLConnection)new URL(baseUrl+"/api/v1/runs").openConnection(); c.setRequestMethod("POST"); c.setConnectTimeout(5000); c.setReadTimeout(10000); c.setDoOutput(true); c.setRequestProperty("Authorization","Bearer "+token); c.setRequestProperty("Content-Type","application/json; charset=utf-8"); byte[] b=payload.getBytes(StandardCharsets.UTF_8); OutputStream o=c.getOutputStream(); try{o.write(b);}finally{o.close();} int s=c.getResponseCode(); if(s<200||s>=300){c.disconnect();throw new IllegalStateException("HTTP "+s);} c.disconnect(); }
+
+    private static String buildPayload(String submissionId, UUID uuid, String name, String mode, int pattern, String kit, int stage, long elapsedMs, String platform, String pluginVersion, String configHash, long submittedAt) {
+        StringBuilder sb=new StringBuilder("{"); field(sb,"submissionId",submissionId,true); field(sb,"platform",platform,true); field(sb,"plugin",pluginVersion,true); field(sb,"name",name,true); field(sb,"uuid",uuid.toString(),true); field(sb,"mode",mode,true); number(sb,"pattern",pattern,true); field(sb,"kit",kit,true); number(sb,"stage",stage,true); number(sb,"timeMs",elapsedMs,true); field(sb,"configHash",configHash,true); number(sb,"submittedAt",submittedAt,false); sb.append("}"); return sb.toString();
     }
-
-    private void post(String payload) throws Exception {
-        URL url = new URL(baseUrl + "/api/v1/runs");
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setRequestMethod("POST");
-        connection.setConnectTimeout(5000);
-        connection.setReadTimeout(10000);
-        connection.setDoOutput(true);
-        connection.setRequestProperty("Authorization", "Bearer " + token);
-        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-        connection.setRequestProperty("User-Agent", "MonsterMaze-Server/1.0");
-
-        byte[] body = payload.getBytes(StandardCharsets.UTF_8);
-        OutputStream out = connection.getOutputStream();
-        try { out.write(body); } finally { out.close(); }
-
-        int status = connection.getResponseCode();
-        if (status < 200 || status >= 300) {
-            InputStream error = connection.getErrorStream();
-            String detail = "HTTP " + status;
-            if (error != null) {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(error, StandardCharsets.UTF_8));
-                try { detail += " " + reader.readLine(); } finally { reader.close(); }
-            }
-            connection.disconnect();
-            throw new IllegalStateException(detail);
-        }
-        connection.disconnect();
-    }
-
-    private static String buildPayload(String submissionId, UUID uuid, String name,
-                                       String mode, int pattern, String kit, int stage,
-                                       long elapsedMs, String platform, String pluginVersion,
-                                       String configHash, long submittedAt) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("{");
-        field(sb, "submissionId", submissionId, true);
-        field(sb, "platform", platform, true);
-        field(sb, "plugin", pluginVersion, true);
-        field(sb, "name", name, true);
-        field(sb, "uuid", uuid.toString(), true);
-        field(sb, "mode", mode, true);
-        number(sb, "pattern", pattern, true);
-        field(sb, "kit", kit, true);
-        number(sb, "stage", stage, true);
-        number(sb, "timeMs", elapsedMs, true);
-        field(sb, "configHash", configHash, true);
-        number(sb, "submittedAt", submittedAt, false);
-        sb.append("}");
-        return sb.toString();
-    }
-
-    private static void field(StringBuilder sb, String key, String value, boolean comma) {
-        sb.append("\"").append(escape(key)).append("\":\"").append(escape(value)).append("\"");
-        if (comma) sb.append(",");
-    }
-
-    private static void number(StringBuilder sb, String key, long value, boolean comma) {
-        sb.append("\"").append(escape(key)).append("\":").append(value);
-        if (comma) sb.append(",");
-    }
-
-    private static String safeFileName(String value) {
-        return value.replaceAll("[^A-Za-z0-9._-]", "_");
-    }
-
-    private static String normalize(String value) {
-        String v = trim(value);
-        while (v.endsWith("/")) v = v.substring(0, v.length() - 1);
-        return v;
-    }
-
-    private static String trim(String value) {
-        return value == null ? "" : value.trim();
-    }
-
-    private static String escape(String value) {
-        if (value == null) return "";
-        return value.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-    }
+    private static void field(StringBuilder sb,String k,String v,boolean comma){sb.append("\"").append(escape(k)).append("\":\"").append(escape(v)).append("\"");if(comma)sb.append(",");}
+    private static void number(StringBuilder sb,String k,long v,boolean comma){sb.append("\"").append(escape(k)).append("\":").append(v);if(comma)sb.append(",");}
+    private static String safeFileName(String v){return v.replaceAll("[^A-Za-z0-9._-]","_");}
+    private static String normalize(String v){String s=trim(v);while(s.endsWith("/"))s=s.substring(0,s.length()-1);return s;}
+    private static String trim(String v){return v==null?"":v.trim();}
+    private static String escape(String v){if(v==null)return"";return v.replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n").replace("\r","\\r").replace("\t","\\t");}
 }
