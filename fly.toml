@@ -1,0 +1,55 @@
+app = "monstermaze"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Each process group becomes its own Machine. The command is passed as the
+# first argument to docker/entrypoint.sh.
+[processes]
+  mm18 = "1.8"
+  mm21 = "1.21"
+
+# Raw Minecraft TCP on the shared dedicated IPv4 is intentional. The dedicated
+# IPv4 is required for these non-TLS TCP services.
+[[services]]
+  processes = ["mm18"]
+  internal_port = 25565
+  protocol = "tcp"
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[services.ports]]
+    port = 25565
+
+  [[services.tcp_checks]]
+    grace_period = "60s"
+    interval = "15s"
+    timeout = "5s"
+
+[[services]]
+  processes = ["mm21"]
+  internal_port = 25566
+  protocol = "tcp"
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[services.ports]]
+    port = 25566
+
+  [[services.tcp_checks]]
+    grace_period = "60s"
+    interval = "15s"
+    timeout = "5s"
+
+# Dedicated CPU is intentional: real-world testing showed shared CPU reduced
+# Monster Maze to roughly 15 TPS, while performance-2x restored ~19-20 TPS.
+[[vm]]
+  processes = ["mm18"]
+  size = "performance-2x"
+
+[[vm]]
+  processes = ["mm21"]
+  size = "performance-2x"
