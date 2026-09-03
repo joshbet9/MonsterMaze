@@ -1,42 +1,35 @@
 package me.monstermaze.util;
 
 import me.monstermaze.nms.AddonGhostSnowman;
+import net.minecraft.server.v1_8_R3.EntityInsentient;
+import net.minecraft.server.v1_8_R3.World;
 import net.minecraft.server.v1_8_R3.WorldServer;
 import org.bukkit.Location;
 import org.bukkit.craftbukkit.v1_8_R3.CraftWorld;
 import org.bukkit.entity.Creature;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Snowman;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
 
-/**
- * Port of Mineplex UtilEnt.CreatureMoveFast for Spigot 1.8.8 (NMS via reflection).
- *
- * <pre>
- * public static boolean CreatureMoveFast(Entity ent, Location target, float speed) {
- *     return CreatureMoveFast(ent, target, speed, true);
- * }
- * public static boolean CreatureMoveFast(Entity ent, Location target, float speed, boolean slow) {
- *     if (!(ent instanceof Creature)) return false;
- *     if (UtilMath.offsetSquared(ent.getLocation(), target) &lt; 0.01) return false;
- *     if (UtilMath.offsetSquared(ent.getLocation(), target) &lt; 4) speed = Math.min(speed, 1f);
- *     EntityCreature ec = ((CraftCreature)ent).getHandle();
- *     ec.getControllerMove().a(target.getX(), target.getY(), target.getZ(), speed);
- *     return true;
- * }
- * </pre>
- */
+/** Port of the Mineplex Monster Maze entity utilities for Spigot 1.8.8. */
 public final class UtilEnt {
     private UtilEnt() {}
 
+    private static String selectedGhostMobType = "snowman";
     private static Method getHandle;
     private static Method getControllerMove;
     private static Method controllerMoveA;
     private static boolean resolved;
     private static boolean available;
+
+    public static void setSelectedGhostMobType(String mobType) {
+        selectedGhostMobType = mobType == null || mobType.trim().isEmpty() ? "snowman" : mobType.trim().toLowerCase();
+    }
 
     private static void resolve() {
         if (resolved) return;
@@ -48,7 +41,6 @@ public final class UtilEnt {
             Class<?> entityCreature = Class.forName("net.minecraft.server." + ver + ".EntityCreature");
             getControllerMove = entityCreature.getMethod("getControllerMove");
             Class<?> controllerMove = Class.forName("net.minecraft.server." + ver + ".ControllerMove");
-            // a(double, double, double, double) — speed is double in NMS
             controllerMoveA = controllerMove.getMethod("a", double.class, double.class, double.class, double.class);
             available = true;
         } catch (Throwable t) {
@@ -57,214 +49,134 @@ public final class UtilEnt {
         }
     }
 
-    public static boolean CreatureMoveFast(Entity ent, Location target, float speed) {
-        return CreatureMoveFast(ent, target, speed, true);
-    }
+    public static boolean CreatureMoveFast(Entity ent, Location target, float speed) { return CreatureMoveFast(ent, target, speed, true); }
 
     public static boolean CreatureMoveFast(Entity ent, Location target, float speed, boolean slow) {
-        if (!(ent instanceof Creature)) return false;
-
+        if (ent == null || target == null) return false;
         double distSq = offsetSquared(ent.getLocation(), target);
         if (distSq < 0.01) return false;
         if (distSq < 4) speed = Math.min(speed, 1f);
-
         resolve();
         if (!available) {
-            // Fallback: teleport-slide (should not be needed on 1.8.8 Spigot)
             Location loc = ent.getLocation();
             org.bukkit.util.Vector dir = target.toVector().subtract(loc.toVector());
             if (dir.lengthSquared() < 1e-6) return false;
             dir.normalize().multiply(Math.min(speed * 0.2, dir.length()));
             Location next = loc.clone().add(dir);
-            next.setYaw(loc.getYaw());
-            next.setPitch(loc.getPitch());
+            next.setYaw(loc.getYaw()); next.setPitch(loc.getPitch());
             ent.teleport(next);
             return true;
         }
-
         try {
             Object handle = getHandle.invoke(ent);
             Object controller = getControllerMove.invoke(handle);
             controllerMoveA.invoke(controller, target.getX(), target.getY(), target.getZ(), (double) speed);
             return true;
-        } catch (Throwable t) {
-            return false;
-        }
+        } catch (Throwable t) { return false; }
     }
 
     public static double offsetSquared(Location a, Location b) {
         if (a == null || b == null || a.getWorld() != b.getWorld()) return Double.MAX_VALUE;
-        double dx = a.getX() - b.getX();
-        double dy = a.getY() - b.getY();
-        double dz = a.getZ() - b.getZ();
+        double dx = a.getX() - b.getX(), dy = a.getY() - b.getY(), dz = a.getZ() - b.getZ();
         return dx * dx + dy * dy + dz * dz;
     }
 
-    /** Clear pathfinding target / stop. Optional helper. */
-    /**
-     * Mineplex UtilEnt.isGrounded – standing on solid ground (not just isOnGround edge cases).
-     */
     public static boolean isGrounded(Entity ent) {
         if (ent == null) return false;
-        // Primary: Bukkit flag
         if (ent.isOnGround()) return true;
-        // Fallback: block immediately below feet is solid
         try {
-            org.bukkit.Location loc = ent.getLocation();
-            org.bukkit.block.Block below = loc.getWorld().getBlockAt(
-                    loc.getBlockX(), loc.getBlockY() - 1, loc.getBlockZ());
-            return below.getType().isSolid();
-        } catch (Throwable t) {
-            return false;
-        }
+            Location loc = ent.getLocation();
+            return loc.getWorld().getBlockAt(loc.getBlockX(), loc.getBlockY() - 1, loc.getBlockZ()).getType().isSolid();
+        } catch (Throwable t) { return false; }
     }
 
-    /**
-     * Mimic Mineplex UtilEnt.vegetate(ent, true): fully disable the mob's vanilla AI
-     * (pathfinder + target goals) so it cannot wander, drift diagonally, or walk onto
-     * safe pads on its own. Movement afterwards is only driven by CreatureMoveFast.
-     */
     public static void vegetate(Entity ent) {
         if (ent == null) return;
-        if (ent instanceof Creature) {
-            try {
-                ((Creature) ent).setTarget(null);
-            } catch (Throwable ignored) {
-            }
-        }
-
+        try { if (ent instanceof Creature) ((Creature) ent).setTarget(null); } catch (Throwable ignored) { }
         resolve();
         if (!available) return;
-
         try {
             Object handle = getHandle.invoke(ent);
-            clearGoals(handle, "goalSelector");
-            clearGoals(handle, "targetSelector");
-        } catch (Throwable t) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] vegetate NMS failed: " + t.getMessage());
-        }
+            clearGoals(handle, "goalSelector"); clearGoals(handle, "targetSelector");
+        } catch (Throwable t) { org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] vegetate NMS failed: " + t.getMessage()); }
     }
 
-    /** Clear every collection-typed field of a PathfinderGoalSelector (removes all goals). */
     private static void clearGoals(Object entity, String selectorField) {
-        java.lang.reflect.Field field = null;
+        Field field = null;
         for (Class<?> c = entity.getClass(); c != null; c = c.getSuperclass()) {
-            try {
-                field = c.getDeclaredField(selectorField);
-                break;
-            } catch (NoSuchFieldException ignore) {
-            }
+            try { field = c.getDeclaredField(selectorField); break; } catch (NoSuchFieldException ignored) { }
         }
         if (field == null) return;
         field.setAccessible(true);
-        Object selector;
         try {
-            selector = field.get(entity);
-        } catch (IllegalAccessException e) {
-            return;
-        }
-        if (selector == null) return;
-
-        for (java.lang.reflect.Field f : selector.getClass().getDeclaredFields()) {
-            if (java.util.Collection.class.isAssignableFrom(f.getType())) {
+            Object selector = field.get(entity);
+            if (selector == null) return;
+            for (Field f : selector.getClass().getDeclaredFields()) {
+                if (!java.util.Collection.class.isAssignableFrom(f.getType())) continue;
                 f.setAccessible(true);
-                Object val;
-                try {
-                    val = f.get(selector);
-                } catch (IllegalAccessException e) {
-                    continue;
-                }
-                if (val instanceof java.util.Collection) {
-                    ((java.util.Collection<?>) val).clear();
-                }
+                Object value = f.get(selector);
+                if (value instanceof java.util.Collection) ((java.util.Collection) value).clear();
             }
-        }
+        } catch (Throwable ignored) { }
     }
 
-    /**
-     * Register {@link AddonGhostSnowman} so the client renders it as a snowman.
-     *
-     * <p>{@code PacketPlayOutSpawnEntityLiving} sends {@code EntityTypes.a(entity.getClass())}
-     * (class -&gt; id) as the type id. The client only knows vanilla numeric ids, so we map
-     * {@code AddonGhostSnowman} back to the parent {@code Snowman} id (97). Maps are located by
-     * probing each private {@code Map} field with the known vanilla "EntitySnowman" key/value,
-     * which is far more robust than matching obfuscated generic types.</p>
-     */
-    @SuppressWarnings("unchecked")
-    public static void registerGhostSnowmanEntityType() {
+    private static Map<Class, Integer> classToId;
+    private static Map<Class, String> classToName;
+    private static boolean typeMapsResolved;
+
+    private static void resolveEntityTypeMaps() {
+        if (typeMapsResolved) return;
+        typeMapsResolved = true;
         try {
             Class<?> entityTypes = Class.forName("net.minecraft.server.v1_8_R3.EntityTypes");
             Class<?> snowmanClass = Class.forName("net.minecraft.server.v1_8_R3.EntitySnowman");
-            int snowmanId = 97;
-
-            Map<Class, Integer> classToId = null;
-            Map<Integer, Class> idToClass = null;
-            Map<String, Class> nameToClass = null;
-            Map<Class, String> classToName = null;
-            Map<String, Integer> nameToId = null;
-
-            for (java.lang.reflect.Field f : entityTypes.getDeclaredFields()) {
-                if (!java.util.Map.class.isAssignableFrom(f.getType())) continue;
+            for (Field f : entityTypes.getDeclaredFields()) {
+                if (!Map.class.isAssignableFrom(f.getType())) continue;
                 f.setAccessible(true);
-                Object v;
+                Object value; try { value = f.get(null); } catch (Throwable ignored) { continue; }
+                if (!(value instanceof Map)) continue;
+                Map map = (Map) value;
                 try {
-                    v = f.get(null);
-                } catch (Exception e) {
-                    continue;
-                }
-                if (!(v instanceof java.util.Map)) continue;
-                java.util.Map m = (java.util.Map) v;
-                try {
-                    if (m.get(snowmanClass) instanceof Integer && classToId == null)
-                        classToId = (Map<Class, Integer>) m;
-                    if (m.get(Integer.valueOf(snowmanId)) == snowmanClass && idToClass == null)
-                        idToClass = (Map<Integer, Class>) m;
-                    if (m.get("SnowMan") == snowmanClass && nameToClass == null)
-                        nameToClass = (Map<String, Class>) m;
-                    if (m.get(snowmanClass) instanceof String && classToName == null)
-                        classToName = (Map<Class, String>) m;
-                    if (m.get("SnowMan") instanceof Integer && nameToId == null)
-                        nameToId = (Map<String, Integer>) m;
-                } catch (Exception ignored) {
-                }
+                    if (map.get(snowmanClass) instanceof Integer && classToId == null) classToId = map;
+                    if (map.get(snowmanClass) instanceof String && classToName == null) classToName = map;
+                } catch (Throwable ignored) { }
             }
-
-            if (idToClass != null) idToClass.put(snowmanId, (Class) AddonGhostSnowman.class);
-            if (classToId != null) classToId.put((Class) AddonGhostSnowman.class, snowmanId);
-            if (classToName != null) classToName.put((Class) AddonGhostSnowman.class, "Snowman");
-            if (nameToClass != null) nameToClass.put("Snowman", (Class) AddonGhostSnowman.class);
-            if (nameToId != null) nameToId.put("Snowman", snowmanId);
-
-            org.bukkit.Bukkit.getLogger().info("[MonsterMaze] ghost snowman mapped to entity type id " + snowmanId);
-        } catch (Throwable t) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] registerGhostSnowmanEntityType failed: " + t);
-        }
+        } catch (Throwable t) { org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] resolveEntityTypeMaps failed: " + t.getMessage()); }
     }
 
-    /**
-     * Spawn a ghosted maze monster: {@link AddonGhostSnowman} (its {@code ae()} returns false,
-     * so it never shoves or is shoved by other mobs) spawned through the proper CUSTOM pipeline
-     * so it renders and is server-tracking like any vanilla mob.
-     */
-    public static Snowman spawnGhostSnowman(Location loc) {
+    public static void registerGhostType(String mobType) {
+        resolveEntityTypeMaps();
+        if (classToId == null) return;
+        MobTypes.MobType mob = MobTypes.byId(mobType);
+        if (mob == null) mob = MobTypes.byId("snowman");
+        try {
+            classToId.put(AddonGhostSnowman.class, mob.entityId);
+            if (classToName != null) classToName.put(AddonGhostSnowman.class, mob.registryName);
+        } catch (Throwable t) { org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] registerGhostType '" + mob.id + "' failed: " + t); }
+    }
+
+    public static void registerGhostTypes() { registerGhostType("snowman"); }
+
+    public static LivingEntity spawnGhostMob(Location loc, String mobType) {
         if (loc == null || loc.getWorld() == null) return null;
         try {
+            registerGhostType(mobType);
             WorldServer nmsWorld = ((CraftWorld) loc.getWorld()).getHandle();
-            AddonGhostSnowman handle = new AddonGhostSnowman(nmsWorld);
+            EntityInsentient handle = AddonGhostSnowman.class.getConstructor(World.class).newInstance(nmsWorld);
             handle.setPositionRotation(loc.getX(), loc.getY(), loc.getZ(), loc.getYaw(), loc.getPitch());
-            // Spawn through the CUSTOM pipeline so onCreatureSpawn allows it. In Spigot this
-            // already registers the entity with the EntityTracker (so a spawn packet is sent);
-            // do NOT call tracker.track() again afterwards or it throws "already tracked".
-            if (!nmsWorld.addEntity(handle, CreatureSpawnEvent.SpawnReason.CUSTOM)) {
-                org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] spawnGhostSnowman: addEntity returned false");
-                return null;
-            }
-            Snowman ent = (Snowman) handle.getBukkitEntity();
+            if (!nmsWorld.addEntity(handle, CreatureSpawnEvent.SpawnReason.CUSTOM)) return null;
+            LivingEntity ent = (LivingEntity) handle.getBukkitEntity();
             ent.setRemoveWhenFarAway(false);
             return ent;
         } catch (Throwable t) {
-            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] spawnGhostSnowman failed: " + t.getMessage());
+            org.bukkit.Bukkit.getLogger().warning("[MonsterMaze] spawnGhostMob '" + mobType + "' failed: " + t.getMessage());
             return null;
         }
+    }
+
+    /** Backwards-compatible API used by the existing 1.8 MonsterManager. */
+    public static Snowman spawnGhostSnowman(Location loc) {
+        LivingEntity ent = spawnGhostMob(loc, selectedGhostMobType);
+        return ent instanceof Snowman ? (Snowman) ent : null;
     }
 }
