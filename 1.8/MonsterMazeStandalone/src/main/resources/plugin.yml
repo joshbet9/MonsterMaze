@@ -10,6 +10,9 @@ commands:
   perftest:
     description: Temporary Monster Maze performance isolation tools
     usage: /perftest <help|start|status|count|jvm|tasks|events|foreign|monsterlogic|kitlogic|gametasks|living|entities|projectiles|items|npcs|inventory|player|world|chunks|extraworlds|tiles|purgetiles|physics|alltasks|allplugins|nuclear>
+  tickprofile:
+    description: Measure server-thread CPU time versus wall-clock tick time
+    usage: /tickprofile <start|status|reset|stop>
 permissions:
   monstermaze.admin:
     description: Allows control of Monster Maze
