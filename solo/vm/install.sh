@@ -24,12 +24,22 @@ sudo systemctl daemon-reload
 sudo systemctl enable monstermaze-submitter.service
 sudo systemctl restart monstermaze-submitter.service
 
+# Optional helper for destination VMs that need Discord submission.
+curl -fsSL --retry 3 --connect-timeout 15 --max-time 120 "$RAW/setup-submitters.sh" -o "$HOME_DIR/setup-submitters.sh"
+chmod 0755 "$HOME_DIR/setup-submitters.sh"
+
+# Optional helper for preparing a copy of the VM for public distribution.
+curl -fsSL --retry 3 --connect-timeout 15 --max-time 120 "$RAW/prepare-shareable.sh" -o "$HOME_DIR/prepare-shareable.sh"
+chmod 0755 "$HOME_DIR/prepare-shareable.sh"
+
 # The updater will create platform release markers after its first successful run.
 mkdir -p "$HOME_DIR/servers/.versions"
 
 echo
 echo "Bootstrap complete."
-echo "Updater:  $HOME_DIR/monstermaze-update.sh"
-echo "Submitter: $HOME_DIR/submitter/submit.py"
+echo "Updater:       $HOME_DIR/monstermaze-update.sh"
+echo "Submitter:     $HOME_DIR/submitter/submit.py"
+echo "Discord setup: $HOME_DIR/setup-submitters.sh"
+echo "VM sanitiser:  $HOME_DIR/prepare-shareable.sh"
 echo
 echo "Next: run '$HOME_DIR/monstermaze-update.sh all'"
