@@ -11,35 +11,63 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
-/** Emits completed player runs as JSON records for the competition submitter. */
+/** Emits completed player runs locally for Solo installs or directly to the backend on public servers. */
 public class RunRecorder {
 
     private static final String PLATFORM = "1.8";
 
     private final MonsterMazePlugin plugin;
     private final File folder;
+    private final BackendClient backend;
 
     public RunRecorder(MonsterMazePlugin plugin) {
         this.plugin = plugin;
         this.folder = new File(plugin.getDataFolder(), "solo-runs");
+        this.backend = new BackendClient(plugin);
     }
+
+    public boolean isBackendEnabled() { return backend.isEnabled(); }
 
     public void record(Player player, MazeMode mode, int pattern, String kit,
                        int stage, long elapsedMs) {
         if (!plugin.isRecordRuns()) return;
         if (player == null || mode == null || pattern < 0 || stage < 1 || kit == null || kit.isEmpty()) return;
-        writeRecord(player, mode, pattern, kit, stage, elapsedMs);
+
+        UUID uuid = player.getUniqueId();
+        String pluginVer = plugin.getDescription() != null ? plugin.getDescription().getVersion() : "0.0.0";
+        String configHash = Integer.toHexString(plugin.getConfig().saveToString().hashCode());
+        long submittedAt = System.currentTimeMillis();
+        String submissionId = uuid.toString() + "-" + submittedAt + "-" + stage + "-" + pattern + "-" + kit;
+
+        if (backend.isEnabled()) {
+            backend.submit(submissionId, uuid, player.getName(), mode.id, pattern, kit, stage,
+                    elapsedMs, PLATFORM, pluginVer, configHash, submittedAt);
+            return;
+        }
+
+        writeRecord(submissionId, player, mode, pattern, kit, stage, elapsedMs, pluginVer, configHash, submittedAt);
     }
 
-    /** Re-export an existing PB. Historical leaderboard data has no original runtime, so timeMs=0. */
+    /** Re-export an existing PB. Solo distributions normally use this path because no backend is configured. */
     public boolean recordHistorical(Player player, MazeMode mode, int pattern, String kit, int stage) {
         if (!plugin.isRecordRuns()) return false;
         if (player == null || mode == null || pattern < 0 || stage < 1 || kit == null || kit.isEmpty()) return false;
-        return writeRecord(player, mode, pattern, kit, stage, 0L);
+        UUID uuid = player.getUniqueId();
+        String pluginVer = plugin.getDescription() != null ? plugin.getDescription().getVersion() : "0.0.0";
+        String configHash = Integer.toHexString(plugin.getConfig().saveToString().hashCode());
+        long submittedAt = System.currentTimeMillis();
+        String submissionId = uuid.toString() + "-historical-" + submittedAt + "-" + stage + "-" + pattern + "-" + kit;
+        if (backend.isEnabled()) {
+            backend.submit(submissionId, uuid, player.getName(), mode.id, pattern, kit, stage,
+                    0L, PLATFORM, pluginVer, configHash, submittedAt);
+            return true;
+        }
+        return writeRecord(submissionId, player, mode, pattern, kit, stage, 0L, pluginVer, configHash, submittedAt);
     }
 
-    private boolean writeRecord(Player player, MazeMode mode, int pattern, String kit,
-                                int stage, long elapsedMs) {
+    private boolean writeRecord(String submissionId, Player player, MazeMode mode, int pattern, String kit,
+                                int stage, long elapsedMs, String pluginVer, String configHash,
+                                long submittedAt) {
         if (!folder.exists() && !folder.mkdirs()) {
             plugin.getLogger().warning("Could not create solo-runs directory.");
             return false;
@@ -47,13 +75,10 @@ public class RunRecorder {
 
         String name = player.getName();
         UUID uuid = player.getUniqueId();
-        String pluginVer = plugin.getDescription() != null
-                ? plugin.getDescription().getVersion() : "0.0.0";
-        String configHash = Integer.toHexString(plugin.getConfig().saveToString().hashCode());
-
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
         sb.append(entry("schema", "1"));
+        sb.append(entry("submissionId", submissionId));
         sb.append(entry("platform", PLATFORM));
         sb.append(entry("plugin", pluginVer));
         sb.append(entry("name", name));
@@ -64,14 +89,17 @@ public class RunRecorder {
         sb.append(rawEntry("stage", String.valueOf(stage)));
         sb.append(rawEntry("timeMs", String.valueOf(elapsedMs)));
         sb.append(entry("configHash", configHash));
-        sb.append(lastEntry("submittedAt", String.valueOf(System.currentTimeMillis())));
+        sb.append(lastEntry("submittedAt", String.valueOf(submittedAt)));
         sb.append("}\n");
 
-        File out = new File(folder, uuid.toString().substring(0, 8) + "-" + System.currentTimeMillis() + ".json");
+        File out = new File(folder, uuid.toString().substring(0, 8) + "-" + submittedAt + ".json");
         try {
             OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(out), StandardCharsets.UTF_8);
-            writer.write(sb.toString());
-            writer.close();
+            try {
+                writer.write(sb.toString());
+            } finally {
+                writer.close();
+            }
             plugin.getLogger().info("Run recorded: " + out.getName()
                     + " (platform=" + PLATFORM + " mode=" + mode.id + " stage=" + stage + " time=" + elapsedMs + "ms)");
             return true;
