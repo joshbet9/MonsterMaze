@@ -11,6 +11,8 @@ SERVER_ROOT="${HOME_DIR}/servers"
 TMP_ROOT="${HOME_DIR}/.mm-update"
 VERSIONS="${SERVER_ROOT}/.versions"
 SUBMITTER="${HOME_DIR}/submitter"
+STOPPED_18=0
+STOPPED_21=0
 
 usage() { echo "Usage: $0 {1.8|1.21|all}"; exit 2; }
 [[ $# -eq 1 ]] || usage
@@ -61,7 +63,12 @@ json_field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[
 
 stop_service() {
   local platform="$1"
-  sudo systemctl stop "$(service_name "$platform")" 2>/dev/null || true
+  local svc
+  svc="$(service_name "$platform")"
+  if sudo systemctl is-active --quiet "$svc"; then
+    sudo systemctl stop "$svc"
+    if [[ "$platform" == "1.8" ]]; then STOPPED_18=1; else STOPPED_21=1; fi
+  fi
 }
 
 start_service() {
@@ -69,12 +76,9 @@ start_service() {
   sudo systemctl start "$(service_name "$platform")" 2>/dev/null || true
 }
 
-ensure_services_started() {
-  case "$TARGET" in
-    1.8) start_service 1.8 ;;
-    1.21) start_service 1.21 ;;
-    all) start_service 1.8; start_service 1.21 ;;
-  esac
+restart_stopped_services() {
+  if [[ "$STOPPED_18" -eq 1 ]]; then start_service 1.8; fi
+  if [[ "$STOPPED_21" -eq 1 ]]; then start_service 1.21; fi
 }
 
 backup_before_update() {
@@ -100,7 +104,9 @@ install_submitter() {
   rm -f "$tmp"
   if systemctl list-unit-files | grep -q '^monstermaze-submitter\.service'; then
     sudo systemctl daemon-reload
-    sudo systemctl restart monstermaze-submitter.service
+    if sudo systemctl is-active --quiet monstermaze-submitter.service; then
+      sudo systemctl restart monstermaze-submitter.service
+    fi
   fi
 }
 
@@ -178,9 +184,11 @@ update_one() {
   echo "Updated $platform to $release_tag."
 }
 
-cleanup() { rm -rf "$TMP_ROOT"; }
+cleanup() {
+  rm -rf "$TMP_ROOT"
+  restart_stopped_services
+}
 trap cleanup EXIT
-trap ensure_services_started EXIT
 
 install_submitter
 
