@@ -61,6 +61,42 @@ public final class BackendClient {
         }.runTaskAsynchronously(plugin);
     }
 
+    /** Perform an authenticated backend GET. Intended for async callers only. */
+    public String get(String path) throws Exception {
+        if (!isEnabled()) return null;
+        String suffix = path == null ? "" : path;
+        if (!suffix.startsWith("/")) suffix = "/" + suffix;
+        URL url = new URL(baseUrl + suffix);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod("GET");
+        connection.setConnectTimeout(5000);
+        connection.setReadTimeout(10000);
+        connection.setRequestProperty("Authorization", "Bearer " + token);
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("User-Agent", "MonsterMaze-Server/1.0");
+        try {
+            int status = connection.getResponseCode();
+            InputStream stream = status >= 200 && status < 300
+                    ? connection.getInputStream() : connection.getErrorStream();
+            StringBuilder body = new StringBuilder();
+            if (stream != null) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));
+                try {
+                    String line;
+                    while ((line = reader.readLine()) != null) body.append(line);
+                } finally {
+                    reader.close();
+                }
+            }
+            if (status < 200 || status >= 300) {
+                throw new IllegalStateException("HTTP " + status + (body.length() > 0 ? " " + body : ""));
+            }
+            return body.toString();
+        } finally {
+            connection.disconnect();
+        }
+    }
+
     private void flushPending() {
         if (!isEnabled() || !pendingDir.exists()) return;
         File[] files = pendingDir.listFiles();
