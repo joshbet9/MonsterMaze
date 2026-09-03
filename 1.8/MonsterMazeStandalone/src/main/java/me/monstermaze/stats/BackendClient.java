@@ -37,22 +37,17 @@ public final class BackendClient {
         }
     }
 
-    public boolean isEnabled() {
-        return !baseUrl.isEmpty() && !token.isEmpty();
-    }
+    public boolean isEnabled() { return !baseUrl.isEmpty() && !token.isEmpty(); }
 
-    /** Queue a completed run and submit it asynchronously without blocking the server thread. */
     public void submit(final String submissionId, final UUID uuid, final String name,
                        final String mode, final int pattern, final String kit,
                        final int stage, final long elapsedMs, final String platform,
                        final String pluginVersion, final String configHash,
                        final long submittedAt) {
         if (!isEnabled()) return;
-
         final String payload = buildPayload(submissionId, uuid, name, mode, pattern, kit,
                 stage, elapsedMs, platform, pluginVersion, configHash, submittedAt);
         final File pending = new File(pendingDir, "backend-" + safeFileName(submissionId) + ".json");
-
         new BukkitRunnable() {
             @Override public void run() {
                 if (!queuePayload(pending, payload)) return;
@@ -76,25 +71,16 @@ public final class BackendClient {
         connection.setRequestProperty("User-Agent", "MonsterMaze-Server/1.0");
         try {
             int status = connection.getResponseCode();
-            InputStream stream = status >= 200 && status < 300
-                    ? connection.getInputStream() : connection.getErrorStream();
+            InputStream stream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream();
             StringBuilder body = new StringBuilder();
             if (stream != null) {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));
-                try {
-                    String line;
-                    while ((line = reader.readLine()) != null) body.append(line);
-                } finally {
-                    reader.close();
-                }
+                try { String line; while ((line = reader.readLine()) != null) body.append(line); }
+                finally { reader.close(); }
             }
-            if (status < 200 || status >= 300) {
-                throw new IllegalStateException("HTTP " + status + (body.length() > 0 ? " " + body : ""));
-            }
+            if (status < 200 || status >= 300) throw new IllegalStateException("HTTP " + status + (body.length() > 0 ? " " + body : ""));
             return body.toString();
-        } finally {
-            connection.disconnect();
-        }
+        } finally { connection.disconnect(); }
     }
 
     private void flushPending() {
@@ -131,34 +117,23 @@ public final class BackendClient {
 
     private void trySubmitPending(File pending) {
         String payload;
-        try {
-            payload = readFile(pending);
-        } catch (IOException e) {
-            plugin.getLogger().warning("Could not read backend queue file " + pending.getName() + ": " + e.getMessage());
-            return;
-        }
-
-        int attempts = 0;
-        long delay = 1000L;
+        try { payload = readFile(pending); }
+        catch (IOException e) { plugin.getLogger().warning("Could not read backend queue file " + pending.getName() + ": " + e.getMessage()); return; }
+        int attempts = 0; long delay = 1000L;
         while (attempts < 4) {
             attempts++;
             try {
                 post(payload);
-                if (!pending.delete() && pending.exists()) {
-                    plugin.getLogger().warning("Backend accepted " + pending.getName() + " but it could not be deleted.");
-                }
+                if (!pending.delete() && pending.exists()) plugin.getLogger().warning("Backend accepted " + pending.getName() + " but it could not be deleted.");
                 plugin.getLogger().info("Run submitted to Monster Maze backend: " + pending.getName());
+                if (plugin.getLeaderboards() != null) plugin.getLeaderboards().refreshFromBackend();
                 return;
             } catch (Exception e) {
                 if (attempts >= 4) {
-                    plugin.getLogger().warning("Backend submission failed for " + pending.getName()
-                            + " after " + attempts + " attempts: " + e.getMessage());
+                    plugin.getLogger().warning("Backend submission failed for " + pending.getName() + " after " + attempts + " attempts: " + e.getMessage());
                     return;
                 }
-                try { Thread.sleep(delay); } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
+                try { Thread.sleep(delay); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); return; }
                 delay *= 2L;
             }
         }
@@ -169,15 +144,9 @@ public final class BackendClient {
         try {
             byte[] data = new byte[(int) Math.min(Integer.MAX_VALUE, file.length())];
             int offset = 0;
-            while (offset < data.length) {
-                int read = in.read(data, offset, data.length - offset);
-                if (read < 0) break;
-                offset += read;
-            }
+            while (offset < data.length) { int read = in.read(data, offset, data.length - offset); if (read < 0) break; offset += read; }
             return new String(data, 0, offset, StandardCharsets.UTF_8);
-        } finally {
-            in.close();
-        }
+        } finally { in.close(); }
     }
 
     private void post(String payload) throws Exception {
@@ -190,21 +159,14 @@ public final class BackendClient {
         connection.setRequestProperty("Authorization", "Bearer " + token);
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
         connection.setRequestProperty("User-Agent", "MonsterMaze-Server/1.0");
-
         byte[] body = payload.getBytes(StandardCharsets.UTF_8);
         OutputStream out = connection.getOutputStream();
         try { out.write(body); } finally { out.close(); }
-
         int status = connection.getResponseCode();
         if (status < 200 || status >= 300) {
-            InputStream error = connection.getErrorStream();
-            String detail = "HTTP " + status;
-            if (error != null) {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(error, StandardCharsets.UTF_8));
-                try { detail += " " + reader.readLine(); } finally { reader.close(); }
-            }
-            connection.disconnect();
-            throw new IllegalStateException(detail);
+            InputStream error = connection.getErrorStream(); String detail = "HTTP " + status;
+            if (error != null) { BufferedReader reader = new BufferedReader(new InputStreamReader(error, StandardCharsets.UTF_8)); try { detail += " " + reader.readLine(); } finally { reader.close(); } }
+            connection.disconnect(); throw new IllegalStateException(detail);
         }
         connection.disconnect();
     }
@@ -213,65 +175,26 @@ public final class BackendClient {
                                        String mode, int pattern, String kit, int stage,
                                        long elapsedMs, String platform, String pluginVersion,
                                        String configHash, long submittedAt) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("{");
-        field(sb, "submissionId", submissionId, true);
-        field(sb, "platform", platform, true);
-        field(sb, "plugin", pluginVersion, true);
-        field(sb, "name", name, true);
-        field(sb, "uuid", uuid.toString(), true);
-        field(sb, "mode", mode, true);
-        number(sb, "pattern", pattern, true);
-        field(sb, "kit", kit, true);
-        number(sb, "stage", stage, true);
-        number(sb, "timeMs", elapsedMs, true);
-        field(sb, "configHash", configHash, true);
-        number(sb, "submittedAt", submittedAt, false);
-        sb.append("}");
-        return sb.toString();
+        StringBuilder sb = new StringBuilder(); sb.append("{");
+        field(sb, "submissionId", submissionId, true); field(sb, "platform", platform, true);
+        field(sb, "plugin", pluginVersion, true); field(sb, "name", name, true);
+        field(sb, "uuid", uuid.toString(), true); field(sb, "mode", mode, true);
+        number(sb, "pattern", pattern, true); field(sb, "kit", kit, true);
+        number(sb, "stage", stage, true); number(sb, "timeMs", elapsedMs, true);
+        field(sb, "configHash", configHash, true); number(sb, "submittedAt", submittedAt, false);
+        sb.append("}"); return sb.toString();
     }
 
-    private static void field(StringBuilder sb, String key, String value, boolean comma) {
-        sb.append("\"").append(escape(key)).append("\":\"").append(escape(value)).append("\"");
-        if (comma) sb.append(",");
-    }
+    private static void field(StringBuilder sb, String key, String value, boolean comma) { sb.append("\"").append(escape(key)).append("\":\"").append(escape(value)).append("\""); if (comma) sb.append(","); }
+    private static void number(StringBuilder sb, String key, long value, boolean comma) { sb.append("\"").append(escape(key)).append("\":").append(value); if (comma) sb.append(","); }
+    private static String safeFileName(String value) { return value.replaceAll("[^A-Za-z0-9._-]", "_"); }
+    private static String normalize(String value) { String v = trim(value); while (v.endsWith("/")) v = v.substring(0, v.length() - 1); return v; }
+    private static String trim(String value) { return value == null ? "" : value.trim(); }
+    private static String escape(String value) { if (value == null) return ""; return value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t"); }
 
-    private static void number(StringBuilder sb, String key, long value, boolean comma) {
-        sb.append("\"").append(escape(key)).append("\":").append(value);
-        if (comma) sb.append(",");
-    }
-
-    private static String safeFileName(String value) {
-        return value.replaceAll("[^A-Za-z0-9._-]", "_");
-    }
-
-    private static String normalize(String value) {
-        String v = trim(value);
-        while (v.endsWith("/")) v = v.substring(0, v.length() - 1);
-        return v;
-    }
-
-    private static String trim(String value) {
-        return value == null ? "" : value.trim();
-    }
-
-    private static String escape(String value) {
-        if (value == null) return "";
-        return value.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-    }
-
-    /** Small Java-8-compatible UTF-8 file writer wrapper. */
     private static final class OutputStreamWriterWithClose {
         private final java.io.OutputStreamWriter writer;
-
-        OutputStreamWriterWithClose(File file) throws IOException {
-            this.writer = new java.io.OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8);
-        }
-
+        OutputStreamWriterWithClose(File file) throws IOException { this.writer = new java.io.OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8); }
         void write(String value) throws IOException { writer.write(value); }
         void close() throws IOException { writer.close(); }
     }
