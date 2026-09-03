@@ -4,6 +4,7 @@ import me.monstermaze.command.MMCommand;
 import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
 import me.monstermaze.game.MazeMode;
+import me.monstermaze.stats.RunRecorder;
 import me.monstermaze.util.UtilEnt;
 import me.monstermaze.world.VoidWorldManager;
 import org.bukkit.Bukkit;
@@ -21,6 +22,8 @@ public class MonsterMazePlugin extends JavaPlugin {
     private VoidWorldManager voidWorlds;
     private MazeMode mode = MazeMode.ORIGINAL;
     private me.monstermaze.stats.LeaderboardManager leaderboards;
+    private boolean soloMode;
+    private RunRecorder runRecorder;
 
     @Override
     public void onEnable() {
@@ -28,11 +31,12 @@ public class MonsterMazePlugin extends JavaPlugin {
         saveDefaultConfig();
         this.voidWorlds = new VoidWorldManager(this);
         this.leaderboards = new me.monstermaze.stats.LeaderboardManager(this);
-
         FileConfiguration cfg = getConfig();
         MazeMode stored = MazeMode.byName(cfg.getString("mode", "Original"));
         if (stored == null) stored = MazeMode.ORIGINAL;
         this.mode = stored;
+        this.soloMode = cfg.getBoolean("solo-mode", false);
+        this.runRecorder = new me.monstermaze.stats.RunRecorder(this);
 
         // Extract per-mode change documents (txt) into the data folder.
         for (MazeMode m : MazeMode.values()) {
@@ -111,5 +115,13 @@ public class MonsterMazePlugin extends JavaPlugin {
 
     public me.monstermaze.stats.LeaderboardManager getLeaderboards() {
         return leaderboards;
+    }
+
+    public boolean isSoloMode() {
+        return soloMode;
+    }
+
+    public me.monstermaze.stats.RunRecorder getRunRecorder() {
+        return runRecorder;
     }
 }

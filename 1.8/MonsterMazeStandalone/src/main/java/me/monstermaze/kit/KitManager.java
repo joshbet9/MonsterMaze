@@ -65,6 +65,23 @@ public class KitManager implements Listener {
     /** Slowball QOL: last time each player was knocked by a mob (ms epoch) */
     private final Map<UUID, Long> lastMobHit = new HashMap<UUID, Long>();
 
+    /** Body Builder "Body Rush" secondary: remaining deflects (0/absent = inactive).
+     *  Right-click activates a persistent buff; each mob contact deflects the mob away and
+     *  decrements one use, granting the player full bump immunity while the counter is > 0. */
+    private final Map<UUID, Integer> bodyRushUses = new HashMap<UUID, Integer>();
+
+    /** Slowballer "Cryo Blitz" secondary: last use timestamp (ms epoch). Q-drop freezes mobs
+     *  within CRYO_RADIUS blocks for CRYO_FREEZE_MS, on a CRYO_COOLDOWN_MS cooldown. */
+    private final Map<UUID, Long> cryoCooldown = new HashMap<UUID, Long>();
+
+    /** Body Builder secondary config. */
+    private static final int BODY_RUSH_MAX_USES = 5;
+
+    /** Slowballer secondary config. */
+    private static final int CRYO_COOLDOWN_MS = 60000;
+    private static final long CRYO_FREEZE_MS = 3000;
+    private static final int CRYO_RADIUS = 5;
+
     /** Player -> how they view OTHER players (their dye state). Default VISIBLE. */
     private final Map<UUID, VisMode> visMode = new HashMap<UUID, VisMode>();
 
@@ -147,6 +164,8 @@ public class KitManager implements Listener {
         selected.clear();
         jumpRecharge.clear();
         snowballConstructor.clear();
+        bodyRushUses.clear();
+        cryoCooldown.clear();
         for (Entity e : launched.keySet()) {
             if (e != null && e.isValid()) e.remove();
         }
@@ -161,6 +180,9 @@ public class KitManager implements Listener {
         player.getInventory().setArmorContents(null);
         player.setAllowFlight(false);
         player.setFlying(false);
+        // Fresh kit = fresh secondary-ability state (Body Rush / Cryo Blitz stand down).
+        bodyRushUses.remove(player.getUniqueId());
+        cryoCooldown.remove(player.getUniqueId());
 
         // Default visibility: visible + off every observer's ghost team. Reset any stored view mode
         // so the lime dye and the rendered view always match (a stale TRANSPARENT entry would keep
@@ -184,11 +206,14 @@ public class KitManager implements Listener {
             case SLOWBALL:
                 // PerkConstructor starts empty; first tick will grant snowballs
                 // Give a starter stack so they can throw immediately
-                player.getInventory().setItem(0, namedAmount(Material.SNOW_BALL, 1, ChatColor.AQUA + "Slowball"));
+                player.getInventory().setItem(0, slowballItem(player.getUniqueId(), 1));
                 snowballConstructor.put(player.getUniqueId(), System.currentTimeMillis());
                 break;
             case BODY_BUILDER:
-                // compass only
+                // compass only (plus the Body Rush secondary item in QOL modes)
+                if (game.qolEnabled()) {
+                    player.getInventory().setItem(0, bodyRushItem(BODY_RUSH_MAX_USES));
+                }
                 break;
             case REPULSOR:
                 // slot 0: 3 coal
@@ -209,6 +234,8 @@ public class KitManager implements Listener {
         if (player.getHealth() > 20.0) player.setHealth(20.0);
         player.removePotionEffect(PotionEffectType.JUMP);
         player.removePotionEffect(PotionEffectType.INVISIBILITY);
+        bodyRushUses.remove(player.getUniqueId());
+        cryoCooldown.remove(player.getUniqueId());
         visMode.remove(player.getUniqueId());
         lastJumpBar.remove(player.getUniqueId());
         scoreboard.setGhost(player.getUniqueId(), false);
@@ -376,18 +403,11 @@ public class KitManager implements Listener {
             if (getKit(p) != KitType.SLOWBALL) continue;
 
             ItemStack slot = p.getInventory().getItem(0);
-            int amount = 0;
-            if (slot != null && slot.getType() == Material.SNOW_BALL) {
-                amount = slot.getAmount();
-            }
-            if (amount >= 16) continue;
+            if (slot != null && slot.getType() == Material.SNOW_BALL && slot.getAmount() >= 16) continue;
 
-            if (amount <= 0) {
-                p.getInventory().setItem(0, namedAmount(Material.SNOW_BALL, 1, ChatColor.AQUA + "Slowball"));
-            } else {
-                slot.setAmount(amount + 1);
-                p.getInventory().setItem(0, slot);
-            }
+            int amount = (slot != null && slot.getType() == Material.SNOW_BALL) ? slot.getAmount() : 0;
+            // Always rebuild with the live Cryo Blitz cooldown lore.
+            p.getInventory().setItem(0, slowballItem(p.getUniqueId(), amount + 1));
             p.updateInventory();
         }
     }
@@ -601,6 +621,153 @@ public class KitManager implements Listener {
         }
     }
 
+    // -------------------- Body Builder secondary: Body Rush --------------------
+    // QOL-mode only. Slot 0 apple item (1 per game). Right-click activates a persistent buff:
+    // while active, every mob CONTACT deflects the mob away (no knockback, no damage, full
+    // immunity) and consumes one of BODY_RUSH_MAX_USES. When the counter hits 0 the buff ends
+    // and the item disappears. Original mode grants no item and the buff never activates.
+
+    @EventHandler
+    public void onBodyRush(PlayerInteractEvent event) {
+        if (game.getState() != GameState.LIVE) return;
+        if (!game.qolEnabled()) return;
+        Action a = event.getAction();
+        if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK) return;
+
+        Player player = event.getPlayer();
+        if (getKit(player) != KitType.BODY_BUILDER) return;
+        if (!game.getAlivePlayers().contains(player)) return;
+
+        ItemStack hand = player.getItemInHand();
+        if (hand == null || hand.getType() != Material.APPLE) return;
+
+        // Already active — nothing to do (the buff holds until the counter is exhausted).
+        Integer uses = bodyRushUses.get(player.getUniqueId());
+        if (uses != null && uses > 0) {
+            player.sendMessage(ChatColor.RED + "Body Rush is already active (" + uses + " deflects left).");
+            return;
+        }
+
+        event.setCancelled(true);
+        bodyRushUses.put(player.getUniqueId(), BODY_RUSH_MAX_USES);
+        player.getInventory().setItem(0, bodyRushItem(BODY_RUSH_MAX_USES));
+        player.playSound(player.getLocation(), Sound.SUCCESSFUL_HIT, 1.0f, 1.2f);
+        player.sendMessage(ChatColor.RED + "" + ChatColor.BOLD + "Body Rush!"
+                + ChatColor.WHITE + " Monsters contacting you are deflected ("
+                + BODY_RUSH_MAX_USES + " uses).");
+        Bukkit.getPluginManager().callEvent(new AbilityUseEvent(player));
+    }
+
+    /** True while a Body Builder's Body Rush buff is active in a QOL mode. */
+    public boolean isBodyRushActive(Player player) {
+        if (!game.qolEnabled()) return false;
+        Integer uses = bodyRushUses.get(player.getUniqueId());
+        return uses != null && uses > 0;
+    }
+
+    /** Consume one Body Rush deflect. Returns the new remaining count (0 = buff over). */
+    public int consumeBodyRushUse(Player player) {
+        Integer uses = bodyRushUses.get(player.getUniqueId());
+        int remaining = (uses == null ? 0 : uses) - 1;
+        if (remaining > 0) {
+            bodyRushUses.put(player.getUniqueId(), remaining);
+            player.getInventory().setItem(0, bodyRushItem(remaining));
+            player.playSound(player.getLocation(), Sound.ITEM_PICKUP, 1.0f, 1.0f);
+        } else {
+            bodyRushUses.remove(player.getUniqueId());
+            player.getInventory().setItem(0, null); // item disappears on exhaustion
+            player.sendMessage(ChatColor.RED + "Body Rush used up — normal bumps resume.");
+        }
+        player.updateInventory();
+        return remaining;
+    }
+
+    private static ItemStack bodyRushItem(int uses) {
+        ItemStack item = new ItemStack(Material.APPLE, 1);
+        ItemMeta meta = item.getItemMeta();
+        meta.setDisplayName(ChatColor.RED + "" + ChatColor.BOLD + "Body Rush");
+        meta.setLore(java.util.Arrays.asList(
+                ChatColor.GRAY + "Right Click to activate.",
+                ChatColor.GRAY + "Deflects contacting monsters and",
+                ChatColor.GRAY + "grants bump immunity while active.",
+                ChatColor.RED + "Uses remaining: " + uses));
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    // -------------------- Slowballer secondary: Cryo Blitz --------------------
+    // QOL-mode only. MID-GAME Q-drop (the global drop-cancel otherwise eats it) freezes every
+    // monster within CRYO_RADIUS blocks for CRYO_FREEZE_MS on a CRYO_COOLDOWN_MS cooldown.
+    // The cooldown is surfaced as lore on the Slowball slot-0 snowballs.
+
+    @EventHandler
+    public void onCryoBlitz(PlayerDropItemEvent event) {
+        if (game.getState() != GameState.LIVE) return;
+        if (!game.qolEnabled()) return;
+        Player player = event.getPlayer();
+        if (getKit(player) != KitType.SLOWBALL) return;
+        if (!game.getAlivePlayers().contains(player)) return;
+
+        event.setCancelled(true);
+
+        long now = System.currentTimeMillis();
+        Long last = cryoCooldown.get(player.getUniqueId());
+        if (last != null && now - last < CRYO_COOLDOWN_MS) {
+            long left = (CRYO_COOLDOWN_MS - (now - last)) / 1000L;
+            player.sendMessage(ChatColor.AQUA + "Cryo Blitz on cooldown (" + left + "s).");
+            return;
+        }
+        cryoCooldown.put(player.getUniqueId(), now);
+
+        MonsterManager mm = game.getMonsterManager();
+        int frozenCount = 0;
+        if (mm != null) {
+            java.util.List<LivingEntity> list = new java.util.ArrayList<LivingEntity>();
+            for (LivingEntity ent : mm.getMonsters()) list.add(ent);
+            for (LivingEntity ent : list) {
+                if (ent == null || !ent.isValid()) continue;
+                if (player.getLocation().distanceSquared(ent.getLocation()) > CRYO_RADIUS * CRYO_RADIUS) continue;
+                mm.freeze(ent, now + CRYO_FREEZE_MS);
+                ent.getWorld().playEffect(ent.getLocation(), Effect.SNOWBALL_BREAK, 0);
+                frozenCount++;
+            }
+        }
+        player.playSound(player.getLocation(), Sound.DIG_SNOW, 1.0f, 0.5f);
+        TextUtil.title(player, "", ChatColor.AQUA + "" + ChatColor.BOLD + "Cryo Blitz!"
+                        + ChatColor.WHITE + " " + frozenCount + " mob(s) frozen", 5, 30, 5);
+        // NOTE: do not rewrite slot 0 here. The dropped item is restored by the cancelled drop,
+        // and swapping the slot's ItemStack before the restore could make 1.8 place the restored
+        // item in the next free slot (an extra snowball). The PerkConstructor tick refreshes the
+        // cooldown lore within 2s.
+        Bukkit.getPluginManager().callEvent(new AbilityUseEvent(player));
+    }
+
+    private ItemStack slowballItem(UUID playerId, int amount) {
+        ItemStack item = new ItemStack(Material.SNOW_BALL, Math.max(1, amount));
+        ItemMeta meta = item.getItemMeta();
+        meta.setDisplayName(ChatColor.AQUA + "Slowball");
+        meta.setLore(cooldownLore(playerId));
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private java.util.List<String> cooldownLore(UUID playerId) {
+        long now = System.currentTimeMillis();
+        long rem = -1;
+        Long t = cryoCooldown.get(playerId);
+        if (t != null) {
+            rem = (t.longValue() + CRYO_COOLDOWN_MS) - now;
+        }
+        java.util.List<String> lore = new java.util.ArrayList<String>();
+        lore.add(ChatColor.GRAY + "Q-drop: Cryo Blitz (freeze " + CRYO_RADIUS + " blocks).");
+        if (rem >= 0) {
+            lore.add(ChatColor.AQUA + "Cryo Blitz ready in " + (rem / 1000L) + "s");
+        } else {
+            lore.add(ChatColor.AQUA + "Cryo Blitz ready!");
+        }
+        return lore;
+    }
+
     // -------------------- DE view-of-others dye toggle --------------------
     // Global hotbar item (slot 7). Right-click cycles how THIS player views every other player:
     //   LIME  (data 10) -> visible: see the rest of the field normally (solid)
@@ -747,6 +914,8 @@ public class KitManager implements Listener {
         UUID id = event.getPlayer().getUniqueId();
         jumpRecharge.remove(id);
         snowballConstructor.remove(id);
+        bodyRushUses.remove(id);
+        cryoCooldown.remove(id);
         visMode.remove(id);
         scoreboard.setGhost(id, false);
         // Re-render remaining players' views of each other now that this player has left.

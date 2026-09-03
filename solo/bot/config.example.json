@@ -1,0 +1,17 @@
+{
+  "_comment": "Copy this file to config.json and fill in your values. See README.md",
+  "token": "YOUR_BOT_TOKEN",
+
+  "feed_channels": [
+    "PUT_FEED_CHANNEL_ID_HERE"
+  ],
+
+  "mode_channels": {
+    "modern":   "PUT_MODERN_LEADERBOARD_CHANNEL_ID",
+    "speed":    "PUT_SPEED_LEADERBOARD_CHANNEL_ID",
+    "lagless":  "PUT_LAGLESS_LEADERBOARD_CHANNEL_ID",
+    "original": "PUT_ORIGINAL_LEADERBOARD_CHANNEL_ID"
+  },
+
+  "top_n": 10
+}

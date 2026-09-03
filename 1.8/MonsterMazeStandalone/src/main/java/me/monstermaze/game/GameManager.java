@@ -70,6 +70,7 @@ public class GameManager implements Listener {
     private int centerSafeZoneDecay = 11;
     private boolean firstClaimedThisPhase;
     private boolean soloMode;
+    private boolean runEndRecordedGuard;
 
     private BukkitTask mainTask;
     private BukkitTask secondTask;
@@ -214,6 +215,7 @@ public class GameManager implements Listener {
         centerSafeZoneDecay = 11;
         firstClaimedThisPhase = false;
         soloMode = false;
+        runEndRecordedGuard = true;
         stats.reset();
 
         // Sync active mode from the plugin's persisted config each game.
@@ -476,7 +478,7 @@ public class GameManager implements Listener {
      *  Modern:  35 -> 15 floor, reached by stage 10.
      */
     private int stageTimer(int stage) {
-        if (mode == MazeMode.MODERN) {
+        if (mode == MazeMode.MODERN || mode == MazeMode.LAGLESS) {
             return Math.max(15, 35 - ((stage - 1) * 20 / 9));
         }
         return Math.max(15, 60 - ((stage - 1) * 2));
@@ -519,7 +521,15 @@ public class GameManager implements Listener {
                 }
             }
 
-            monsterManager.spawnMore(getMode() == MazeMode.MODERN ? 30 : 15);
+            if (getMode() == MazeMode.LAGLESS) {
+                // Fixed 500 pool: no per-stage spawns. Difficulty comes from a speed step every
+                // 5 stages (1.0 -> 1.2 -> 1.4 -> ...), first bump entering stage 6.
+                int enteringStage = curSafe + 1;
+                int steps = (enteringStage - 1) / 5;
+                monsterManager.setSpeedMultiplier(1.0f + 0.2f * steps);
+            } else {
+                monsterManager.spawnMore(getMode() == MazeMode.MODERN ? 30 : 15);
+            }
             stopSafePad();
             playersOnPad.clear();
             firstClaimedThisPhase = false;
@@ -678,7 +688,26 @@ public class GameManager implements Listener {
         String kit = null;
         me.monstermaze.kit.KitType k = kitManager.getKit(player);
         if (k != null) kit = k.id;
+
+        // Capture the kit's stored PB BEFORE recordRun writes this run, so the
+        // solo emit check below compares against the PREVIOUS best (a first-time
+        // kit run must count as a PB, not be compared against its own new value).
+        int prevKitPB = kit != null
+                ? plugin.getLeaderboards().getKitPB(plugin.getMode(), pattern, player.getUniqueId(), kit)
+                : 0;
         plugin.getLeaderboards().recordRun(plugin.getMode(), pattern, player.getUniqueId(), curSafe, kit);
+
+        // In solo mode, emit a run record to the crowd-sourced leaderboard ONLY when
+        // this run set a new personal best for (mode, pattern, kit). Repeated attempts
+        // that don't beat the best aren't useful for a leaderboard, so we skip them.
+        if (soloMode && runEndRecordedGuard) {
+            runEndRecordedGuard = false;
+            boolean isPb = kit != null && curSafe > prevKitPB;
+            if (isPb) {
+                long elapsed = liveStartMs > 0 ? System.currentTimeMillis() - liveStartMs : 0;
+                plugin.getRunRecorder().record(player, plugin.getMode(), pattern, kit, curSafe, elapsed);
+            }
+        }
     }
 
     private void eliminate(Player player, String message) {
