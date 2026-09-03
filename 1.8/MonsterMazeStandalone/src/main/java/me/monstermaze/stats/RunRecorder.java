@@ -11,7 +11,7 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
-/** Emits a completed solo run as a JSON record to the data folder (solo-runs/). */
+/** Emits completed player runs as JSON records for the competition submitter. */
 public class RunRecorder {
 
     private static final String PLATFORM = "1.8";
@@ -26,13 +26,14 @@ public class RunRecorder {
 
     public void record(Player player, MazeMode mode, int pattern, String kit,
                        int stage, long elapsedMs) {
-        if (!plugin.isSoloMode()) return;
-        if (player == null || mode == null) return;
+        if (!plugin.isRecordRuns()) return;
+        if (player == null || mode == null || pattern < 0 || stage < 1 || kit == null || kit.isEmpty()) return;
         writeRecord(player, mode, pattern, kit, stage, elapsedMs);
     }
 
+    /** Re-export an existing PB. Historical leaderboard data has no original runtime, so timeMs=0. */
     public boolean recordHistorical(Player player, MazeMode mode, int pattern, String kit, int stage) {
-        if (!plugin.isSoloMode()) return false;
+        if (!plugin.isRecordRuns()) return false;
         if (player == null || mode == null || pattern < 0 || stage < 1 || kit == null || kit.isEmpty()) return false;
         return writeRecord(player, mode, pattern, kit, stage, 0L);
     }
@@ -59,7 +60,7 @@ public class RunRecorder {
         sb.append(entry("uuid", uuid.toString()));
         sb.append(entry("mode", mode.id));
         sb.append(rawEntry("pattern", String.valueOf(pattern)));
-        sb.append(entry("kit", kit != null ? kit : ""));
+        sb.append(entry("kit", kit));
         sb.append(rawEntry("stage", String.valueOf(stage)));
         sb.append(rawEntry("timeMs", String.valueOf(elapsedMs)));
         sb.append(entry("configHash", configHash));
@@ -71,11 +72,11 @@ public class RunRecorder {
             OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(out), StandardCharsets.UTF_8);
             writer.write(sb.toString());
             writer.close();
-            plugin.getLogger().info("Solo run recorded: " + out.getName()
+            plugin.getLogger().info("Run recorded: " + out.getName()
                     + " (platform=" + PLATFORM + " mode=" + mode.id + " stage=" + stage + " time=" + elapsedMs + "ms)");
             return true;
         } catch (IOException e) {
-            plugin.getLogger().warning("Could not write solo run record: " + e.getMessage());
+            plugin.getLogger().warning("Could not write run record: " + e.getMessage());
             return false;
         }
     }
