@@ -1,91 +1,74 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATA_ROOT=/data
-MM18="$DATA_ROOT/1.8"
-MM21="$DATA_ROOT/1.21"
-T18=/opt/mm18-template
-T21=/opt/mm21-template
+PLATFORM="${1:-}"
+case "$PLATFORM" in
+  1.8)
+    ROOT=/data/1.8
+    TEMPLATE=/opt/mm18-template
+    PORT=25565
+    JAR=spigot-1.8.8.jar
+    ;;
+  1.21)
+    ROOT=/data/1.21
+    TEMPLATE=/opt/mm21-template
+    PORT=25566
+    JAR=paper-1.21.11.jar
+    ;;
+  *)
+    echo "Usage: $0 <1.8|1.21>" >&2
+    exit 2
+    ;;
+esac
 
 init_server() {
-  local template="$1"
-  local target="$2"
-  local port="$3"
-
-  if [ ! -f "$target/.monstermaze-initialized" ]; then
-    mkdir -p "$target"
-    cp -a "$template/." "$target/"
-
-    # The two external Fly TCP services are 25565 (1.8) and 25566 (1.21).
-    # Keep the server bound to all interfaces; Fly handles the public endpoint.
-    sed -i "s/^server-port=.*/server-port=$port/" "$target/server.properties"
-    sed -i "s/^server-ip=.*/server-ip=/" "$target/server.properties"
-    touch "$target/.monstermaze-initialized"
+  if [ ! -f "$ROOT/.monstermaze-initialized" ]; then
+    mkdir -p "$ROOT"
+    cp -a "$TEMPLATE/." "$ROOT/"
+    touch "$ROOT/.monstermaze-initialized"
   fi
 
-  mkdir -p "$target/logs" "$target/plugins/MonsterMazeStandalone/solo-runs"
+  # The public Fly TCP service is responsible for the external port. Keep the
+  # Minecraft server listening on all interfaces inside the Machine.
+  sed -i "s/^server-port=.*/server-port=$PORT/" "$ROOT/server.properties"
+  if grep -q '^server-ip=' "$ROOT/server.properties"; then
+    sed -i 's/^server-ip=.*/server-ip=/' "$ROOT/server.properties"
+  else
+    printf '\nserver-ip=\n' >> "$ROOT/server.properties"
+  fi
+  mkdir -p "$ROOT/logs" "$ROOT/plugins/MonsterMazeStandalone/solo-runs"
 }
 
-init_server "$T18" "$MM18" 25565
-init_server "$T21" "$MM21" 25566
+init_server
 
-# The 1.8 Solo template already carries the Netty workaround that was verified on
-# the Linux VM.  Re-assert it here in case an older template is ever deployed.
-if grep -q '^use-native-transport=' "$MM18/server.properties"; then
-  sed -i 's/^use-native-transport=.*/use-native-transport=false/' "$MM18/server.properties"
-else
-  printf '\nuse-native-transport=false\n' >> "$MM18/server.properties"
+# The 1.8 Solo template contains the Linux-safe Netty setting verified during
+# production testing. Reassert it at startup in case an older template is used.
+if [ "$PLATFORM" = "1.8" ]; then
+  if grep -q '^use-native-transport=' "$ROOT/server.properties"; then
+    sed -i 's/^use-native-transport=.*/use-native-transport=false/' "$ROOT/server.properties"
+  else
+    printf '\nuse-native-transport=false\n' >> "$ROOT/server.properties"
+  fi
 fi
 
-# logrotate runs from the host on the VM; inside Fly we run it ourselves so a log
-# storm cannot consume the persistent volume.
-cat >/etc/monstermaze-logrotate-cron <<'EOF'
+# Rotate logs inside the Machine so a noisy server cannot fill its root filesystem.
+cat >/etc/monstermaze-logrotate-run <<'EOF'
 #!/bin/sh
 /usr/sbin/logrotate /etc/logrotate.d/monstermaze >/dev/null 2>&1 || true
 EOF
-chmod +x /etc/monstermaze-logrotate-cron
+chmod +x /etc/monstermaze-logrotate-run
 (
   while true; do
     sleep 300
-    /etc/monstermaze-logrotate-cron
+    /etc/monstermaze-logrotate-run
   done
 ) &
 ROTATE_PID=$!
 
 cleanup() {
-  trap cleanup TERM INT EXIT
-  kill "$ROTATE_PID" "$SUBMITTER_PID" "$PID18" "$PID21" 2>/dev/null || true
-  wait || true
+  kill "$ROTATE_PID" 2>/dev/null || true
 }
 trap cleanup TERM INT EXIT
 
-python3 /opt/monstermaze-submitter.py \
-  --root18 "$MM18" \
-  --root21 "$MM21" \
-  --interval "${MM_SUBMIT_INTERVAL:-10}" &
-SUBMITTER_PID=$!
-
-cd "$MM18"
-java -Xms512M -Xmx1536M -jar spigot-1.8.8.jar nogui &
-PID18=$!
-
-cd "$MM21"
-java -Xms512M -Xmx1536M -jar paper-1.21.11.jar nogui &
-PID21=$!
-
-# Keep the Fly Machine alive while both game servers are alive. If either exits,
-# terminate the other process so the machine is restarted cleanly by Fly.
-while kill -0 "$PID18" 2>/dev/null && kill -0 "$PID21" 2>/dev/null; do
-  sleep 5
-done
-
-status=0
-if ! kill -0 "$PID18" 2>/dev/null; then
-  wait "$PID18" || status=$?
-fi
-if ! kill -0 "$PID21" 2>/dev/null; then
-  local_status=0
-  wait "$PID21" || local_status=$?
-  if [ "$status" -eq 0 ]; then status=$local_status; fi
-fi
-exit "$status"
+cd "$ROOT"
+exec java -Xms512M -Xmx1536M -jar "$JAR" nogui
