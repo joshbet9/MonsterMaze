@@ -2,6 +2,8 @@
 # This is a player installation setting and is preserved by the updater.
 mode: Modern
 solo-mode: true
+# Emit every completed Solo run to solo-runs/ for competition submission.
+record-runs: true
 map: eyeofender
 forced-pattern: -1
 mob-overrides: {}
