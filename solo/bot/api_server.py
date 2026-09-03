@@ -16,18 +16,20 @@ INSERT_SUBMISSION = None
 UPSERT_RUN = None
 CREATE_COMPETITION = None
 BOARD_ROWS = None
+COMPETITION_ROWS = None
 REFRESH_BOT = None
 POST_FEED = None
 
 
 def configure(*, db_fn, insert_submission, upsert_run, create_competition,
-              board_rows, refresh_bot=None, post_feed=None):
-    global DB, INSERT_SUBMISSION, UPSERT_RUN, CREATE_COMPETITION, BOARD_ROWS, REFRESH_BOT, POST_FEED
+              board_rows, competition_rows=None, refresh_bot=None, post_feed=None):
+    global DB, INSERT_SUBMISSION, UPSERT_RUN, CREATE_COMPETITION, BOARD_ROWS, COMPETITION_ROWS, REFRESH_BOT, POST_FEED
     DB = db_fn
     INSERT_SUBMISSION = insert_submission
     UPSERT_RUN = upsert_run
     CREATE_COMPETITION = create_competition
     BOARD_ROWS = board_rows
+    COMPETITION_ROWS = competition_rows
     REFRESH_BOT = refresh_bot
     POST_FEED = post_feed
 
@@ -101,6 +103,22 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": True, "platform": platform, "week": comp["week_key"], "number": comp["number"],
                     "mode": comp["mode"], "pattern": int(comp["pattern"]), "kit": comp["kit"],
                     "start": comp["start_ts"], "end": comp["end_ts"], "status": comp["status"],
+                })
+                return
+
+            if len(parts) == 5 and parts[:4] == ["api", "v1", "challenge"] and parts[4] == "leaderboard":
+                platform = parts[3]
+                if platform not in ("1.8", "1.21"):
+                    raise ValueError("unsupported platform")
+                if COMPETITION_ROWS is None:
+                    raise ValueError("competition standings unavailable")
+                comp = CREATE_COMPETITION(platform)
+                rows = COMPETITION_ROWS(comp, 10)
+                send_json(self, 200, {
+                    "ok": True, "platform": platform, "week": comp["week_key"], "number": comp["number"],
+                    "mode": comp["mode"], "pattern": int(comp["pattern"]), "kit": comp["kit"],
+                    "start": comp["start_ts"], "end": comp["end_ts"], "status": comp["status"],
+                    "rows": [{"name": n, "stage": int(s), "timeMs": int(t)} for n, s, t in rows],
                 })
                 return
 
