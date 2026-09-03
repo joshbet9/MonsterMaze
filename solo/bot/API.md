@@ -47,6 +47,28 @@ Returns the bot's current Monday-Sunday Brisbane-time competition combination fo
 }
 ```
 
+### Current weekly challenge standings
+
+`GET /api/v1/challenge/{platform}/leaderboard`
+
+Returns the top 10 standings from the same `competition_rows()` query used by the Discord competition display. This is weekly competition data, not lifetime leaderboard/PB data.
+
+```json
+{
+  "ok": true,
+  "platform": "1.8",
+  "week": "2026-W36",
+  "number": 1,
+  "mode": "original",
+  "pattern": 1,
+  "kit": "Jumper",
+  "status": "current",
+  "rows": [
+    {"name": "Steve", "stage": 7, "timeMs": 482000}
+  ]
+}
+```
+
 ### Submit a completed run
 
 `POST /api/v1/runs`
