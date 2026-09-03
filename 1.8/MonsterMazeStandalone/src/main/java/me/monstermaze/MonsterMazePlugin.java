@@ -26,6 +26,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private MazeMode mode = MazeMode.ORIGINAL;
     private me.monstermaze.stats.LeaderboardManager leaderboards;
     private boolean soloMode;
+    private boolean recordRuns;
     private RunRecorder runRecorder;
     private SoloRunCompletionListener soloRunCompletionListener;
 
@@ -41,6 +42,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         if (stored == null) stored = MazeMode.ORIGINAL;
         this.mode = stored;
         this.soloMode = cfg.getBoolean("solo-mode", false);
+        this.recordRuns = cfg.getBoolean("record-runs", true);
         this.runRecorder = new me.monstermaze.stats.RunRecorder(this);
         for (MazeMode m : MazeMode.values()) {
             try {
@@ -85,5 +87,6 @@ public class MonsterMazePlugin extends JavaPlugin {
     public MapManager getMapManager() { return mapManager; }
     public me.monstermaze.stats.LeaderboardManager getLeaderboards() { return leaderboards; }
     public boolean isSoloMode() { return soloMode; }
+    public boolean isRecordRuns() { return recordRuns; }
     public me.monstermaze.stats.RunRecorder getRunRecorder() { return runRecorder; }
 }
