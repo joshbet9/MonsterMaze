@@ -4,6 +4,8 @@ main: me.monstermaze.MonsterMazePlugin
 api-version: '1.21'
 author: You
 description: Standalone Monster Maze for local testing (ported from Mineplex)
+softdepend:
+  - ProtocolLib
 commands:
   mm:
     description: Monster Maze commands
