@@ -53,7 +53,7 @@ chmod +x /etc/monstermaze-logrotate-cron
 ROTATE_PID=$!
 
 cleanup() {
-  trap - TERM INT EXIT
+  trap cleanup TERM INT EXIT
   kill "$ROTATE_PID" "$SUBMITTER_PID" "$PID18" "$PID21" 2>/dev/null || true
   wait || true
 }
