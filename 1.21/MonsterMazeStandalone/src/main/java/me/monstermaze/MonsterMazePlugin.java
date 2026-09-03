@@ -34,6 +34,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private MazeMode mode = MazeMode.ORIGINAL;
     private me.monstermaze.stats.LeaderboardManager leaderboards;
     private boolean soloMode;
+    private boolean recordRuns;
     private RunRecorder runRecorder;
     private SoloRunCompletionListener soloRunCompletionListener;
     private MonsterEntityListener monsterEntityListener;
@@ -55,6 +56,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         if (stored == null) stored = MazeMode.ORIGINAL;
         this.mode = stored;
         this.soloMode = cfg.getBoolean("solo-mode", false);
+        this.recordRuns = cfg.getBoolean("record-runs", true);
         if (!cfg.contains("forced-pattern")) {
             cfg.set("forced-pattern", -1);
             saveConfig();
@@ -112,36 +114,26 @@ public class MonsterMazePlugin extends JavaPlugin {
         getLogger().info("MonsterMazeStandalone enabled.");
         getLogger().info("Active map: " + mapManager.getActiveMap());
         getLogger().info("Solo mode: " + soloMode);
+        getLogger().info("Run recording: " + recordRuns);
         getLogger().info("Players join into the active map lobby. Admin: /mm start");
     }
 
-    @Override
-    public void onDisable() {
-        if (monsterDisguiseListener != null) monsterDisguiseListener.shutdown();
-        if (monsterEntityListener != null) monsterEntityListener.shutdown();
+    @Override public void onDisable() {
         if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown();
-        if (mapThemeApplier != null) mapThemeApplier.stop();
-        if (mapWorldSafetyListener != null) mapWorldSafetyListener.shutdown();
         if (gameManager != null) gameManager.forceStop();
-        getLogger().info("MonsterMazeStandalone disabled.");
     }
-
     public static MonsterMazePlugin getInstance() { return instance; }
     public GameManager getGameManager() { return gameManager; }
     public MazeMode getMode() { return mode; }
-
     public MazeMode setMode(MazeMode newMode) {
         if (newMode == null) newMode = MazeMode.ORIGINAL;
-        this.mode = newMode;
-        getConfig().set("mode", newMode.id);
-        saveConfig();
-        return newMode;
+        this.mode = newMode; getConfig().set("mode", newMode.id); saveConfig(); return newMode;
     }
-
     public VoidWorldManager getVoidWorlds() { return voidWorlds; }
     public MapManager getMapManager() { return mapManager; }
     public MapThemeApplier getMapThemeApplier() { return mapThemeApplier; }
     public me.monstermaze.stats.LeaderboardManager getLeaderboards() { return leaderboards; }
     public boolean isSoloMode() { return soloMode; }
+    public boolean isRecordRuns() { return recordRuns; }
     public RunRecorder getRunRecorder() { return runRecorder; }
 }
