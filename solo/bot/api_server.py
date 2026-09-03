@@ -34,8 +34,7 @@ def token_ok(handler: BaseHTTPRequestHandler) -> bool:
     expected = os.getenv("MM_API_TOKEN", "").strip()
     if not expected:
         return False
-    actual = handler.headers.get("Authorization", "")
-    return actual == "Bearer " + expected
+    return handler.headers.get("Authorization", "") == "Bearer " + expected
 
 
 def send_json(handler, status: int, payload: dict):
@@ -74,7 +73,8 @@ class Handler(BaseHTTPRequestHandler):
 
         parts = path.strip("/").split("/")
         try:
-            if len(parts) == 4 and parts[0:3] == ["api", "v1", "challenge"]:
+            # /api/v1/challenge/{platform}
+            if len(parts) == 4 and parts[:3] == ["api", "v1", "challenge"]:
                 platform = parts[3]
                 if platform not in ("1.8", "1.21"):
                     raise ValueError("unsupported platform")
@@ -93,36 +93,30 @@ class Handler(BaseHTTPRequestHandler):
                 })
                 return
 
-            if len(parts) == 7 and parts[:3] == ["api", "v1", "player"] and parts[4] == "pb":
-                platform = parts[3]
-                uuid = parts[4]  # retained below for readability if the route evolves
-                raise ValueError("use /api/v1/player/{platform}/{uuid}/pb/{mode}/{pattern}")
-
-            if len(parts) == 7 and parts[:3] == ["api", "v1", "player"] and parts[5] == "pb":
-                platform, uuid, _, mode, pattern_text = parts[3], parts[4], parts[5], parts[6], ""
-                raise ValueError("invalid player route")
-
-            if path.startswith("/api/v1/leaderboard/"):
-                # /api/v1/leaderboard/{platform}/{mode}/{kind}/{pattern}
-                if len(parts) != 8:
-                    raise ValueError("invalid leaderboard route")
-                platform, mode, kind, pattern_text = parts[3], parts[4], parts[5], parts[6]
+            # /api/v1/leaderboard/{platform}/{mode}/overall
+            # /api/v1/leaderboard/{platform}/{mode}/pattern/{pattern}
+            if len(parts) in (6, 7) and parts[:3] == ["api", "v1", "leaderboard"]:
+                platform, mode, kind = parts[3], parts[4], parts[5]
                 if platform not in ("1.8", "1.21"):
                     raise ValueError("unsupported platform")
-                limit = 10
-                if kind == "overall":
-                    rows = BOARD_ROWS("platform=? AND mode=?", [platform, mode], limit)
-                elif kind == "pattern":
-                    pattern = int(pattern_text)
-                    rows = BOARD_ROWS("platform=? AND mode=? AND pattern=?", [platform, mode, pattern], limit)
-                elif kind == "kit":
-                    # Pattern + kit is deliberately left to a later UI endpoint.
-                    raise ValueError("kit leaderboard endpoint not implemented")
+                if kind == "overall" and len(parts) == 6:
+                    rows = BOARD_ROWS("platform=? AND mode=?", [platform, mode], 10)
+                    pattern = None
+                elif kind == "pattern" and len(parts) == 7:
+                    pattern = int(parts[6])
+                    if not 0 <= pattern < 3:
+                        raise ValueError("invalid pattern")
+                    rows = BOARD_ROWS("platform=? AND mode=? AND pattern=?", [platform, mode, pattern], 10)
                 else:
-                    raise ValueError("unsupported leaderboard kind")
-                send_json(self, 200, {"ok": True, "platform": platform, "mode": mode,
-                                      "kind": kind, "pattern": pattern_text,
-                                      "rows": [{"name": n, "kit": k, "stage": s} for n, k, s in rows]})
+                    raise ValueError("unsupported leaderboard route")
+                send_json(self, 200, {
+                    "ok": True,
+                    "platform": platform,
+                    "mode": mode,
+                    "kind": kind,
+                    "pattern": pattern,
+                    "rows": [{"name": n, "kit": k, "stage": s} for n, k, s in rows],
+                })
                 return
         except (ValueError, TypeError, KeyError, IndexError) as exc:
             send_json(self, 400, {"ok": False, "error": str(exc)})
@@ -153,7 +147,8 @@ class Handler(BaseHTTPRequestHandler):
             missing = [key for key in required if key not in run]
             if missing:
                 raise ValueError("missing fields: " + ",".join(missing))
-            if str(run["platform"]) not in ("1.8", "1.21"):
+            platform = str(run["platform"])
+            if platform not in ("1.8", "1.21"):
                 raise ValueError("unsupported platform")
             pattern = int(run["pattern"])
             if not 0 <= pattern < 3:
@@ -162,36 +157,30 @@ class Handler(BaseHTTPRequestHandler):
             if stage < 1 or stage > 10000:
                 raise ValueError("invalid stage")
             kit = str(run["kit"])
-            valid_kits = ("Jumper", "Slowball", "Body Builder", "Repulsor", "Maverick")
-            if kit == "Slowballer":
+            if kit.lower() == "slowballer":
                 kit = "Slowball"
-            if kit not in valid_kits:
+            if kit not in ("Jumper", "Slowball", "Body Builder", "Repulsor", "Maverick"):
                 raise ValueError("invalid kit")
-            mode = str(run["mode"]).lower()[:64]
-            uuid = str(run["uuid"]).lower()
-            name = str(run["name"])[:256]
-            submission_id = str(run["submissionId"])[:256]
-            time_ms = max(0, int(run.get("timeMs", 0)))
-            submitted_at = max(0, int(run.get("submittedAt", 0)))
-            if not submitted_at:
-                import time
-                submitted_at = int(time.time() * 1000)
 
             normalized = {
-                "submission_id": submission_id,
-                "platform": str(run["platform"]),
-                "mode": mode,
+                "submission_id": str(run["submissionId"])[:256],
+                "platform": platform,
+                "mode": str(run["mode"]).lower()[:64],
                 "pattern": pattern,
                 "kit": kit,
-                "uuid": uuid,
-                "name": name,
+                "uuid": str(run["uuid"]).lower()[:64],
+                "name": str(run["name"])[:256],
                 "stage": stage,
-                "time_ms": time_ms,
-                "submitted_at": submitted_at,
+                "time_ms": max(0, int(run.get("timeMs", 0))),
+                "submitted_at": max(0, int(run.get("submittedAt", 0))),
             }
+            if not normalized["submitted_at"]:
+                import time
+                normalized["submitted_at"] = int(time.time() * 1000)
+
             inserted = INSERT_SUBMISSION(normalized)
             improved = UPSERT_RUN(normalized)
-            refresh_bot(normalized["platform"])
+            refresh_bot(platform)
             send_json(self, 200, {"ok": True, "accepted": True,
                                   "newSubmission": bool(inserted), "newLifetimePB": bool(improved)})
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
