@@ -19,3 +19,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# 1.21 Solo generated/local release files
+solo/1.21/solo-dist/
+solo/1.21/solo-1.21-dist/
+solo/1.21/solo-1.21-dist.zip
+solo/1.21/tools/

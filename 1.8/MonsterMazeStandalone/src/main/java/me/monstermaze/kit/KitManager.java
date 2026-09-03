@@ -68,19 +68,21 @@ public class KitManager implements Listener {
     /** Body Builder "Body Rush" secondary: remaining deflects (0/absent = inactive).
      *  Right-click activates a persistent buff; each mob contact deflects the mob away and
      *  decrements one use, granting the player full bump immunity while the counter is > 0. */
-    private final Map<UUID, Integer> bodyRushUses = new HashMap<UUID, Integer>();
+    private final Map<UUID, Long> bodyRushUntil = new HashMap<UUID, Long>();
+    private final Map<UUID, Long> bodyRushHitFeedback = new HashMap<UUID, Long>();
+    private final Map<UUID, Long> cryoFrozenUntil = new HashMap<UUID, Long>();
 
     /** Slowballer "Cryo Blitz" secondary: last use timestamp (ms epoch). Q-drop freezes mobs
      *  within CRYO_RADIUS blocks for CRYO_FREEZE_MS, on a CRYO_COOLDOWN_MS cooldown. */
     private final Map<UUID, Long> cryoCooldown = new HashMap<UUID, Long>();
 
     /** Body Builder secondary config. */
-    private static final int BODY_RUSH_MAX_USES = 5;
+    private static final long BODY_RUSH_DURATION_MS = 10000L;
 
     /** Slowballer secondary config. */
-    private static final int CRYO_COOLDOWN_MS = 60000;
+    private static final int CRYO_COOLDOWN_MS = 30000;
     private static final long CRYO_FREEZE_MS = 3000;
-    private static final int CRYO_RADIUS = 5;
+    private static final int CRYO_RADIUS = 6;
 
     /** Player -> how they view OTHER players (their dye state). Default VISIBLE. */
     private final Map<UUID, VisMode> visMode = new HashMap<UUID, VisMode>();
@@ -122,6 +124,7 @@ public class KitManager implements Listener {
                 if (game.getState() != GameState.LIVE) return;
                 jumpEvent();
                 repulseCleanup();
+                tickAbilityBars();
             }
         }, 1L, 1L);
     }
@@ -164,7 +167,9 @@ public class KitManager implements Listener {
         selected.clear();
         jumpRecharge.clear();
         snowballConstructor.clear();
-        bodyRushUses.clear();
+        bodyRushUntil.clear();
+        bodyRushHitFeedback.clear();
+        cryoFrozenUntil.clear();
         cryoCooldown.clear();
         for (Entity e : launched.keySet()) {
             if (e != null && e.isValid()) e.remove();
@@ -181,7 +186,9 @@ public class KitManager implements Listener {
         player.setAllowFlight(false);
         player.setFlying(false);
         // Fresh kit = fresh secondary-ability state (Body Rush / Cryo Blitz stand down).
-        bodyRushUses.remove(player.getUniqueId());
+        bodyRushUntil.remove(player.getUniqueId());
+        bodyRushHitFeedback.remove(player.getUniqueId());
+        cryoFrozenUntil.remove(player.getUniqueId());
         cryoCooldown.remove(player.getUniqueId());
 
         // Default visibility: visible + off every observer's ghost team. Reset any stored view mode
@@ -212,7 +219,7 @@ public class KitManager implements Listener {
             case BODY_BUILDER:
                 // compass only (plus the Body Rush secondary item in QOL modes)
                 if (game.qolEnabled()) {
-                    player.getInventory().setItem(0, bodyRushItem(BODY_RUSH_MAX_USES));
+                    player.getInventory().setItem(0, bodyRushItem(2));
                 }
                 break;
             case REPULSOR:
@@ -234,7 +241,9 @@ public class KitManager implements Listener {
         if (player.getHealth() > 20.0) player.setHealth(20.0);
         player.removePotionEffect(PotionEffectType.JUMP);
         player.removePotionEffect(PotionEffectType.INVISIBILITY);
-        bodyRushUses.remove(player.getUniqueId());
+        bodyRushUntil.remove(player.getUniqueId());
+        bodyRushHitFeedback.remove(player.getUniqueId());
+        cryoFrozenUntil.remove(player.getUniqueId());
         cryoCooldown.remove(player.getUniqueId());
         visMode.remove(player.getUniqueId());
         lastJumpBar.remove(player.getUniqueId());
@@ -622,10 +631,8 @@ public class KitManager implements Listener {
     }
 
     // -------------------- Body Builder secondary: Body Rush --------------------
-    // QOL-mode only. Slot 0 apple item (1 per game). Right-click activates a persistent buff:
-    // while active, every mob CONTACT deflects the mob away (no knockback, no damage, full
-    // immunity) and consumes one of BODY_RUSH_MAX_USES. When the counter hits 0 the buff ends
-    // and the item disappears. Original mode grants no item and the buff never activates.
+    // QOL-mode only. Two apples = two activations; each activation consumes one apple.
+    // Body Rush lasts 10 seconds and each real mob contact removes exactly 2 seconds.
 
     @EventHandler
     public void onBodyRush(PlayerInteractEvent event) {
@@ -640,59 +647,86 @@ public class KitManager implements Listener {
 
         ItemStack hand = player.getItemInHand();
         if (hand == null || hand.getType() != Material.APPLE) return;
-
-        // Already active — nothing to do (the buff holds until the counter is exhausted).
-        Integer uses = bodyRushUses.get(player.getUniqueId());
-        if (uses != null && uses > 0) {
-            player.sendMessage(ChatColor.RED + "Body Rush is already active (" + uses + " deflects left).");
+        long now = System.currentTimeMillis();
+        Long until = bodyRushUntil.get(player.getUniqueId());
+        if (until != null && until.longValue() > now) {
+            event.setCancelled(true);
             return;
         }
-
         event.setCancelled(true);
-        bodyRushUses.put(player.getUniqueId(), BODY_RUSH_MAX_USES);
-        player.getInventory().setItem(0, bodyRushItem(BODY_RUSH_MAX_USES));
-        player.playSound(player.getLocation(), Sound.SUCCESSFUL_HIT, 1.0f, 1.2f);
-        player.sendMessage(ChatColor.RED + "" + ChatColor.BOLD + "Body Rush!"
-                + ChatColor.WHITE + " Monsters contacting you are deflected ("
-                + BODY_RUSH_MAX_USES + " uses).");
+        if (hand.getAmount() <= 1) player.setItemInHand(null);
+        else { hand.setAmount(hand.getAmount()-1); player.setItemInHand(hand); }
+        bodyRushUntil.put(player.getUniqueId(), now + BODY_RUSH_DURATION_MS);
+        bodyRushHitFeedback.remove(player.getUniqueId());
+        bodyRushVisual(player);
+        TextUtil.actionBar(player, ChatColor.RED + ChatColor.BOLD.toString() + "BODY RUSH 10.0s");
         Bukkit.getPluginManager().callEvent(new AbilityUseEvent(player));
     }
 
-    /** True while a Body Builder's Body Rush buff is active in a QOL mode. */
     public boolean isBodyRushActive(Player player) {
         if (!game.qolEnabled()) return false;
-        Integer uses = bodyRushUses.get(player.getUniqueId());
-        return uses != null && uses > 0;
+        Long until=bodyRushUntil.get(player.getUniqueId());
+        if (until==null) return false;
+        if (until.longValue()<=System.currentTimeMillis()) { bodyRushUntil.remove(player.getUniqueId()); return false; }
+        return true;
     }
 
-    /** Consume one Body Rush deflect. Returns the new remaining count (0 = buff over). */
+    /** A real mob contact removes exactly 2 seconds from Body Rush. */
     public int consumeBodyRushUse(Player player) {
-        Integer uses = bodyRushUses.get(player.getUniqueId());
-        int remaining = (uses == null ? 0 : uses) - 1;
-        if (remaining > 0) {
-            bodyRushUses.put(player.getUniqueId(), remaining);
-            player.getInventory().setItem(0, bodyRushItem(remaining));
-            player.playSound(player.getLocation(), Sound.ITEM_PICKUP, 1.0f, 1.0f);
-        } else {
-            bodyRushUses.remove(player.getUniqueId());
-            player.getInventory().setItem(0, null); // item disappears on exhaustion
-            player.sendMessage(ChatColor.RED + "Body Rush used up — normal bumps resume.");
-        }
-        player.updateInventory();
-        return remaining;
+        UUID id=player.getUniqueId();
+        long now=System.currentTimeMillis();
+        Long until=bodyRushUntil.get(id);
+        if (until==null || until.longValue()<=now) { bodyRushUntil.remove(id); return 0; }
+        long remaining=until.longValue()-2000L;
+        bodyRushHitFeedback.put(id,now+750L);
+        bodyRushImpactVisual(player);
+        if (remaining<=now) { bodyRushUntil.remove(id); return 0; }
+        bodyRushUntil.put(id,remaining);
+        return (int)Math.max(0L,remaining-now);
     }
 
-    private static ItemStack bodyRushItem(int uses) {
-        ItemStack item = new ItemStack(Material.APPLE, 1);
-        ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(ChatColor.RED + "" + ChatColor.BOLD + "Body Rush");
-        meta.setLore(java.util.Arrays.asList(
-                ChatColor.GRAY + "Right Click to activate.",
-                ChatColor.GRAY + "Deflects contacting monsters and",
-                ChatColor.GRAY + "grants bump immunity while active.",
-                ChatColor.RED + "Uses remaining: " + uses));
+    private static ItemStack bodyRushItem(int apples) {
+        ItemStack item=new ItemStack(Material.APPLE,Math.max(1,apples));
+        ItemMeta meta=item.getItemMeta();
+        meta.setDisplayName(ChatColor.RED+""+ChatColor.BOLD+"Body Rush");
+        meta.setLore(java.util.Arrays.asList(ChatColor.GRAY+"Right Click to activate.",ChatColor.GRAY+"10 seconds of mob-contact immunity.",ChatColor.GRAY+"Each contact removes 2 seconds.",ChatColor.RED+"Activations: "+apples));
         item.setItemMeta(meta);
         return item;
+    }
+
+    private void bodyRushVisual(Player player) { player.playSound(player.getLocation(), Sound.SUCCESSFUL_HIT, 1.0f, 1.25f); player.getWorld().playEffect(player.getLocation(), Effect.MOBSPAWNER_FLAMES, 0); }
+    private void bodyRushImpactVisual(Player player) { player.playSound(player.getLocation(), Sound.HURT_FLESH, 1.0f, 1.35f); player.getWorld().playEffect(player.getLocation(), Effect.MOBSPAWNER_FLAMES, 0); }
+
+    private void tickAbilityBars() {
+        if (game.getState()!=GameState.LIVE) return;
+        long now=System.currentTimeMillis();
+        for(Player p:game.getAlivePlayers()) {
+            UUID id=p.getUniqueId();
+            Long body=bodyRushUntil.get(id);
+            if(body!=null && body.longValue()>now) {
+                double secs=(body.longValue()-now)/1000.0;
+                Long fb=bodyRushHitFeedback.get(id);
+                String suffix=fb!=null && fb.longValue()>now ? "  "+ChatColor.YELLOW+"-2.0s" : "";
+                TextUtil.actionBar(p,ChatColor.RED+ChatColor.BOLD.toString()+"BODY RUSH "+String.format(java.util.Locale.US,"%.1fs",secs)+suffix);
+                continue;
+            }
+            if(body!=null) bodyRushUntil.remove(id);
+            bodyRushHitFeedback.remove(id);
+            if(getKit(p)!=KitType.SLOWBALL) continue;
+            Long frozen=cryoFrozenUntil.get(id);
+            if(frozen!=null && frozen.longValue()>now) {
+                TextUtil.actionBar(p,ChatColor.AQUA+ChatColor.BOLD.toString()+"FROZEN "+String.format(java.util.Locale.US,"%.1fs",(frozen.longValue()-now)/1000.0));
+                continue;
+            }
+            cryoFrozenUntil.remove(id);
+            Long last=cryoCooldown.get(id);
+            if(last==null) TextUtil.actionBar(p,ChatColor.AQUA+ChatColor.BOLD.toString()+"CRYO BLITZ READY");
+            else {
+                long left=(last.longValue()+CRYO_COOLDOWN_MS)-now;
+                if(left<=0) { cryoCooldown.remove(id); TextUtil.actionBar(p,ChatColor.AQUA+ChatColor.BOLD.toString()+"CRYO BLITZ READY"); }
+                else TextUtil.actionBar(p,ChatColor.AQUA+ChatColor.BOLD.toString()+"CRYO BLITZ "+String.format(java.util.Locale.US,"%.1fs",left/1000.0));
+            }
+        }
     }
 
     // -------------------- Slowballer secondary: Cryo Blitz --------------------
@@ -735,12 +769,16 @@ public class KitManager implements Listener {
         player.playSound(player.getLocation(), Sound.DIG_SNOW, 1.0f, 0.5f);
         TextUtil.title(player, "", ChatColor.AQUA + "" + ChatColor.BOLD + "Cryo Blitz!"
                         + ChatColor.WHITE + " " + frozenCount + " mob(s) frozen", 5, 30, 5);
+        if (frozenCount > 0) cryoFrozenUntil.put(player.getUniqueId(), now + CRYO_FREEZE_MS);
+        cryoVisual(player);
         // NOTE: do not rewrite slot 0 here. The dropped item is restored by the cancelled drop,
         // and swapping the slot's ItemStack before the restore could make 1.8 place the restored
         // item in the next free slot (an extra snowball). The PerkConstructor tick refreshes the
         // cooldown lore within 2s.
         Bukkit.getPluginManager().callEvent(new AbilityUseEvent(player));
     }
+
+    private void cryoVisual(Player player) { player.playSound(player.getLocation(), Sound.CLICK, 1.0f, .7f); player.getWorld().playEffect(player.getLocation(), Effect.SNOWBALL_BREAK, 0); }
 
     private ItemStack slowballItem(UUID playerId, int amount) {
         ItemStack item = new ItemStack(Material.SNOW_BALL, Math.max(1, amount));
@@ -914,7 +952,7 @@ public class KitManager implements Listener {
         UUID id = event.getPlayer().getUniqueId();
         jumpRecharge.remove(id);
         snowballConstructor.remove(id);
-        bodyRushUses.remove(id);
+        bodyRushUntil.remove(id);
         cryoCooldown.remove(id);
         visMode.remove(id);
         scoreboard.setGhost(id, false);
