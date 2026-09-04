@@ -239,7 +239,7 @@ public class LeaderboardManager {
 
     private List<Entry> localPatternLeaderboard(MazeMode mode, int pattern, int limit) {
         reload();
-        Map<Integer, List<Map.Entry<UUID, String>>> byStage = new TreeMap<Integer, List<Map.Entry<UUID, String>>(Collections.reverseOrder());
+        Map<Integer, List<Map.Entry<UUID, String>>> byStage = new TreeMap<Integer, List<Map.Entry<UUID, String>>>(Collections.reverseOrder());
         ConfigurationSection m = data.getConfigurationSection(modeKey(mode));
         if (m != null) {
             ConfigurationSection p = m.getConfigurationSection(patternKey(pattern));
