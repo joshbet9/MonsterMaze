@@ -9,6 +9,11 @@ class CompetitiveTests(unittest.TestCase):
     def setUp(self):
         self.db = sqlite3.connect(":memory:")
         competitive.ensure_schema(self.db)
+        # record_match recalculates weekly competition points. The production
+        # schema supplies these tables; keep the isolated unit-test DB
+        # compatible with the read-only queries used by calculate_weekly().
+        self.db.execute("CREATE TABLE competitions(platform TEXT,mode TEXT,pattern INTEGER,kit TEXT,start_ts TEXT,end_ts TEXT)")
+        self.db.execute("CREATE TABLE submissions(uuid TEXT,platform TEXT,mode TEXT,pattern INTEGER,kit TEXT,submitted_at INTEGER,stage INTEGER)")
         self.season = competitive.ensure_current_season(
             self.db, datetime(2026, 8, 31, 12, tzinfo=timezone.utc)
         )
