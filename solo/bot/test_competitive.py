@@ -1,6 +1,6 @@
 import sqlite3
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import competitive
 
@@ -88,6 +88,55 @@ class CompetitiveTests(unittest.TestCase):
         after = self.db.execute("SELECT mmr FROM permanent_ratings WHERE uuid='b'").fetchone()[0]
         self.assertAlmostEqual(before, 800.0, places=6)
         self.assertAlmostEqual(after, 400.0, places=6)
+
+    def test_season_rollover_archives_old_and_creates_new(self):
+        self.add_players(("a", "Alice"), ("b", "Bob"))
+        self.db.execute(
+            "UPDATE season_players SET elo=1200,weekly_points=100,tournament_points=50 WHERE season_id=? AND uuid='a'",
+            (self.sid,),
+        )
+        self.db.execute(
+            "UPDATE season_players SET elo=1000,weekly_points=50,tournament_points=25 WHERE season_id=? AND uuid='b'",
+            (self.sid,),
+        )
+        self.db.commit()
+        rollover_time = datetime(2026, 12, 1, 12, tzinfo=timezone.utc)
+        new_season = competitive.ensure_current_season(self.db, rollover_time)
+        self.assertEqual(int(new_season[1]), int(self.season[1]) + 1)
+        old = self.db.execute("SELECT status,finalized_at FROM seasons WHERE id=?", (self.sid,)).fetchone()
+        self.assertEqual(old[0], "archived")
+        self.assertIsNotNone(old[1])
+        current = self.db.execute("SELECT status FROM seasons WHERE id=?", (int(new_season[0]),)).fetchone()[0]
+        self.assertEqual(current, "current")
+
+        historical = competitive.season_summary(self.db, self.sid)
+        self.assertEqual(historical["status"], "archived")
+        self.assertEqual(historical["number"], int(self.season[1]))
+        self.assertEqual(historical["players"][0]["uuid"], "a")
+        self.assertGreater(historical["players"][0]["mmcl"], historical["players"][1]["mmcl"])
+
+        mmcl = competitive.season_leaderboard(self.db, self.sid, "mmcl", 10)
+        self.assertEqual(mmcl[0]["rank"], 1)
+        self.assertEqual(mmcl[0]["uuid"], "a")
+
+        history = competitive.player_season_history(self.db, "A")
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["season"], int(self.season[1]))
+        self.assertEqual(history[0]["status"], "archived")
+
+    def test_season_summary_does_not_recalculate_archived_values(self):
+        self.add_players(("a", "Alice"))
+        self.db.execute(
+            "UPDATE season_players SET elo=1500,weekly_points=200,tournament_points=100 WHERE season_id=? AND uuid='a'",
+            (self.sid,),
+        )
+        self.db.commit()
+        competitive.finalize_season(self.db, self.sid)
+        archived_mmcl = self.db.execute(
+            "SELECT mmcl FROM season_players WHERE season_id=? AND uuid='a'", (self.sid,)
+        ).fetchone()[0]
+        summary = competitive.season_summary(self.db, self.sid)
+        self.assertEqual(summary["players"][0]["mmcl"], round(archived_mmcl, 3))
 
 
 if __name__ == "__main__":
