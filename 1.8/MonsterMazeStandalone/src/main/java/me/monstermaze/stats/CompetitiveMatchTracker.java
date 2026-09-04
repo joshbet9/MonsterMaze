@@ -96,6 +96,13 @@ public final class CompetitiveMatchTracker implements Listener {
         if (!active || plugin.getGameManager() == null) return;
 
         GameState state = plugin.getGameManager().getState();
+        // A force-stop clears the GameManager state/alive set. Never turn that into
+        // a fake completed competitive match.
+        if (state == GameState.IDLE || state == GameState.STARTING) {
+            abort();
+            return;
+        }
+
         Set<UUID> aliveNow = new HashSet<UUID>();
         for (Player p : plugin.getGameManager().getAlivePlayers()) {
             aliveNow.add(p.getUniqueId());
@@ -105,11 +112,7 @@ public final class CompetitiveMatchTracker implements Listener {
             if (!aliveNow.contains(id)) captureIfParticipant(id);
         }
 
-        if (eliminationTicks.size() >= participants.size() - 1) {
-            finish();
-        } else if (state == GameState.IDLE || state == GameState.STARTING) {
-            abort();
-        }
+        if (eliminationTicks.size() >= participants.size() - 1) finish();
     }
 
     private void finish() {
