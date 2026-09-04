@@ -5,6 +5,7 @@ import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+import tournament
 
 TZ=ZoneInfo("Australia/Brisbane")
 K_FACTOR=32.0
@@ -28,6 +29,7 @@ def ensure_schema(c:sqlite3.Connection)->None:
         id INTEGER PRIMARY KEY AUTOINCREMENT,season_id INTEGER NOT NULL,number INTEGER NOT NULL,name TEXT NOT NULL,registration_start INTEGER,registration_end INTEGER,start_ts INTEGER,status TEXT NOT NULL,bracket_size INTEGER,UNIQUE(season_id,number))""")
     c.execute("""CREATE TABLE IF NOT EXISTS tournament_players(
         tournament_id INTEGER NOT NULL,uuid TEXT NOT NULL,name TEXT,seed INTEGER,registered_at INTEGER NOT NULL,placement INTEGER,points INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(tournament_id,uuid))""")
+    tournament.ensure_schema(c)
     c.commit()
 
 
@@ -61,7 +63,11 @@ def record_match(c,match,players):
     ensure_schema(c)
     if c.execute("SELECT 1 FROM matches WHERE id=?",(match["id"],)).fetchone():return False
     sid=int(match.get("season_id") or ensure_current_season(c)[0])
-    c.execute("INSERT INTO matches VALUES(?,?,?,?,?,?,?,?,?,?)",(match["id"],match["platform"],match["mode"],int(match["pattern"]),match["kit"],int(match["started_at"]),int(match["ended_at"]),sid,match.get("tournament_id"),int(time.time()*1000)))
+    tournament_id=match.get("tournament_id")
+    if tournament_id is not None:
+        if len(players)!=2 or sorted(int(p["placement"]) for p in players)!=[1,2]:raise ValueError("tournament matches must be completed 1v1")
+        if match.get("tournament_match_id") is None or match.get("tournament_game_number") is None:raise ValueError("tournament game metadata is incomplete")
+    c.execute("INSERT INTO matches VALUES(?,?,?,?,?,?,?,?,?,?)",(match["id"],match["platform"],match["mode"],int(match["pattern"]),match["kit"],int(match["started_at"]),int(match["ended_at"]),sid,tournament_id,int(time.time()*1000)))
     for p in players:ensure_player(c,sid,p["uuid"],p.get("name"))
     ratings={p["uuid"].lower():float(c.execute("SELECT elo FROM season_players WHERE season_id=? AND uuid=?",(sid,p["uuid"].lower())).fetchone()[0]) for p in players}
     updates={}
@@ -70,13 +76,10 @@ def record_match(c,match,players):
         updates[u]=ratings[u]+K_FACTOR*(actual-exp)
         c.execute("INSERT INTO match_players VALUES(?,?,?,?,?,?)",(match["id"],u,p.get("name"),int(p["placement"]),int(p["elimination_tick"]),actual))
     for u,r in updates.items():c.execute("UPDATE season_players SET elo=? WHERE season_id=? AND uuid=?",(r,sid,u))
-    if match.get("tournament_id") is not None:_sync_tournament_game(c,int(match["tournament_id"]),players)
+    if tournament_id is not None:
+        winner=next(p["uuid"] for p in players if int(p["placement"])==1)
+        tournament.record_game(c,int(match["tournament_match_id"]),int(match["tournament_game_number"]),match["platform"],match["mode"],int(match["pattern"]),match["kit"],str(match["id"]),winner)
     recalculate_components(c,sid); calculate_mmr(c); c.commit(); return True
-
-
-def _sync_tournament_game(c,tournament_id,players):
-    now=int(time.time()*1000)
-    for p in players:c.execute("INSERT OR IGNORE INTO tournament_players(tournament_id,uuid,name,registered_at) VALUES(?,?,?,?)",(tournament_id,p["uuid"].lower(),p.get("name"),now))
 
 
 def calculate_weekly(c,sid):
