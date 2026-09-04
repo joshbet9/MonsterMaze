@@ -69,6 +69,8 @@ This is the authoritative multiplayer result endpoint. A server sends one immuta
 
 Placement is authoritative server game state. Equal elimination ticks represent a tie; no HTTP arrival order or client timestamp is used to break ties. The backend calculates seasonal ELO from the placements using pairwise ELO with K=32.
 
+If a completed 1v1 result exactly matches an active `ready`/`active` tournament bracket match for the current season, the backend automatically associates it with that tournament match. The next BO3 game number is derived from the current series wins, so the existing server match client does not need tournament-specific payload fields.
+
 ### Current season
 
 `GET /api/v1/season/current`
@@ -106,7 +108,7 @@ Each component is normalized against the current season leader for that componen
 
 `GET /api/v1/tournament/current`
 
-Returns the current non-completed tournament for the current season, including registrations and generated bracket matches.
+Returns the current non-completed tournament for the current season, including registrations and generated bracket matches. It returns `tournament: null` when there is no current tournament.
 
 `GET /api/v1/tournament/{id}`
 
@@ -114,9 +116,13 @@ Returns a specific tournament and its bracket.
 
 `GET /api/v1/tournament/player/{uuid}`
 
-Returns the player's currently playable tournament match, if one exists.
+Returns the player's currently playable tournament match, or `match: null` if the player has no active match. It also returns `tournamentId: null` when there is no current tournament.
 
-Tournament brackets are dynamically sized to the registrations using the next power-of-two bracket size, with byes. Tournament matches are best-of-3; each individual game remains a separate multiplayer ELO event.
+`GET /api/v1/tournament/leaderboard`
+
+Returns the current season's accumulated tournament points leaderboard.
+
+Tournament brackets are dynamically sized to the registrations using the next power-of-two bracket size, with byes. Tournament matches are best-of-3; each individual game remains a separate multiplayer ELO event. Tournament game numbers must be recorded sequentially, and a tournament result must be a 1v1 placement of first versus second.
 
 ## Solo implementation submissions
 
