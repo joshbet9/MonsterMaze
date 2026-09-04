@@ -59,14 +59,33 @@ def expected(a,b):return 1.0/(1.0+10.0**((b-a)/400.0))
 def _actual(a,b):return 1.0 if a<b else 0.0 if a>b else 0.5
 
 
+def _find_tournament_assignment(c,sid,players):
+    if len(players)!=2:return None
+    ids=sorted([players[0]["uuid"].lower(),players[1]["uuid"].lower()])
+    row=c.execute("""SELECT tm.id,tm.tournament_id,tm.player1_wins,tm.player2_wins
+        FROM tournament_matches tm JOIN tournaments t ON t.id=tm.tournament_id
+        WHERE t.season_id=? AND t.status='bracket' AND tm.status IN ('ready','active')
+          AND ((lower(tm.player1_uuid)=? AND lower(tm.player2_uuid)=?) OR (lower(tm.player1_uuid)=? AND lower(tm.player2_uuid)=?))
+        ORDER BY t.number DESC,tm.round_number ASC,tm.slot ASC LIMIT 1""",(sid,ids[0],ids[1],ids[1],ids[0])).fetchone()
+    if not row:return None
+    return int(row[1]),int(row[0]),int(row[2])+int(row[3])+1
+
+
 def record_match(c,match,players):
     ensure_schema(c)
     if c.execute("SELECT 1 FROM matches WHERE id=?",(match["id"],)).fetchone():return False
     sid=int(match.get("season_id") or ensure_current_season(c)[0])
+    assignment=None
     tournament_id=match.get("tournament_id")
+    tournament_match_id=match.get("tournament_match_id")
+    tournament_game_number=match.get("tournament_game_number")
+    if tournament_id is None and tournament_match_id is None and len(players)==2:
+        assignment=_find_tournament_assignment(c,sid,players)
+        if assignment:
+            tournament_id,tournament_match_id,tournament_game_number=assignment
     if tournament_id is not None:
         if len(players)!=2 or sorted(int(p["placement"]) for p in players)!=[1,2]:raise ValueError("tournament matches must be completed 1v1")
-        if match.get("tournament_match_id") is None or match.get("tournament_game_number") is None:raise ValueError("tournament game metadata is incomplete")
+        if tournament_match_id is None or tournament_game_number is None:raise ValueError("tournament game metadata is incomplete")
     c.execute("INSERT INTO matches VALUES(?,?,?,?,?,?,?,?,?,?)",(match["id"],match["platform"],match["mode"],int(match["pattern"]),match["kit"],int(match["started_at"]),int(match["ended_at"]),sid,tournament_id,int(time.time()*1000)))
     for p in players:ensure_player(c,sid,p["uuid"],p.get("name"))
     ratings={p["uuid"].lower():float(c.execute("SELECT elo FROM season_players WHERE season_id=? AND uuid=?",(sid,p["uuid"].lower())).fetchone()[0]) for p in players}
@@ -78,7 +97,7 @@ def record_match(c,match,players):
     for u,r in updates.items():c.execute("UPDATE season_players SET elo=? WHERE season_id=? AND uuid=?",(r,sid,u))
     if tournament_id is not None:
         winner=next(p["uuid"] for p in players if int(p["placement"])==1)
-        tournament.record_game(c,int(match["tournament_match_id"]),int(match["tournament_game_number"]),match["platform"],match["mode"],int(match["pattern"]),match["kit"],str(match["id"]),winner)
+        tournament.record_game(c,int(tournament_match_id),int(tournament_game_number),match["platform"],match["mode"],int(match["pattern"]),match["kit"],str(match["id"]),winner)
     recalculate_components(c,sid); calculate_mmr(c); c.commit(); return True
 
 
