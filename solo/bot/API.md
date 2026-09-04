@@ -79,6 +79,38 @@ On the hosted Minecraft server, the tournament coordinator polls the backend and
 
 Returns the current 13-week season and all players with their raw seasonal ELO, weekly points, tournament points, normalized components, and MMCL score.
 
+### Historical seasons
+
+`GET /api/v1/seasons`
+
+Returns every season, newest first, including its ID, season number, dates, status, and finalization timestamp.
+
+`GET /api/v1/seasons/{id}`
+
+Returns the complete stored historical snapshot for a season. Archived season values are read from the stored `season_players` rows and are not recalculated when this endpoint is requested.
+
+`GET /api/v1/seasons/{id}/leaderboard`
+
+Returns the historical MMCL leaderboard for that season (top 25).
+
+`GET /api/v1/seasons/{id}/leaderboard/{kind}`
+
+Returns a historical leaderboard for `mmcl`, `elo`, `weekly`, or `tournament` (top 25). These values are the final stored seasonal values for archived seasons.
+
+`GET /api/v1/seasons/{id}/tournaments`
+
+Returns all tournaments belonging to that season, including registration/start timestamps, status, bracket size, and the top four placements where available.
+
+`GET /api/v1/seasons/{id}/player/{uuid}`
+
+Returns that player's stored stats for the specified season, or `player: null` if they did not participate in it.
+
+`GET /api/v1/player/{uuid}/seasons`
+
+Returns up to 100 seasons of that player's competitive history, newest first. This includes raw ELO/Weekly/Tournament values, all normalized components, MMCL, season status, and finalization time.
+
+Season rollover is automatic when the 13-week current season reaches its end. The old season is marked `archived`, its final values remain in `season_players`, and a new current season is created. MMR remains permanent/all-time and is not reset by season rollover.
+
 ### Seasonal leaderboards
 
 - `GET /api/v1/mmcl/leaderboard`
@@ -151,6 +183,7 @@ Recommended structure:
 - `#tournament-registration` — registration instructions/automation
 - `#tournament-chat` — tournament discussion
 - `#tournament-results` — completed tournament results
+- `#season-archive` — pinned final season summaries and historical champions
 - `#server-status` — hosted server status
 - `#matchmaking` — tournament/game matchmaking notifications
 

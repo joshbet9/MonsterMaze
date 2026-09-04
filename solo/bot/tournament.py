@@ -75,8 +75,7 @@ def build_bracket(c,tournament_id):
         elif p1 or p2:
             winner=p1 or p2;c.execute("UPDATE tournament_matches SET status='bye',winner_uuid=?,completed_at=? WHERE id=?",(winner,now,mid));_advance(c,mid,winner)
     if len(players)>=4:
-        cur=c.execute("INSERT INTO tournament_matches(tournament_id,round_number,slot,best_of,status,created_at) VALUES(?,?,?,?, 'pending',?)",(tournament_id,rounds+1,1,3,now));third=int(cur.lastrowid)
-        c.execute("UPDATE tournament_matches SET next_match_id=?,next_slot=? WHERE id=?",(third,1,ids[(rounds-1,1)]));c.execute("UPDATE tournament_matches SET next_match_id=?,next_slot=? WHERE id=?",(third,2,ids[(rounds-1,2)]))
+        c.execute("INSERT INTO tournament_matches(tournament_id,round_number,slot,best_of,status,created_at) VALUES(?,?,?,?, 'pending',?)",(tournament_id,rounds+1,1,3,now))
     c.execute("UPDATE tournaments SET status='bracket',bracket_size=? WHERE id=?",(size,tournament_id));c.commit();return size
 
 
@@ -108,7 +107,7 @@ def record_game(c,tournament_match_id,game_number,platform,mode,pattern,kit,matc
         if player_count>=4 and int(row[6])==final_round-1 and final_round>=2:
             third=c.execute("SELECT id FROM tournament_matches WHERE tournament_id=? AND round_number=?",(row[0],final_round+1)).fetchone()
             if third:
-                c.execute("UPDATE tournament_matches SET player1_uuid=? WHERE id=? AND player1_uuid IS NULL AND player2_uuid IS NULL",(loser,third[0]));c.execute("UPDATE tournament_matches SET player2_uuid=? WHERE id=? AND player1_uuid IS NOT NULL AND player2_uuid IS NULL",(loser,third[0]));_activate_if_ready(c,int(third[0]))
+                c.execute("UPDATE tournament_matches SET player1_uuid=CASE WHEN player1_uuid IS NULL THEN ? ELSE player1_uuid END, player2_uuid=CASE WHEN player1_uuid IS NOT NULL AND player2_uuid IS NULL THEN ? ELSE player2_uuid END WHERE id=?",(loser,loser,third[0]));_activate_if_ready(c,int(third[0]))
         c.execute("UPDATE tournament_players SET placement=0 WHERE tournament_id=? AND uuid=? AND placement IS NULL",(row[0],loser))
     c.commit()
 

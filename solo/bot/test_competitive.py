@@ -9,6 +9,12 @@ class CompetitiveTests(unittest.TestCase):
     def setUp(self):
         self.db = sqlite3.connect(":memory:")
         competitive.ensure_schema(self.db)
+        # record_match recalculates weekly competition points and MMR. The
+        # production schema supplies these tables; keep the isolated unit-test
+        # DB compatible with the read-only queries used by those calculations.
+        self.db.execute("CREATE TABLE competitions(platform TEXT,mode TEXT,pattern INTEGER,kit TEXT,start_ts TEXT,end_ts TEXT)")
+        self.db.execute("CREATE TABLE submissions(uuid TEXT,platform TEXT,mode TEXT,pattern INTEGER,kit TEXT,submitted_at INTEGER,stage INTEGER)")
+        self.db.execute("CREATE TABLE runs(platform TEXT,mode TEXT,pattern INTEGER,kit TEXT,uuid TEXT,name TEXT,stage INTEGER,time_ms INTEGER,PRIMARY KEY(platform,mode,pattern,kit,uuid))")
         self.season = competitive.ensure_current_season(
             self.db, datetime(2026, 8, 31, 12, tzinfo=timezone.utc)
         )
@@ -76,7 +82,6 @@ class CompetitiveTests(unittest.TestCase):
         self.assertAlmostEqual(rows["b"], rows["c"], places=6)
 
     def test_mmr_recalculates_against_current_kit_best(self):
-        self.db.execute("CREATE TABLE runs(platform TEXT,mode TEXT,pattern INTEGER,kit TEXT,uuid TEXT,name TEXT,stage INTEGER,time_ms INTEGER,PRIMARY KEY(platform,mode,pattern,kit,uuid))")
         self.db.execute("INSERT INTO runs VALUES('1.8','modern',0,'Jumper','a','A',10,1000)")
         self.db.execute("INSERT INTO runs VALUES('1.8','modern',0,'Jumper','b','B',8,1000)")
         self.db.commit()
@@ -137,6 +142,38 @@ class CompetitiveTests(unittest.TestCase):
         ).fetchone()[0]
         summary = competitive.season_summary(self.db, self.sid)
         self.assertEqual(summary["players"][0]["mmcl"], round(archived_mmcl, 3))
+
+    def test_incomplete_tournament_closes_on_season_rollover(self):
+        tournament = __import__("tournament")
+        tid = tournament.create_tournament(
+            self.db,
+            self.sid,
+            1,
+            "Rollover Test",
+            None,
+            None,
+            None,
+        )
+        self.db.execute("UPDATE tournaments SET status='active', bracket_size=4 WHERE id=?", (tid,))
+        self.db.commit()
+
+        new_season = competitive.ensure_current_season(
+            self.db, datetime(2026, 12, 1, 12, tzinfo=timezone.utc)
+        )
+
+        old_status = self.db.execute(
+            "SELECT status FROM tournaments WHERE id=?", (tid,)
+        ).fetchone()[0]
+        self.assertEqual(old_status, "complete")
+        self.assertEqual(int(new_season[1]), 2)
+        self.assertEqual(
+            self.db.execute("SELECT status FROM seasons WHERE id=?", (self.sid,)).fetchone()[0],
+            "archived",
+        )
+        self.assertEqual(
+            self.db.execute("SELECT COUNT(*) FROM tournament_players WHERE tournament_id=? AND placement IS NOT NULL", (tid,)).fetchone()[0],
+            0,
+        )
 
 
 if __name__ == "__main__":

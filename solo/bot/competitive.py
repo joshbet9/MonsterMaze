@@ -157,6 +157,12 @@ def award_tournament_points(c,tournament_id,placements):
 
 
 def finalize_season(c,sid):
+    # An archived season must never retain a playable tournament. We close any
+    # incomplete tournament as complete-without-placements so existing API and
+    # scheduler queries (which already treat 'complete' as terminal) cannot
+    # accidentally surface or resume it in the new season. No tournament
+    # points are awarded because there are no placements.
+    c.execute("UPDATE tournaments SET status='complete' WHERE season_id=? AND status!='complete'",(int(sid),))
     recalculate_components(c,sid); c.execute("UPDATE seasons SET status='archived',finalized_at=? WHERE id=?",(datetime.now(timezone.utc).isoformat(),sid)); c.commit()
 
 
