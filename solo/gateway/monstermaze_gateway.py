@@ -8,7 +8,8 @@ Server-list status pings never start a Fly Machine. A real login handshake
 starts the correct stopped Machine through the Fly Machines API and returns a
 short disconnect message asking the player to reconnect while it boots.
 
-Once a Machine is already running, the gateway is a transparent TCP proxy.
+Once a Machine is already running, the gateway verifies that the Minecraft
+server itself is ready before proxying the player's login.
 """
 
 import asyncio
@@ -32,6 +33,8 @@ FLY_APP = os.getenv("FLY_APP", "monstermaze")
 FLY_BACKEND_HOST = os.getenv("FLY_BACKEND_HOST", "monstermaze.fly.dev")
 FLY_API_TIMEOUT = float(os.getenv("FLY_API_TIMEOUT", "10"))
 BACKEND_CONNECT_TIMEOUT = float(os.getenv("MM_BACKEND_CONNECT_TIMEOUT", "5"))
+BACKEND_READY_RETRIES = int(os.getenv("MM_BACKEND_READY_RETRIES", "15"))
+BACKEND_READY_INTERVAL = float(os.getenv("MM_BACKEND_READY_INTERVAL", "2"))
 START_MESSAGE = os.getenv(
     "MM_START_MESSAGE",
     "Monster Maze is starting this server.\\n\\nPlease reconnect in about 60 seconds.",
@@ -64,8 +67,6 @@ TARGETS = {
     ),
 }
 
-# One lock per Machine prevents a burst of login attempts from issuing
-# multiple simultaneous start requests.
 START_LOCKS = {key: asyncio.Lock() for key in TARGETS}
 
 
@@ -74,8 +75,7 @@ class ProtocolError(Exception):
 
 
 async def read_exact(reader: asyncio.StreamReader, n: int) -> bytes:
-    data = await reader.readexactly(n)
-    return data
+    return await reader.readexactly(n)
 
 
 async def read_varint(reader: asyncio.StreamReader) -> tuple[int, bytes]:
@@ -93,8 +93,6 @@ async def read_varint(reader: asyncio.StreamReader) -> tuple[int, bytes]:
 
 
 def encode_varint(value: int) -> bytes:
-    # Minecraft VarInts are signed in some APIs but packet lengths/IDs here
-    # are non-negative, so the ordinary 7-bit encoding is sufficient.
     out = bytearray()
     value &= 0xFFFFFFFF
     while True:
@@ -143,7 +141,6 @@ def parse_handshake(payload: bytes) -> tuple[int, str, int, int]:
     packet_id, offset = read_varint_bytes(payload)
     if packet_id != 0:
         raise ProtocolError(f"expected handshake packet 0x00, got 0x{packet_id:02x}")
-
     protocol, offset = read_varint_bytes(payload, offset)
     host, offset = read_string_bytes(payload, offset)
     if offset + 2 > len(payload):
@@ -157,10 +154,6 @@ def parse_handshake(payload: bytes) -> tuple[int, str, int, int]:
 
 
 def target_for_protocol(protocol: int) -> Optional[Target]:
-    # Protocol 47 is exact for 1.8.8/1.8.9. For modern clients we deliberately
-    # route the known 1.21 service by the configured 1.21 protocol range. The
-    # 1.21 target defaults to 774 (1.21.9/1.21.10-era protocol); override it if
-    # the server/client release changes.
     if protocol == TARGETS["1.8"].protocol:
         return TARGETS["1.8"]
     if protocol == TARGETS["1.21"].protocol:
@@ -169,12 +162,8 @@ def target_for_protocol(protocol: int) -> Optional[Target]:
 
 
 def json_string_packet(packet_id: int, text: str) -> bytes:
-    body = encode_varint(packet_id) + encode_varint(len(text.encode("utf-8"))) + text.encode("utf-8")
-    return encode_varint(len(body)) + body
-
-
-def long_packet(packet_id: int, value: int) -> bytes:
-    body = encode_varint(packet_id) + struct.pack(">q", value)
+    encoded = text.encode("utf-8")
+    body = encode_varint(packet_id) + encode_varint(len(encoded)) + encoded
     return encode_varint(len(body)) + body
 
 
@@ -208,8 +197,7 @@ def fly_request(method: str, path: str) -> tuple[int, bytes]:
         with urllib.request.urlopen(request, timeout=FLY_API_TIMEOUT) as response:
             return response.status, response.read()
     except urllib.error.HTTPError as exc:
-        body = exc.read()
-        return exc.code, body
+        return exc.code, exc.read()
 
 
 async def machine_state(target: Target) -> str:
@@ -252,6 +240,48 @@ async def connect_backend(target: Target) -> tuple[asyncio.StreamReader, asyncio
     )
 
 
+async def backend_ready(target: Target) -> bool:
+    """Check that the Minecraft server, not merely Fly, is ready for login."""
+    for attempt in range(1, BACKEND_READY_RETRIES + 1):
+        reader = writer = None
+        try:
+            reader, writer = await connect_backend(target)
+            # Send a status handshake using the same protocol/port as the real
+            # client, followed by the Status Request packet (ID 0x00).
+            handshake_payload = (
+                encode_varint(0)
+                + encode_varint(target.protocol)
+                + encode_varint(len(FLY_BACKEND_HOST.encode("utf-8")))
+                + FLY_BACKEND_HOST.encode("utf-8")
+                + struct.pack(">H", target.backend_port)
+                + encode_varint(1)
+            )
+            writer.write(encode_varint(len(handshake_payload)) + handshake_payload)
+            writer.write(b"\x01\x00")
+            await writer.drain()
+
+            _, payload = await asyncio.wait_for(read_packet(reader), timeout=BACKEND_CONNECT_TIMEOUT)
+            packet_id, _ = read_varint_bytes(payload)
+            if packet_id == 0:
+                LOG.info("%s Minecraft backend is ready (status response received)", target.name)
+                return True
+            LOG.debug("%s backend status returned unexpected packet 0x%02x", target.name, packet_id)
+        except Exception as exc:
+            LOG.info("%s backend not ready yet (attempt %s/%s): %s",
+                     target.name, attempt, BACKEND_READY_RETRIES, exc)
+        finally:
+            if writer is not None:
+                writer.close()
+                try:
+                    await writer.wait_closed()
+                except Exception:
+                    pass
+
+        if attempt < BACKEND_READY_RETRIES:
+            await asyncio.sleep(BACKEND_READY_INTERVAL)
+    return False
+
+
 async def pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     try:
         while True:
@@ -271,8 +301,6 @@ async def proxy_pair(
     backend_writer: asyncio.StreamWriter,
     first_packet: bytes,
 ) -> None:
-    # The gateway consumed the handshake while deciding the route. Put it back
-    # in front of the backend stream before starting transparent relay.
     backend_writer.write(first_packet)
     await backend_writer.drain()
 
@@ -293,9 +321,6 @@ async def handle_status(
     try:
         backend_reader, backend_writer = await connect_backend(target)
     except Exception:
-        # Stopped Machines do not autostart because their Fly service has
-        # auto_start_machines=false. This failed connection therefore does not
-        # wake the server; we can safely return a local status response.
         client_writer.write(static_status(target))
         await client_writer.drain()
         return
@@ -320,10 +345,19 @@ async def handle_login(
         await client_writer.drain()
         return
 
+    # Fly reports the Machine as started before the Minecraft process is
+    # necessarily listening. Verify the actual Minecraft protocol endpoint
+    # before handing the player's login stream to it.
+    if not await backend_ready(target):
+        LOG.warning("%s Machine is started but Minecraft backend did not become ready", target.name)
+        client_writer.write(start_disconnect(START_MESSAGE))
+        await client_writer.drain()
+        return
+
     try:
         backend_reader, backend_writer = await connect_backend(target)
     except Exception as exc:
-        LOG.warning("%s backend is marked started but not reachable: %s", target.name, exc)
+        LOG.warning("%s backend became unavailable after readiness check: %s", target.name, exc)
         client_writer.write(start_disconnect(START_MESSAGE))
         await client_writer.drain()
         return
