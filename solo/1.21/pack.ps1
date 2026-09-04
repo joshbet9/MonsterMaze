@@ -95,10 +95,25 @@ Set-Content (Join-Path $dist 'installed.version') -Value $releaseVersion -Encodi
 
 $zip = Join-Path $here 'solo-1.21-dist.zip'
 if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path (Join-Path $dist '*') -DestinationPath $zip -CompressionLevel Optimal
 
+# Build the ZIP explicitly so entry names are always forward-slash paths.
 Add-Type -AssemblyName System.IO.Compression
-Add-Type -AssemblyName System.IO.Compression.FileSystem
+$fs = [System.IO.File]::Open($zip, [System.IO.FileMode]::CreateNew)
+$archive = New-Object System.IO.Compression.ZipArchive($fs,[System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    $fileCount = 0
+    Get-ChildItem -LiteralPath $dist -Recurse -File | ForEach-Object {
+        $relative = $_.FullName.Substring($dist.Length).TrimStart('\','/')
+        $entryName = $relative.Replace('\','/')
+        $entry = $archive.CreateEntry($entryName,[System.IO.Compression.CompressionLevel]::Optimal)
+        $in = $_.OpenRead()
+        try { $out = $entry.Open(); try { $in.CopyTo($out) } finally { $out.Dispose() } } finally { $in.Dispose() }
+        $fileCount++
+    }
+    Write-Host "Packed $fileCount files."
+} finally { $archive.Dispose(); $fs.Dispose() }
+
+$size = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 $probe = [System.IO.Compression.ZipFile]::OpenRead($zip)
 try {
     $entries = @($probe.Entries | ForEach-Object { $_.FullName })
@@ -118,6 +133,14 @@ if ($hasForbiddenWrapper) { throw "ZIP contains an unexpected solo-dist/ wrapper
 if (-not $hasManifest) { throw "ZIP is missing root version.json." }
 if (-not $hasMarker) { throw "ZIP is missing root installed.version." }
 
-$size = [math]::Round((Get-Item $zip).Length / 1MB, 1)
+$verify = [System.IO.File]::OpenRead($zip)
+try {
+    if ($verify.Length -lt 22) { throw "ZIP is too small to contain an end-of-central-directory record." }
+    $verify.Seek(-22,[System.IO.SeekOrigin]::End) | Out-Null
+    $tail = New-Object byte[] 4
+    $verify.Read($tail,0,4) | Out-Null
+    $okEocd = ($tail[0] -eq 0x50) -and ($tail[1] -eq 0x4B) -and ($tail[2] -eq 0x05) -and ($tail[3] -eq 0x06)
+} finally { $verify.Dispose() }
+if (-not $okEocd) { throw "ZIP is missing its end-of-central-directory record." }
 Write-Host "Built: $zip"
-Write-Host "Verified: updater-compatible root paths, manifest + version marker present, forward-slash names, $size MB."
+Write-Host "Verified: updater-compatible root paths, manifest + version marker present, EOCD present, forward-slash names, $size MB."
