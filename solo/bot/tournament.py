@@ -62,15 +62,19 @@ def build_bracket(c,tournament_id):
     for rnd in range(1,rounds):
         for slot in range(1,size//(2**rnd)+1):
             nxt=ids[(rnd+1,(slot+1)//2)];target=1 if slot%2 else 2;c.execute("UPDATE tournament_matches SET next_match_id=?,next_slot=? WHERE id=?",(nxt,target,ids[(rnd,slot)]))
-    first=size//2
+    first=size//2;byes=size-len(players);index=0
     for slot in range(1,first+1):
-        i=(slot-1)*2;p1=seeded[i][0] if i<len(seeded) else None;p2=seeded[i+1][0] if i+1<len(seeded) else None;c.execute("UPDATE tournament_matches SET player1_uuid=?,player2_uuid=? WHERE id=?",(p1,p2,ids[(1,slot)]))
+        if slot<=byes:
+            p1=seeded[index][0];index+=1;p2=None
+        else:
+            p1=seeded[index][0] if index<len(seeded) else None;index+=1 if p1 else 0;p2=seeded[index][0] if index<len(seeded) else None;index+=1 if p2 else 0
+        c.execute("UPDATE tournament_matches SET player1_uuid=?,player2_uuid=? WHERE id=?",(p1,p2,ids[(1,slot)]))
     for slot in range(1,first+1):
         mid=ids[(1,slot)];p1,p2=c.execute("SELECT player1_uuid,player2_uuid FROM tournament_matches WHERE id=?",(mid,)).fetchone()
         if p1 and p2:c.execute("UPDATE tournament_matches SET status='ready' WHERE id=?",(mid,))
-        else:
+        elif p1 or p2:
             winner=p1 or p2;c.execute("UPDATE tournament_matches SET status='bye',winner_uuid=?,completed_at=? WHERE id=?",(winner,now,mid));_advance(c,mid,winner)
-    if rounds>=2:
+    if len(players)>=4:
         cur=c.execute("INSERT INTO tournament_matches(tournament_id,round_number,slot,best_of,status,created_at) VALUES(?,?,?,?, 'pending',?)",(tournament_id,rounds+1,1,3,now));third=int(cur.lastrowid)
         c.execute("UPDATE tournament_matches SET next_match_id=?,next_slot=? WHERE id=?",(third,1,ids[(rounds-1,1)]));c.execute("UPDATE tournament_matches SET next_match_id=?,next_slot=? WHERE id=?",(third,2,ids[(rounds-1,2)]))
     c.execute("UPDATE tournaments SET status='bracket',bracket_size=? WHERE id=?",(size,tournament_id));c.commit();return size
@@ -93,7 +97,8 @@ def record_game(c,tournament_match_id,game_number,platform,mode,pattern,kit,matc
     if p1w>=2 or p2w>=2:
         champ=row[1] if p1w>=2 else row[2];loser=row[2] if champ==row[1] else row[1];now=int(time.time()*1000);c.execute("UPDATE tournament_matches SET status='complete',winner_uuid=?,loser_uuid=?,completed_at=? WHERE id=?",(champ,loser,now,tournament_match_id));_advance(c,tournament_match_id,champ)
         bracket_size=c.execute("SELECT bracket_size FROM tournaments WHERE id=?",(row[0],)).fetchone()[0];final_round=int(bracket_size).bit_length()-1
-        if int(row[6])==final_round-1 and final_round>=2:
+        player_count=c.execute("SELECT COUNT(*) FROM tournament_players WHERE tournament_id=?",(row[0],)).fetchone()[0]
+        if player_count>=4 and int(row[6])==final_round-1 and final_round>=2:
             third=c.execute("SELECT id FROM tournament_matches WHERE tournament_id=? AND round_number=?",(row[0],final_round+1)).fetchone()
             if third:
                 c.execute("UPDATE tournament_matches SET player1_uuid=? WHERE id=? AND player1_uuid IS NULL AND player2_uuid IS NULL",(loser,third[0]));c.execute("UPDATE tournament_matches SET player2_uuid=? WHERE id=? AND player1_uuid IS NOT NULL AND player2_uuid IS NULL",(loser,third[0]));_activate_if_ready(c,third[0])
@@ -105,14 +110,18 @@ def finalize(c,tournament_id):
     ensure_schema(c);t=c.execute("SELECT season_id,status,bracket_size FROM tournaments WHERE id=?",(tournament_id,)).fetchone()
     if not t:raise ValueError("unknown tournament")
     if t[1]=='complete':return
+    player_count=c.execute("SELECT COUNT(*) FROM tournament_players WHERE tournament_id=?",(tournament_id,)).fetchone()[0]
     rounds=int(t[2]).bit_length()-1;final=c.execute("SELECT winner_uuid,loser_uuid,status FROM tournament_matches WHERE tournament_id=? AND round_number=?",(tournament_id,rounds)).fetchone()
     if not final or final[2]!='complete':raise ValueError("final is not complete")
-    if rounds>=2:
+    third=None
+    if player_count>=4:
         third=c.execute("SELECT winner_uuid,loser_uuid,status FROM tournament_matches WHERE tournament_id=? AND round_number=?",(tournament_id,rounds+1)).fetchone()
         if not third or third[2]!='complete':raise ValueError("third-place playoff is not complete")
-    else:third=None
     champion,runner=final[0],final[1];c.execute("UPDATE tournament_players SET placement=1 WHERE tournament_id=? AND uuid=?",(tournament_id,champion));c.execute("UPDATE tournament_players SET placement=2 WHERE tournament_id=? AND uuid=?",(tournament_id,runner))
-    if third:c.execute("UPDATE tournament_players SET placement=3 WHERE tournament_id=? AND uuid=?",(tournament_id,third[0]));c.execute("UPDATE tournament_players SET placement=4 WHERE tournament_id=? AND uuid=?",(tournament_id,third[1]))
+    if third:
+        c.execute("UPDATE tournament_players SET placement=3 WHERE tournament_id=? AND uuid=?",(tournament_id,third[0]));c.execute("UPDATE tournament_players SET placement=4 WHERE tournament_id=? AND uuid=?",(tournament_id,third[1]))
+    elif player_count==3:
+        c.execute("UPDATE tournament_players SET placement=3 WHERE tournament_id=? AND placement=0",(tournament_id,))
     sid=int(t[0]);rows=c.execute("SELECT uuid,placement FROM tournament_players WHERE tournament_id=?",(tournament_id,)).fetchall()
     for u,place in rows:
         pts={1:100,2:75,3:50,4:30}.get(int(place or 0),10);c.execute("UPDATE tournament_players SET points=? WHERE tournament_id=? AND uuid=?",(pts,tournament_id,u));c.execute("INSERT OR IGNORE INTO season_players(season_id,uuid,name) SELECT ?,uuid,name FROM tournament_players WHERE tournament_id=? AND uuid=?",(sid,tournament_id,u));c.execute("UPDATE season_players SET tournament_points=tournament_points+? WHERE season_id=? AND uuid=?",(pts,sid,u.lower()))
