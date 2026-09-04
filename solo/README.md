@@ -28,8 +28,11 @@ updates.
 
 ## Solo records and platform separation
 
-Every completed solo attempt is written as a JSON record to the local `solo-runs`
-directory. The record contains an explicit `platform` and `submittedAt` timestamp:
+Every completed solo attempt is recorded. When a backend is configured, the plugin
+can submit the run directly; otherwise the run is written locally to `solo-runs`.
+The optional Discord submitter can then publish saved records manually.
+
+The record contains an explicit `platform` and `submittedAt` timestamp:
 
 ```json
 {
@@ -59,20 +62,21 @@ spot a divergent configuration.
 
 ## Submitting runs
 
-**Every completed solo attempt is submitted**, not just lifetime PBs. The permanent
-leaderboards still use each player's best result, while the weekly competitions
+The solo system records every completed attempt, not just lifetime PBs. The
+permanent leaderboards use each player's best result, while weekly competitions
 use the complete attempt history and select each player's best valid run during
 the competition's Monday-Sunday Brisbane-time window.
 
-Each run is written locally first, then `submit.ps1` posts it to the Discord webhook
-for that run's mode. A run is moved to `submitted\` only after a successful post, so
+Each saved run is submitted automatically only when a backend is configured.
+Otherwise `submit.ps1` can post the saved JSON records to the Discord webhook for
+the run's mode. A run is moved to `submitted\` only after a successful post, so
 network failures do not lose an attempt.
 
 The Discord bot stores two separate concepts:
 
 - **Lifetime PBs** — best-ever result for permanent leaderboards.
-- **Solo submissions** — every completed attempt, with its submission timestamp,
-  for weekly competition history.
+- **Solo submissions** — every completed attempt that has been submitted, with
+  its submission timestamp, for weekly competition history.
 
 ## Weekly competitions
 
