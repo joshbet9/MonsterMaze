@@ -14,6 +14,7 @@ public enum KitType {
     public final String id;
     public final String display;
     public final Material icon;
+    public String[] description = new String[0];
 
     private static final String[] JUMPER_ORIGINAL = {
             ChatColor.GRAY + "You have " + ChatColor.YELLOW + "5 charged jumps" + ChatColor.GRAY + ".",
@@ -49,46 +50,29 @@ public enum KitType {
             ChatColor.GRAY + "Monster hits launch you " + ChatColor.GOLD + "toward the next Safe Pad" + ChatColor.GRAY + "."
     };
 
-    KitType(String id, String display, Material icon) {
-        this.id = id;
-        this.display = display;
-        this.icon = icon;
-    }
+    KitType(String id, String display, Material icon) { this.id = id; this.display = display; this.icon = icon; }
 
     public static KitType byName(String name) {
         if (name == null) return null;
-        for (KitType k : values()) {
-            if (k.name().equalsIgnoreCase(name) || k.id.equalsIgnoreCase(name)) return k;
-        }
+        for (KitType k : values()) if (k.name().equalsIgnoreCase(name) || k.id.equalsIgnoreCase(name)) return k;
         return null;
     }
 
     public boolean qolOnly() { return this == MAVERICK; }
 
-    /** Returns only the abilities actually available to this kit in the selected mode. */
-    public String[] description(MazeMode mode) {
-        if (mode == null || mode == MazeMode.ORIGINAL) {
-            switch (this) {
-                case JUMPER: return JUMPER_ORIGINAL;
-                case SLOWBALL: return SLOWBALL_BASE;
-                case BODY_BUILDER: return BODY_BASE;
-                case REPULSOR: return REPULSOR_DESCRIPTION;
-                case MAVERICK: return MAVERICK_DESCRIPTION;
-                default: return new String[0];
-            }
-        }
-        switch (this) {
-            case JUMPER: return JUMPER_ENHANCED;
-            case SLOWBALL: return SLOWBALL_ENHANCED;
-            case BODY_BUILDER: return BODY_ENHANCED;
-            case REPULSOR: return REPULSOR_DESCRIPTION;
-            case MAVERICK: return MAVERICK_DESCRIPTION;
-            default: return new String[0];
-        }
+    /** Refreshes the UI descriptions for the selected mode. */
+    public static void updateDescriptions(MazeMode mode) {
+        boolean original = mode == null || mode == MazeMode.ORIGINAL;
+        JUMPER.description = original ? JUMPER_ORIGINAL : JUMPER_ENHANCED;
+        SLOWBALL.description = original ? SLOWBALL_BASE : SLOWBALL_ENHANCED;
+        BODY_BUILDER.description = original ? BODY_BASE : BODY_ENHANCED;
+        REPULSOR.description = REPULSOR_DESCRIPTION;
+        MAVERICK.description = MAVERICK_DESCRIPTION;
     }
 
     public static java.util.List<KitType> available(MazeMode mode) {
         if (mode == null) mode = MazeMode.ORIGINAL;
+        updateDescriptions(mode);
         java.util.List<KitType> list = new java.util.ArrayList<KitType>();
         boolean enhanced = mode != MazeMode.ORIGINAL;
         for (KitType k : values()) if (enhanced || !k.qolOnly()) list.add(k);
