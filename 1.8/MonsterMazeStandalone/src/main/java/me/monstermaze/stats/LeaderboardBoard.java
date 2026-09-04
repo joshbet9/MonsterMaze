@@ -30,6 +30,7 @@ import java.util.UUID;
 public class LeaderboardBoard implements Listener {
     private static final int LINES = 10;
     private static final double SPACING = 0.27;
+    private static final double BOARD_X = 3.0;
 
     private final MonsterMazePlugin plugin;
     private final List<ArmorStand> stands = new ArrayList<ArmorStand>();
@@ -42,6 +43,10 @@ public class LeaderboardBoard implements Listener {
 
     public LeaderboardBoard(MonsterMazePlugin plugin) {
         this.plugin = plugin;
+        MazeMode storedMode = MazeMode.byName(plugin.getConfig().getString("leaderboard.mode", "Original"));
+        if (storedMode != null) activeMode = storedMode;
+        KitType storedKit = KitType.byName(plugin.getConfig().getString("leaderboard.kit", ""));
+        if (storedKit != null) activeKit = storedKit;
         Bukkit.getPluginManager().registerEvents(this, plugin);
         this.refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override public void run() {
@@ -55,10 +60,10 @@ public class LeaderboardBoard implements Listener {
         this.anchor = lobbyCenter.clone();
         org.bukkit.World world = anchor.getWorld();
         if (world == null) return;
-        Location spawnCenter = anchor.clone().add(6, 1.8, 0);
+        Location spawnCenter = anchor.clone().add(BOARD_X, 1.8, 0);
         for (Entity e : world.getNearbyEntities(spawnCenter, 2.5, 3.5, 2.5)) if (e instanceof ArmorStand) e.remove();
         for (int i = 0; i < LINES; i++) {
-            ArmorStand stand = (ArmorStand) world.spawnEntity(anchor.clone().add(6, 1.2 + (LINES - 1 - i) * SPACING, 0), EntityType.ARMOR_STAND);
+            ArmorStand stand = (ArmorStand) world.spawnEntity(anchor.clone().add(BOARD_X, 1.2 + (LINES - 1 - i) * SPACING, 0), EntityType.ARMOR_STAND);
             stand.setVisible(false); stand.setGravity(false); stand.setSmall(true); stand.setMarker(true);
             stand.setBasePlate(false); stand.setArms(false); stand.setCustomNameVisible(true);
             try { stand.setRightArmPose(new EulerAngle(i * 0.1, 0, 0)); } catch (Exception ignored) {}
@@ -84,6 +89,7 @@ public class LeaderboardBoard implements Listener {
     public void cycleMode() {
         MazeMode[] modes = MazeMode.values();
         activeMode = modes[(activeMode.ordinal() + 1) % modes.length];
+        saveFilterSelection();
         render(activeMode);
     }
 
@@ -94,7 +100,14 @@ public class LeaderboardBoard implements Listener {
             int nextIndex = activeKit.ordinal() + 1;
             activeKit = (nextIndex < kits.length) ? kits[nextIndex] : null;
         }
+        saveFilterSelection();
         render(activeMode);
+    }
+
+    private void saveFilterSelection() {
+        plugin.getConfig().set("leaderboard.mode", activeMode.id);
+        plugin.getConfig().set("leaderboard.kit", activeKit == null ? "" : activeKit.id);
+        plugin.saveConfig();
     }
 
     public void render(MazeMode mode) {
