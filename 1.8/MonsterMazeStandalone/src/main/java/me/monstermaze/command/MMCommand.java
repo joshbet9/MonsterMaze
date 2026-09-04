@@ -10,6 +10,7 @@ import me.monstermaze.stats.ChallengeManager;
 import me.monstermaze.stats.CompetitiveUI;
 import me.monstermaze.stats.LeaderboardManager;
 import me.monstermaze.stats.RunRecorder;
+import me.monstermaze.stats.TournamentManager;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -22,7 +23,8 @@ import java.util.List;
 public class MMCommand implements CommandExecutor {
     private final MonsterMazePlugin plugin;
     private final CompetitiveUI competitiveUI;
-    public MMCommand(MonsterMazePlugin plugin) { this.plugin = plugin; this.competitiveUI = new CompetitiveUI(plugin); }
+    private final TournamentManager tournamentManager;
+    public MMCommand(MonsterMazePlugin plugin) { this.plugin = plugin; this.competitiveUI = new CompetitiveUI(plugin); this.tournamentManager = new TournamentManager(plugin); }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
@@ -37,6 +39,9 @@ public class MMCommand implements CommandExecutor {
             sender.sendMessage(ChatColor.YELLOW + "/mm clb <mmcl|mmr|elo|weekly|tournament> " + ChatColor.GRAY + "- competitive leaderboard");
             sender.sendMessage(ChatColor.YELLOW + "/mm challenge " + ChatColor.GRAY + "- this week's hosted challenge");
             sender.sendMessage(ChatColor.YELLOW + "/mm challenge lb " + ChatColor.GRAY + "- challenge standings");
+            sender.sendMessage(ChatColor.YELLOW + "/mm tournament " + ChatColor.GRAY + "- current tournament and your match");
+            sender.sendMessage(ChatColor.YELLOW + "/mm tournament match " + ChatColor.GRAY + "- your next BO3 match");
+            sender.sendMessage(ChatColor.YELLOW + "/mm tournament lb " + ChatColor.GRAY + "- tournament points standings");
             sender.sendMessage(ChatColor.YELLOW + "/mm exportpbs " + ChatColor.GRAY + "- export all stored PBs for submission");
             sender.sendMessage(ChatColor.YELLOW + "/mm lb [1|2|3] " + ChatColor.GRAY + "- leaderboard");
             sender.sendMessage(ChatColor.AQUA + "Current mode: " + plugin.getMode().color + plugin.getMode().id + ChatColor.GRAY + " (/mm mode <original|speed|modern>)");
@@ -57,6 +62,13 @@ public class MMCommand implements CommandExecutor {
         if (sub.equals("challenge") || sub.equals("competition")) {
             if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Players only."); return true; }
             plugin.getChallengeManager().show((Player) sender, args.length >= 2 && args[1].equalsIgnoreCase("lb"));
+            return true;
+        }
+        if (sub.equals("tournament") || sub.equals("tourney")) {
+            if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Players only."); return true; }
+            Player p = (Player) sender;
+            if (args.length >= 2 && args[1].equalsIgnoreCase("match")) tournamentManager.showMatch(p);
+            else tournamentManager.show(p, args.length >= 2 && (args[1].equalsIgnoreCase("lb") || args[1].equalsIgnoreCase("leaderboard")));
             return true;
         }
         if (sub.equals("kit") || sub.equals("kits")) {
@@ -104,7 +116,7 @@ public class MMCommand implements CommandExecutor {
             case "stop": case "force": gm.forceStop(); sender.sendMessage(ChatColor.GREEN + "Monster Maze force stopped."); break;
             case "setcenter":
                 if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Only players can set the center."); return true; }
-                Player pl = (Player) sender; gm.setCenter(pl.getLocation()); sender.sendMessage(ChatColor.GREEN + "Lobby box placed at " + pl.getLocation().getBlockX() + ", " + pl.getLocation().getBlockY() + ", " + pl.getLocation().getBlockZ()); sender.sendMessage(ChatColor.GRAY + "World stays empty except this box. Then /mm start"); break;
+                Player pl = (Player)sender; gm.setCenter(pl.getLocation()); sender.sendMessage(ChatColor.GREEN + "Lobby box placed at " + pl.getLocation().getBlockX() + ", " + pl.getLocation().getBlockY() + ", " + pl.getLocation().getBlockZ()); sender.sendMessage(ChatColor.GRAY + "World stays empty except this box. Then /mm start"); break;
             case "mode":
                 if (args.length < 2) { sender.sendMessage(ChatColor.RED + "Usage: /mm mode <original|speed|modern>"); sender.sendMessage(ChatColor.AQUA + "Current: " + plugin.getMode().color + plugin.getMode().id); for (MazeMode mode : MazeMode.values()) sender.sendMessage(ChatColor.GRAY + " - " + mode.color + mode.id + ChatColor.GRAY + ": " + mode.description); return true; }
                 if (gm.isRunning()) { sender.sendMessage(ChatColor.RED + "Change the mode when no game is running."); return true; }
@@ -117,13 +129,13 @@ public class MMCommand implements CommandExecutor {
                 int pattern; try { pattern = Integer.parseInt(patternArg); } catch (NumberFormatException e) { sender.sendMessage(ChatColor.RED + "Invalid pattern. Use 1, 2, 3, or random."); return true; }
                 if (pattern < 1 || pattern > 3) { sender.sendMessage(ChatColor.RED + "Invalid pattern. Use 1, 2, 3, or random."); return true; }
                 gm.getMazeGenerator().setForcedPattern(pattern - 1); sender.sendMessage(ChatColor.GREEN + "Maze pattern set to " + ChatColor.WHITE + pattern + ChatColor.GREEN + " for the next game."); break;
-            case "status":
-                sender.sendMessage(ChatColor.AQUA + "State: " + ChatColor.WHITE + gm.getState()); sender.sendMessage(ChatColor.AQUA + "Stage: " + ChatColor.WHITE + gm.getStage()); sender.sendMessage(ChatColor.AQUA + "Alive: " + ChatColor.WHITE + gm.getAlivePlayers().size()); sender.sendMessage(ChatColor.AQUA + "Map: " + ChatColor.WHITE + plugin.getMapManager().getActiveMap()); sender.sendMessage(ChatColor.AQUA + "Next pattern: " + ChatColor.WHITE + formatPattern(gm.getMazeGenerator().getForcedPattern())); break;
             case "map": case "arena":
                 if (args.length < 2) { sender.sendMessage(ChatColor.RED + "Usage: /mm map <name>"); sender.sendMessage(ChatColor.GRAY + "Available: " + String.join(", ", plugin.getMapManager().knownMaps())); return true; }
                 if (gm.isRunning()) { sender.sendMessage(ChatColor.RED + "Change the map when no game is running."); return true; }
                 String want = args[1].toLowerCase(); if (!plugin.getMapManager().setActiveMap(want)) { sender.sendMessage(ChatColor.RED + "Unknown map '" + args[1] + "'. Try: " + String.join(", ", plugin.getMapManager().knownMaps())); return true; }
                 plugin.getMapManager().ensureActiveWorld(); gm.applyMap(); sender.sendMessage(ChatColor.GREEN + "Map set to " + ChatColor.WHITE + want + ChatColor.GREEN + ". Lobby moved; run /mm start."); break;
+            case "status":
+                sender.sendMessage(ChatColor.AQUA + "State: " + ChatColor.WHITE + gm.getState()); sender.sendMessage(ChatColor.AQUA + "Stage: " + ChatColor.WHITE + gm.getStage()); sender.sendMessage(ChatColor.AQUA + "Alive: " + ChatColor.WHITE + gm.getAlivePlayers().size()); sender.sendMessage(ChatColor.AQUA + "Map: " + ChatColor.WHITE + plugin.getMapManager().getActiveMap()); sender.sendMessage(ChatColor.AQUA + "Next pattern: " + ChatColor.WHITE + formatPattern(gm.getMazeGenerator().getForcedPattern())); break;
             default: sender.sendMessage(ChatColor.RED + "Unknown subcommand. Try /mm"); break;
         }
         return true;
