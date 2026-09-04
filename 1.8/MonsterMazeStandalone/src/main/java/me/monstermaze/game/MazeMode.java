@@ -10,7 +10,7 @@ public enum MazeMode {
     ORIGINAL("Original", ChatColor.GRAY,
             "1:1 recreation of the original source. No gameplay QOL changes."),
     SPEED("Speed", ChatColor.GOLD,
-            "QOL fixes; Jumper has 3 jumps that reset to 3 on every Safe Pad."),
+            "Modern gameplay with the original timer and monster spawning."),
     MODERN("Modern", ChatColor.LIGHT_PURPLE,
             "QOL fixes; Jumper has 3 leaps that reset to 3 on every Safe Pad; faster timer (35s -> 15s over 10 stages) and +20% starter mobs."),
     LAGLESS("Lagless", ChatColor.AQUA,
