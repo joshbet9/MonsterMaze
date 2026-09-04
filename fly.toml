@@ -17,7 +17,7 @@ primary_region = "iad"
   internal_port = 25565
   protocol = "tcp"
   auto_stop_machines = "stop"
-  auto_start_machines = true
+  auto_start_machines = false
   min_machines_running = 0
 
   [[services.ports]]
@@ -33,7 +33,7 @@ primary_region = "iad"
   internal_port = 25566
   protocol = "tcp"
   auto_stop_machines = "stop"
-  auto_start_machines = true
+  auto_start_machines = false
   min_machines_running = 0
 
   [[services.ports]]
