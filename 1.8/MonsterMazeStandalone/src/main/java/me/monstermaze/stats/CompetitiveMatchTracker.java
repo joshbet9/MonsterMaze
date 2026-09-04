@@ -7,7 +7,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerDeathEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -26,6 +26,8 @@ public final class CompetitiveMatchTracker implements Listener {
     private final Map<UUID, String> names = new HashMap<UUID, String>();
     private final Set<UUID> participants = new HashSet<UUID>();
     private String matchId;
+    private String capturedMode;
+    private int capturedPattern;
     private long startedAt;
     private int tick;
     private boolean active;
@@ -50,11 +52,6 @@ public final class CompetitiveMatchTracker implements Listener {
         if (!active) return;
 
         tick++;
-
-        // GameManager's repeating tasks were scheduled before this tracker's
-        // observer. The deferred observer therefore runs after the current game
-        // tick and catches every elimination path, including safe-pad expiry and
-        // falling into the void, not just PlayerDeathEvent/quit.
         Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override public void run() { observeAfterGameTick(); }
         });
@@ -69,16 +66,14 @@ public final class CompetitiveMatchTracker implements Listener {
             names.put(p.getUniqueId(), p.getName());
         }
         matchId = UUID.randomUUID().toString();
+        capturedMode = plugin.getMode().id;
+        capturedPattern = plugin.getGameManager().getPatternIndex();
+        if (capturedPattern < 0) capturedPattern = 0;
         startedAt = System.currentTimeMillis();
         tick = 0;
         active = true;
     }
 
-    /**
-     * Death and quit are captured immediately. Other elimination paths are
-     * picked up by observeAfterGameTick(). Multiple eliminations detected during
-     * one server tick therefore receive the same logical elimination tick.
-     */
     @EventHandler(priority = EventPriority.LOWEST)
     public void onDeath(PlayerDeathEvent event) {
         if (!active) return;
@@ -106,8 +101,6 @@ public final class CompetitiveMatchTracker implements Listener {
             aliveNow.add(p.getUniqueId());
         }
 
-        // Any participant no longer in GameManager's authoritative alive set has
-        // been eliminated by death, fall, safe-pad timeout, or another game rule.
         for (UUID id : participants) {
             if (!aliveNow.contains(id)) captureIfParticipant(id);
         }
@@ -115,7 +108,6 @@ public final class CompetitiveMatchTracker implements Listener {
         if (eliminationTicks.size() >= participants.size() - 1) {
             finish();
         } else if (state == GameState.IDLE || state == GameState.STARTING) {
-            // An administrative force-stop/restart is not a competitive result.
             abort();
         }
     }
@@ -155,14 +147,9 @@ public final class CompetitiveMatchTracker implements Listener {
             }
         }
 
-        int pattern = plugin.getGameManager().getPatternIndex();
-        if (pattern < 0) pattern = capturedPattern;
-        String mode = capturedMode != null ? capturedMode : plugin.getMode().id;
-        plugin.getBackendClient().submitMatch(matchId, "1.8", mode, pattern, rows, startedAt, System.currentTimeMillis());
+        plugin.getBackendClient().submitMatch(matchId, "1.8", capturedMode, capturedPattern,
+                rows, startedAt, System.currentTimeMillis());
     }
-
-    private String capturedMode;
-    private int capturedPattern = 0;
 
     private void abort() {
         active = false;
