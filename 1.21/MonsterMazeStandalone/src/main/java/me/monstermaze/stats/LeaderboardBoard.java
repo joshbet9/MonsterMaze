@@ -3,6 +3,7 @@ package me.monstermaze.stats;
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.kit.KitType;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -10,6 +11,7 @@ import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.TextDisplay;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
@@ -24,8 +26,11 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * A hologram leaderboard shown in the pre-game lobby. Rendered as a column of
- * invisible marker armor stands for clean spacing, with a central click box.
+ * A hologram leaderboard shown in the pre-game lobby.
+ *
+ * 1.21 uses TextDisplay entities for the visible text. ArmorStand custom-name
+ * holograms are retained only as the invisible interaction target, avoiding
+ * client/rendering differences in modern Minecraft versions.
  */
 public class LeaderboardBoard implements Listener {
 
@@ -34,7 +39,7 @@ public class LeaderboardBoard implements Listener {
     private static final double BOARD_X = 3.0;
 
     private final MonsterMazePlugin plugin;
-    private final List<ArmorStand> stands = new ArrayList<ArmorStand>();
+    private final List<TextDisplay> displays = new ArrayList<TextDisplay>();
     private final Map<UUID, Long> lastClick = new HashMap<UUID, Long>();
     private ArmorStand clickTarget;
     private Location anchor;
@@ -59,28 +64,27 @@ public class LeaderboardBoard implements Listener {
 
         Location spawnCenter = anchor.clone().add(BOARD_X, 1.8, 0);
 
-        // Purge any lingering ghost armor stands in the immediate area left from reloads/crashes
+        // Purge lingering leaderboard entities from reloads/crashes.
         for (Entity e : world.getNearbyEntities(spawnCenter, 2.5, 3.5, 2.5)) {
-            if (e instanceof ArmorStand) e.remove();
+            if (e instanceof TextDisplay || e instanceof ArmorStand) e.remove();
         }
 
-        // Spawn marker stands inside the lobby so players can approach and click the board
-        // without having to pass through the glass perimeter or step into the void.
+        // TextDisplay is the native modern hologram entity and is much more
+        // reliable than ArmorStand custom names on 1.21 clients.
         for (int i = 0; i < LINES; i++) {
-            ArmorStand stand = (ArmorStand) world.spawnEntity(
-                    anchor.clone().add(BOARD_X, 1.2 + (LINES - 1 - i) * SPACING, 0), EntityType.ARMOR_STAND);
-            stand.setVisible(false);
-            stand.setGravity(false);
-            stand.setSmall(true);
-            stand.setMarker(true);
-            stand.setBasePlate(false);
-            stand.setArms(false);
-            stand.setCustomNameVisible(true);
-            try { stand.setRightArmPose(new EulerAngle(i * 0.1, 0, 0)); } catch (Exception ignored) { }
-            stands.add(stand);
+            TextDisplay display = (TextDisplay) world.spawnEntity(
+                    anchor.clone().add(BOARD_X, 1.2 + (LINES - 1 - i) * SPACING, 0), EntityType.TEXT_DISPLAY);
+            display.setBackgroundColor(null);
+            display.setDefaultBackground(false);
+            display.setSeeThrough(false);
+            display.setShadowed(true);
+            display.setBillboard(org.bukkit.entity.Display.Billboard.CENTER);
+            display.setLineWidth(512);
+            display.setTextOpacity((byte) -1);
+            displays.add(display);
         }
 
-        // Spawn 1 invisible interaction stand over the hologram to catch clicks
+        // Invisible interaction stand remains separate from the visible text.
         clickTarget = (ArmorStand) world.spawnEntity(spawnCenter, EntityType.ARMOR_STAND);
         clickTarget.setVisible(false);
         clickTarget.setGravity(false);
@@ -92,8 +96,8 @@ public class LeaderboardBoard implements Listener {
     }
 
     public void remove() {
-        for (ArmorStand stand : stands) if (stand != null) stand.remove();
-        stands.clear();
+        for (TextDisplay display : displays) if (display != null) display.remove();
+        displays.clear();
         if (clickTarget != null) { clickTarget.remove(); clickTarget = null; }
         anchor = null;
     }
@@ -133,8 +137,8 @@ public class LeaderboardBoard implements Listener {
         ChallengeManager cm = plugin.getChallengeManager();
         ChallengeManager.Challenge challenge = cm == null ? null : cm.getChallenge();
 
-        for (int i = 0; i < stands.size(); i++) {
-            ArmorStand stand = stands.get(i);
+        for (int i = 0; i < displays.size(); i++) {
+            TextDisplay display = displays.get(i);
             String text;
             if (i == 0) {
                 text = ChatColor.GOLD + "" + ChatColor.BOLD + "Leaderboard (" + mode.color + mode.id
@@ -151,7 +155,7 @@ public class LeaderboardBoard implements Listener {
             } else {
                 text = "";
             }
-            stand.setCustomName(text);
+            display.text(LegacyComponentSerializer.legacySection().deserialize(text));
         }
     }
 
@@ -160,8 +164,7 @@ public class LeaderboardBoard implements Listener {
     }
 
     private boolean isBoardEntity(Entity entity) {
-        if (!(entity instanceof ArmorStand)) return false;
-        return (clickTarget != null && clickTarget.equals(entity)) || stands.contains(entity);
+        return clickTarget != null && clickTarget.equals(entity);
     }
 
     private boolean checkCooldown(Player player) {
@@ -213,6 +216,6 @@ public class LeaderboardBoard implements Listener {
 
     public void clear() {
         if (anchor == null) return;
-        for (ArmorStand stand : stands) stand.setCustomName("");
+        for (TextDisplay display : displays) display.text(LegacyComponentSerializer.legacySection().deserialize(""));
     }
 }
