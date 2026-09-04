@@ -10,7 +10,7 @@ public enum MazeMode {
     ORIGINAL("Original", ChatColor.GRAY,
             "The original Monster Maze experience, recreated as faithfully as possible."),
     MODERN("Modern", ChatColor.LIGHT_PURPLE,
-            "Enhanced gameplay with faster stages, more monsters, improved Jumper charges, and expanded kit abilities."),
+            "Enhanced gameplay with faster stages, more monsters, and expanded kit abilities."),
     CLASSIC("Classic", ChatColor.RED,
             "Modern gameplay without the speed boost, keeping the standard player movement speed.");
 
