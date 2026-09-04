@@ -75,8 +75,7 @@ def build_bracket(c,tournament_id):
         elif p1 or p2:
             winner=p1 or p2;c.execute("UPDATE tournament_matches SET status='bye',winner_uuid=?,completed_at=? WHERE id=?",(winner,now,mid));_advance(c,mid,winner)
     if len(players)>=4:
-        cur=c.execute("INSERT INTO tournament_matches(tournament_id,round_number,slot,best_of,status,created_at) VALUES(?,?,?,?, 'pending',?)",(tournament_id,rounds+1,1,3,now));third=int(cur.lastrowid)
-        c.execute("UPDATE tournament_matches SET next_match_id=?,next_slot=? WHERE id=?",(third,1,ids[(rounds-1,1)]));c.execute("UPDATE tournament_matches SET next_match_id=?,next_slot=? WHERE id=?",(third,2,ids[(rounds-1,2)]))
+        c.execute("INSERT INTO tournament_matches(tournament_id,round_number,slot,best_of,status,created_at) VALUES(?,?,?,?, 'pending',?)",(tournament_id,rounds+1,1,3,now))
     c.execute("UPDATE tournaments SET status='bracket',bracket_size=? WHERE id=?",(size,tournament_id));c.commit();return size
 
 
