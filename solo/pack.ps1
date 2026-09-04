@@ -86,11 +86,10 @@ if (Test-Path $zip) { Remove-Item -Force $zip }
 $fs = [System.IO.File]::Open($zip, [System.IO.FileMode]::CreateNew)
 $archive = New-Object System.IO.Compression.ZipArchive($fs,[System.IO.Compression.ZipArchiveMode]::Create)
 try {
-    $baseName = Split-Path -Leaf $dist
     $fileCount = 0
     Get-ChildItem -LiteralPath $dist -Recurse -File | ForEach-Object {
         $relative = $_.FullName.Substring($dist.Length).TrimStart('\','/')
-        $entryName = ($baseName + "/" + $relative).Replace('\','/')
+        $entryName = $relative.Replace('\','/')
         $entry = $archive.CreateEntry($entryName,[System.IO.Compression.CompressionLevel]::Optimal)
         $in = $_.OpenRead()
         try { $out = $entry.Open(); try { $in.CopyTo($out) } finally { $out.Dispose() } } finally { $in.Dispose() }
@@ -110,5 +109,5 @@ try {
 if (-not $okEocd) { throw "ZIP is missing its end-of-central-directory record." }
 $probe = [System.IO.Compression.ZipFile]::OpenRead($zip)
 try { $bad = @($probe.Entries | Where-Object { $_.FullName -match '\\' }).Count -gt 0 } finally { $probe.Dispose() }
-if ($bad) { throw "ZIP contains backslash entry names." }
 Write-Host "Verified: EOCD present, forward-slash names, $size MB."
+if ($bad) { throw "ZIP contains backslash entry names." }
