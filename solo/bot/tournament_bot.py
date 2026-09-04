@@ -1,4 +1,4 @@
-"""Discord tournament management for Monster Maze."""
+"""Discord tournament management and competitive ranking boards for Monster Maze."""
 import asyncio
 import time
 from datetime import datetime, timezone
@@ -83,6 +83,53 @@ class TournamentBot(MonsterBot):
     def staff(message):
         return bool(message.guild and message.author.guild_permissions.manage_guild)
 
+    def competitive_channel_ref(self, kind):
+        return self.cfg.get("competitive_channels", {}).get(kind)
+
+    def competitive_embed(self, kind):
+        c = db()
+        try:
+            competitive.ensure_schema(c)
+            sid = int(competitive.ensure_current_season(c)[0])
+            season = c.execute("SELECT season_number FROM seasons WHERE id=?", (sid,)).fetchone()
+            season_no = int(season[0]) if season else sid
+            limit = self.top_n
+            if kind == "mmr":
+                rows = c.execute("SELECT name,mmr FROM permanent_ratings ORDER BY mmr DESC,name ASC LIMIT ?", (limit,)).fetchall()
+                title = "MMR — All-Time"
+                footer = "MMR is permanent and is calculated from all kit PBs normalized against each kit leaderboard best."
+                lines = [f"{i}. **{n or 'Unknown'}** — {float(v):.1f}" for i,(n,v) in enumerate(rows,1)]
+            else:
+                cols = {"elo":"elo", "weekly":"weekly_points", "tournament":"tournament_points", "mmcl":"mmcl"}
+                col = cols[kind]
+                rows = c.execute(f"SELECT name,{col},elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component FROM season_players WHERE season_id=? ORDER BY {col} DESC,name ASC LIMIT ?", (sid,limit)).fetchall()
+                labels = {"mmcl":"MMCL Score", "elo":"ELO", "weekly":"Weekly Score", "tournament":"Tournament Points"}
+                title = f"{labels[kind]} — Season {season_no}"
+                if kind == "mmcl":
+                    lines = [f"{i}. **{r[0] or 'Unknown'}** — **{float(r[1]):.1f}**  *(ELO {float(r[5]):.1f} • Weekly {float(r[6]):.1f} • Tournament {float(r[7]):.1f})*" for i,r in enumerate(rows,1)]
+                    footer = "MMCL = ELO 40% + Weekly 30% + Tournament 30%. Components reset each season."
+                elif kind == "elo":
+                    lines = [f"{i}. **{r[0] or 'Unknown'}** — {float(r[1]):.1f}" for i,r in enumerate(rows,1)]
+                    footer = "Season ELO rating. Resets at the start of each season."
+                elif kind == "weekly":
+                    lines = [f"{i}. **{r[0] or 'Unknown'}** — {int(r[1])} pts" for i,r in enumerate(rows,1)]
+                    footer = "Current-season weekly competitive score."
+                else:
+                    lines = [f"{i}. **{r[0] or 'Unknown'}** — {int(r[1])} pts" for i,r in enumerate(rows,1)]
+                    footer = "Current-season tournament points from completed tournaments."
+            e = discord.Embed(title=title, color=0xF1C40F)
+            e.add_field(name="Rankings", value="\n".join(lines) if lines else "No ranked players yet.", inline=False)
+            e.set_footer(text=footer)
+            return e
+        finally:
+            c.close()
+
+    async def refresh_competitive_rankings(self):
+        for kind in ("mmcl", "mmr", "elo", "weekly", "tournament"):
+            ref = self.competitive_channel_ref(kind)
+            if ref:
+                await self.post_edit(f"competitive|{kind}", ref, self.competitive_embed(kind), f"competitive {kind}")
+
     async def announce(self, tid):
         channel = self.competition_channel()
         if not channel:
@@ -165,6 +212,7 @@ class TournamentBot(MonsterBot):
         for tid in ids:
             await self.announce_results(tid)
             await self.announce(tid)
+        await self.refresh_competitive_rankings()
 
     async def tournament_scheduler(self):
         while True:
@@ -176,6 +224,7 @@ class TournamentBot(MonsterBot):
 
     async def on_ready(self):
         await super().on_ready()
+        await self.refresh_competitive_rankings()
         if self.tournament_task is None or self.tournament_task.done():
             self.tournament_task = asyncio.create_task(self.tournament_scheduler())
 
