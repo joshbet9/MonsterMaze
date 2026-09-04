@@ -158,3 +158,43 @@ def award_tournament_points(c,tournament_id,placements):
 
 def finalize_season(c,sid):
     recalculate_components(c,sid); c.execute("UPDATE seasons SET status='archived',finalized_at=? WHERE id=?",(datetime.now(timezone.utc).isoformat(),sid)); c.commit()
+
+
+def season_summary(c, sid):
+    """Return an immutable historical snapshot from the stored final season rows."""
+    row=c.execute("SELECT id,season_number,start_ts,end_ts,status,finalized_at FROM seasons WHERE id=?",(int(sid),)).fetchone()
+    if not row:return None
+    players=c.execute("""SELECT uuid,name,elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component,mmcl
+        FROM season_players WHERE season_id=? ORDER BY mmcl DESC,uuid ASC""",(int(sid),)).fetchall()
+    return {"id":int(row[0]),"number":int(row[1]),"start":row[2],"end":row[3],"status":row[4],"finalizedAt":row[5],"players":[{"uuid":u,"name":n,"elo":round(float(e),3),"weeklyPoints":int(w),"tournamentPoints":int(t),"eloComponent":round(float(ec),3),"weeklyComponent":round(float(wc),3),"tournamentComponent":round(float(tc),3),"mmcl":round(float(m),3)} for u,n,e,w,t,ec,wc,tc,m in players]}
+
+
+def season_leaderboard(c, sid, kind="mmcl", limit=25):
+    """Return a historical leaderboard without changing archived season data."""
+    allowed={"mmcl":"mmcl","elo":"elo","weekly":"weekly_points","tournament":"tournament_points"}
+    col=allowed.get(str(kind).lower())
+    if not col:raise ValueError("invalid season leaderboard kind")
+    if int(limit)<1 or int(limit)>100:raise ValueError("invalid season leaderboard limit")
+    rows=c.execute(f"SELECT uuid,name,{col} FROM season_players WHERE season_id=? ORDER BY {col} DESC,uuid ASC LIMIT ?",(int(sid),int(limit))).fetchall()
+    return [{"rank":i+1,"uuid":u,"name":n,"score":round(float(v),3)} for i,(u,n,v) in enumerate(rows)]
+
+
+def season_tournaments(c, sid):
+    """Return completed and historical tournament metadata for a season."""
+    rows=c.execute("""SELECT id,number,name,registration_start,registration_end,start_ts,status,bracket_size
+        FROM tournaments WHERE season_id=? ORDER BY number ASC""",(int(sid),)).fetchall()
+    result=[]
+    for tid,num,name,rs,re,st,status,size in rows:
+        players=c.execute("SELECT uuid,name,placement,points FROM tournament_players WHERE tournament_id=? AND placement IS NOT NULL ORDER BY placement ASC,uuid ASC LIMIT 4",(int(tid),)).fetchall()
+        result.append({"id":int(tid),"number":int(num),"name":name,"registrationStart":rs,"registrationEnd":re,"start":st,"status":status,"bracketSize":size,"top4":[{"uuid":u,"name":n,"placement":int(p),"points":int(pt)} for u,n,p,pt in players]})
+    return result
+
+
+def player_season_history(c, uuid, limit=25):
+    """Return a player's archived/current seasonal competitive history."""
+    if int(limit)<1 or int(limit)>100:raise ValueError("invalid season history limit")
+    rows=c.execute("""SELECT s.id,s.season_number,s.start_ts,s.end_ts,s.status,s.finalized_at,
+        p.name,p.elo,p.weekly_points,p.tournament_points,p.elo_component,p.weekly_component,p.tournament_component,p.mmcl
+        FROM season_players p JOIN seasons s ON s.id=p.season_id
+        WHERE lower(p.uuid)=? ORDER BY s.season_number DESC LIMIT ?""",(uuid.lower(),int(limit))).fetchall()
+    return [{"seasonId":int(sid),"season":int(num),"start":start,"end":end,"status":status,"finalizedAt":finalized,"name":name,"elo":round(float(elo),3),"weeklyPoints":int(w),"tournamentPoints":int(tp),"eloComponent":round(float(ec),3),"weeklyComponent":round(float(wc),3),"tournamentComponent":round(float(tc),3),"mmcl":round(float(mmcl),3)} for sid,num,start,end,status,finalized,name,elo,w,tp,ec,wc,tc,mmcl in rows]
