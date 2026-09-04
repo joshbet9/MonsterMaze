@@ -138,16 +138,16 @@ class Handler(BaseHTTPRequestHandler):
                 platform,mode,uuid=parts[3],parts[4],parts[5]
                 if platform not in ("1.8","1.21"):raise ValueError("unsupported platform")
                 c=DB();rows=c.execute("SELECT pattern,kit,stage,time_ms FROM runs WHERE platform=? AND mode=? AND uuid=? ORDER BY pattern ASC,stage DESC,time_ms ASC,kit ASC",(platform,mode.lower(),uuid.lower())).fetchall();c.close();send_json(self,200,{"ok":True,"platform":platform,"mode":mode.lower(),"uuid":uuid.lower(),"rows":[{"pattern":int(p),"kit":k,"stage":int(s),"timeMs":int(t)} for p,k,s,t in rows]});return
-            if len(parts)>=4 and parts[:3]==["api","v1"]:
-                if parts[3]=="tournament":
-                    if parts[4:]==["leaderboard"]:
+            if len(parts)>=3 and parts[:2]==["api","v1"]:
+                if parts[2]=="tournament":
+                    if parts[3:]==["leaderboard"]:
                         result=competitive_get(["tournament","leaderboard"]);send_json(self,200,result);return
-                    result=tournament_get(parts[4:])
+                    result=tournament_get(parts[3:])
                     if result is not None:send_json(self,200,result);return
-                if parts[3] in ("seasons","player"):
-                    result=historical_get(parts[3:])
+                if parts[2] in ("seasons","player"):
+                    result=historical_get(parts[2:])
                     if result is not None:send_json(self,200,result);return
-                result=competitive_get(parts[3:])
+                result=competitive_get(parts[2:])
                 if result is not None:send_json(self,200,result);return
         except (ValueError,TypeError,KeyError,IndexError) as exc:send_json(self,400,{"ok":False,"error":str(exc)});return
         except Exception as exc:print(f"[api] GET failed: {exc}",flush=True);send_json(self,500,{"ok":False,"error":"internal_error"});return
