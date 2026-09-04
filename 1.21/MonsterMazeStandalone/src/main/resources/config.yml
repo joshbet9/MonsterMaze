@@ -3,6 +3,8 @@
 
 mode: Original
 solo-mode: false
+# Emit every completed player's run to solo-runs/ for competition submission.
+record-runs: true
 map: eyeofender
 forced-pattern: -1
 mob-overrides:

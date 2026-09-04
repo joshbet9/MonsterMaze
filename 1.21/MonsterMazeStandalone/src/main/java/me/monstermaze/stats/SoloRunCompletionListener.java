@@ -13,10 +13,11 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.UUID;
 
-/** Records every completed solo attempt for the Discord feed; PB filtering is not applied here. */
+/** Records every completed player attempt for the competition submitter. */
 public final class SoloRunCompletionListener implements Listener {
     private final MonsterMazePlugin plugin;
     private final Map<UUID, RunInfo> runs = new HashMap<UUID, RunInfo>();
@@ -31,23 +32,28 @@ public final class SoloRunCompletionListener implements Listener {
     }
 
     private void tick() {
-        checkForElimination();
-        snapshotLiveRun();
+        GameState state = plugin.getGameManager().getState();
+        if (state == GameState.LIVE) {
+            snapshotLiveRun();
+            checkForElimination();
+        } else if (state == GameState.ENDING) {
+            checkForElimination();
+            recordRemainingPlayers();
+        } else if (state == GameState.IDLE) {
+            runs.clear();
+        }
     }
 
     private void snapshotLiveRun() {
-        if (!plugin.isSoloMode()) {
+        if (!plugin.isRecordRuns()) {
             runs.clear();
-            return;
-        }
-        GameState state = plugin.getGameManager().getState();
-        if (state != GameState.LIVE) {
-            if (state == GameState.IDLE) runs.clear();
             return;
         }
         int pattern = plugin.getGameManager().getPatternIndex();
         if (pattern < 0) return;
+
         for (Player player : plugin.getGameManager().getAlivePlayers()) {
+            if (runs.containsKey(player.getUniqueId())) continue;
             KitType kit = plugin.getGameManager().getKitManager().getKit(player);
             if (kit == null) continue;
             runs.put(player.getUniqueId(), new RunInfo(pattern, kit.id));
@@ -65,45 +71,50 @@ public final class SoloRunCompletionListener implements Listener {
     }
 
     private void scheduleRecord(final Player player) {
-        if (!plugin.isSoloMode()) return;
+        if (!plugin.isRecordRuns()) return;
         Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override public void run() {
                 RunInfo info = runs.remove(player.getUniqueId());
                 if (info == null) return;
-                record(player, info);
+                record(player, info, plugin.getGameManager().getStage());
             }
         });
     }
 
-    /**
-     * Detects Monster Maze's own elimination path. GameManager removes the player from
-     * its alive set and changes the game to ENDING without firing PlayerDeathEvent.
-     */
+    /** Detects Monster Maze's own elimination path, which does not fire PlayerDeathEvent. */
     private void checkForElimination() {
-        if (!plugin.isSoloMode() || runs.isEmpty()) return;
+        if (!plugin.isRecordRuns() || runs.isEmpty()) return;
         GameState state = plugin.getGameManager().getState();
         if (state != GameState.LIVE && state != GameState.ENDING) return;
 
-        Player player = null;
-        for (UUID uuid : new java.util.HashSet<UUID>(runs.keySet())) {
-            Player candidate = Bukkit.getPlayer(uuid);
-            if (candidate != null && !plugin.getGameManager().getAlivePlayers().contains(candidate)) {
-                player = candidate;
-                break;
+        for (UUID uuid : new HashSet<UUID>(runs.keySet())) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
+            if (!plugin.getGameManager().getAlivePlayers().contains(player)) {
+                RunInfo info = runs.remove(uuid);
+                if (info != null) record(player, info, plugin.getGameManager().getStage());
             }
         }
-        if (player == null) return;
-
-        RunInfo info = runs.remove(player.getUniqueId());
-        if (info != null) record(player, info);
     }
 
-    private void record(final Player player, final RunInfo info) {
-        if (player == null || info == null) return;
+    /** Records survivors when a multiplayer game transitions to ENDING. */
+    private void recordRemainingPlayers() {
+        if (!plugin.isRecordRuns()) return;
+        for (UUID uuid : new HashSet<UUID>(runs.keySet())) {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) continue;
+            if (plugin.getGameManager().getAlivePlayers().contains(player)) {
+                RunInfo info = runs.remove(uuid);
+                if (info != null) record(player, info, plugin.getGameManager().getStage());
+            }
+        }
+    }
+
+    private void record(Player player, RunInfo info, int stage) {
+        if (player == null || info == null || stage < 1) return;
         long liveStart = plugin.getGameManager().getGameLiveTime();
         long elapsed = liveStart > 0 ? Math.max(0L, System.currentTimeMillis() - liveStart) : 0L;
-        plugin.getRunRecorder().record(player, plugin.getMode(), info.pattern, info.kit,
-                plugin.getGameManager().getStage(), elapsed);
+        plugin.getRunRecorder().record(player, plugin.getMode(), info.pattern, info.kit, stage, elapsed);
     }
 
     public void shutdown() {
