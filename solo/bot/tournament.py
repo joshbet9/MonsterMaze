@@ -83,7 +83,8 @@ def build_bracket(c,tournament_id):
 def current_match(c,tournament_id,uuid):
     ensure_schema(c);u=uuid.lower();row=c.execute("SELECT id,round_number,slot,player1_uuid,player2_uuid,best_of,player1_wins,player2_wins,status FROM tournament_matches WHERE tournament_id=? AND status IN ('ready','active') AND (player1_uuid=? OR player2_uuid=?) ORDER BY round_number ASC,slot ASC LIMIT 1",(tournament_id,u,u)).fetchone()
     if not row:return None
-    return {"id":int(row[0]),"round":int(row[1]),"slot":int(row[2]),"player1":row[3],"player2":row[4],"bestOf":int(row[5]),"player1Wins":int(row[6]),"player2Wins":int(row[7]),"status":row[8]}
+    names=dict(c.execute("SELECT lower(uuid),name FROM tournament_players WHERE tournament_id=? AND uuid IN (?,?)",(tournament_id,row[3],row[4])).fetchall())
+    return {"id":int(row[0]),"round":int(row[1]),"slot":int(row[2]),"player1":row[3],"player2":row[4],"player1Name":names.get(row[3].lower(),row[3]),"player2Name":names.get(row[4].lower(),row[4]),"bestOf":int(row[5]),"player1Wins":int(row[6]),"player2Wins":int(row[7]),"status":row[8]}
 
 
 def record_game(c,tournament_match_id,game_number,platform,mode,pattern,kit,match_id,winner_uuid):

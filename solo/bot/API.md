@@ -69,6 +69,10 @@ This is the authoritative multiplayer result endpoint. A server sends one immuta
 
 Placement is authoritative server game state. Equal elimination ticks represent a tie; no HTTP arrival order or client timestamp is used to break ties. The backend calculates seasonal ELO from the placements using pairwise ELO with K=32.
 
+If a completed 1v1 result exactly matches an active `ready`/`active` tournament bracket match for the current season, the backend automatically associates it with that tournament match. The next BO3 game number is derived from the current series wins, so the existing server match client does not need tournament-specific payload fields.
+
+On the hosted Minecraft server, the tournament coordinator polls the backend and automatically starts a ready bracket match when both assigned players are online and they are the only non-spectating players online. This deliberately reuses the normal `GameManager` and `CompetitiveMatchTracker` game/result pipeline. If an opponent is offline, the assigned player remains in the lobby and can use `/mm tournament match` to see the waiting match; an unrelated player cannot join the tournament game.
+
 ### Current season
 
 `GET /api/v1/season/current`
@@ -106,7 +110,7 @@ Each component is normalized against the current season leader for that componen
 
 `GET /api/v1/tournament/current`
 
-Returns the current non-completed tournament for the current season, including registrations and generated bracket matches.
+Returns the current non-completed tournament for the current season, including registrations and generated bracket matches. It returns `tournament: null` when there is no current tournament.
 
 `GET /api/v1/tournament/{id}`
 
@@ -114,9 +118,43 @@ Returns a specific tournament and its bracket.
 
 `GET /api/v1/tournament/player/{uuid}`
 
-Returns the player's currently playable tournament match, if one exists.
+Returns the player's currently playable tournament match, or `match: null` if the player has no active match. When a match exists, the response includes the assigned player UUIDs, their stored Minecraft names, current series wins, best-of value, round/slot, and match status.
 
-Tournament brackets are dynamically sized to the registrations using the next power-of-two bracket size, with byes. Tournament matches are best-of-3; each individual game remains a separate multiplayer ELO event.
+`GET /api/v1/tournament/leaderboard`
+
+Returns the current season's accumulated tournament points leaderboard.
+
+Tournament brackets are dynamically sized to the registrations using the next power-of-two bracket size, with byes. Tournament matches are best-of-3; each individual game remains a separate multiplayer ELO event. Tournament game numbers must be recorded sequentially, and a tournament result must be a 1v1 placement of first versus second.
+
+## Discord competitive channels
+
+The bot can maintain five persistent ranking boards using the `competitive_channels` configuration:
+
+```json
+"competitive_channels": {
+  "mmcl": "mmcl-rankings",
+  "mmr": "mmr-rankings",
+  "elo": "elo-rankings",
+  "weekly": "weekly-rankings",
+  "tournament": "tournament-rankings"
+}
+```
+
+Recommended structure:
+
+- `#competitions` — weekly competitions and tournament announcements
+- `#mmcl-rankings` — headline MMCL Score ranking, including its three normalized components
+- `#mmr-rankings` — permanent/all-time MMR ranking
+- `#elo-rankings` — current-season ELO ranking
+- `#weekly-rankings` — current-season weekly score ranking
+- `#tournament-rankings` — current-season tournament points ranking
+- `#tournament-registration` — registration instructions/automation
+- `#tournament-chat` — tournament discussion
+- `#tournament-results` — completed tournament results
+- `#server-status` — hosted server status
+- `#matchmaking` — tournament/game matchmaking notifications
+
+The five ranking boards are refreshed by the tournament/competitive Discord scheduler and use the same SQLite data as the API. MMR is labelled all-time; the other four boards are labelled with the current season.
 
 ## Solo implementation submissions
 

@@ -21,6 +21,14 @@
       "kits": "modern-leaderboard-kits"
     }
   },
+  "competitive_channels": {
+    "mmcl": "mmcl-rankings",
+    "mmr": "mmr-rankings",
+    "elo": "elo-rankings",
+    "weekly": "weekly-rankings",
+    "tournament": "tournament-rankings",
+    "season_archive": "season-archive"
+  },
   "top_n": 10,
   "migration": {
     "source_channel": "1543520905576194098",
