@@ -89,6 +89,8 @@ Remove-Item (Join-Path $dist 'server\logs') -Recurse -Force -ErrorAction Silentl
 # Generate the updater manifest from exactly what will be shipped.
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $here 'make_manifest.ps1') -Version $releaseVersion -Note $releaseNote -Root $dist
 if ($LASTEXITCODE -ne 0) { throw "Manifest generation failed." }
+# Keep the raw GitHub manifest synchronized too, so existing client updaters see this release.
+Copy-Item -Force (Join-Path $dist 'version.json') (Join-Path $here 'version.json')
 Set-Content (Join-Path $dist 'installed.version') -Value $releaseVersion -Encoding ascii
 
 $zip = Join-Path $here 'solo-1.21-dist.zip'
