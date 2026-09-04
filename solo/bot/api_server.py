@@ -10,7 +10,7 @@ DB=INSERT_SUBMISSION=UPSERT_RUN=CREATE_COMPETITION=BOARD_ROWS=COMPETITION_ROWS=R
 
 def configure(*,db_fn,insert_submission,upsert_run,create_competition,board_rows,competition_rows=None,refresh_bot=None,post_feed=None):
     global DB,INSERT_SUBMISSION,UPSERT_RUN,CREATE_COMPETITION,BOARD_ROWS,COMPETITION_ROWS,REFRESH_BOT,POST_FEED
-    DB=db_fn;INSERT_SUBMISSION=insert_submission;UPSERT_RUN=upsert_run;CREATE_COMPETITION=create_competition;BOARD_ROWS=board_rows;COMPETITION_ROWS=competition_rows;REFRESH_BOT=refresh_bot;POST_FEED=post_feed
+    DB=db_fn;INSERT_SUBMISSION=insert_submission;UPSERT_RUN=upsert_run;CREATE_COMPETITION= create_competition;BOARD_ROWS=board_rows;COMPETITION_ROWS=competition_rows;REFRESH_BOT=refresh_bot;POST_FEED=post_feed
 
 def token_ok(h):
     expected=os.getenv("MM_API_TOKEN","").strip();return bool(expected) and h.headers.get("Authorization","")=="Bearer "+expected
@@ -71,21 +71,14 @@ def historical_get(parts):
             except ValueError:raise ValueError("invalid season id")
             row=c.execute("SELECT id FROM seasons WHERE id=?",(sid,)).fetchone()
             if not row:return {"ok":False,"error":"season_not_found"}
-            if len(parts)==2:
-                return {"ok":True,"season":competitive.season_summary(c,sid)}
-            if len(parts)==3 and parts[2]=="leaderboard":
-                kind="mmcl"
-                return {"ok":True,"seasonId":sid,"kind":kind,"rows":competitive.season_leaderboard(c,sid,kind,25)}
-            if len(parts)==4 and parts[2]=="leaderboard":
-                return {"ok":True,"seasonId":sid,"kind":parts[3].lower(),"rows":competitive.season_leaderboard(c,sid,parts[3],25)}
-            if len(parts)==3 and parts[2]=="tournaments":
-                return {"ok":True,"seasonId":sid,"tournaments":competitive.season_tournaments(c,sid)}
+            if len(parts)==2:return {"ok":True,"season":competitive.season_summary(c,sid)}
+            if len(parts)==3 and parts[2]=="leaderboard":return {"ok":True,"seasonId":sid,"kind":"mmcl","rows":competitive.season_leaderboard(c,sid,"mmcl",25)}
+            if len(parts)==4 and parts[2]=="leaderboard":return {"ok":True,"seasonId":sid,"kind":parts[3].lower(),"rows":competitive.season_leaderboard(c,sid,parts[3],25)}
+            if len(parts)==3 and parts[2]=="tournaments":return {"ok":True,"seasonId":sid,"tournaments":competitive.season_tournaments(c,sid)}
             if len(parts)==4 and parts[2]=="player":
-                uuid=parts[3].lower()
-                row=c.execute("SELECT 1 FROM season_players WHERE season_id=? AND lower(uuid)=?",(sid,uuid)).fetchone()
+                uuid=parts[3].lower();row=c.execute("SELECT 1 FROM season_players WHERE season_id=? AND lower(uuid)=?",(sid,uuid)).fetchone()
                 return {"ok":True,"seasonId":sid,"player":next((p for p in competitive.season_summary(c,sid)["players"] if p["uuid"].lower()==uuid),None)} if row else {"ok":True,"seasonId":sid,"player":None}
-        if len(parts)==2 and parts[0]=="player":
-            return {"ok":True,"uuid":parts[1].lower(),"seasons":competitive.player_season_history(c,parts[1],100)}
+        if len(parts)==3 and parts[0]=="player" and parts[2]=="seasons":return {"ok":True,"uuid":parts[1].lower(),"seasons":competitive.player_season_history(c,parts[1],100)}
         return None
     finally:c.close()
 
@@ -100,8 +93,7 @@ def tournament_get(parts):
     try:
         competitive.ensure_schema(c);tournament.ensure_schema(c);season=competitive.ensure_current_season(c);sid=int(season[0])
         if parts==["current"]:
-            row=c.execute("SELECT id,season_id,number,name,registration_start,registration_end,start_ts,status,bracket_size FROM tournaments WHERE season_id=? AND status!='complete' ORDER BY number DESC LIMIT 1",(sid,)).fetchone()
-            return {"ok":True,"tournament":tournament_payload(c,row)}
+            row=c.execute("SELECT id,season_id,number,name,registration_start,registration_end,start_ts,status,bracket_size FROM tournaments WHERE season_id=? AND status!='complete' ORDER BY number DESC LIMIT 1",(sid,)).fetchone();return {"ok":True,"tournament":tournament_payload(c,row)}
         if len(parts)==1:
             tid=int(parts[0]);row=c.execute("SELECT id,season_id,number,name,registration_start,registration_end,start_ts,status,bracket_size FROM tournaments WHERE id=?",(tid,)).fetchone();return {"ok":True,"tournament":tournament_payload(c,row)}
         if len(parts)==2 and parts[0]=="player":
@@ -152,7 +144,7 @@ class Handler(BaseHTTPRequestHandler):
                         result=competitive_get(["tournament","leaderboard"]);send_json(self,200,result);return
                     result=tournament_get(parts[4:])
                     if result is not None:send_json(self,200,result);return
-                if parts[3]=="seasons" or parts[3]=="player":
+                if parts[3] in ("seasons","player"):
                     result=historical_get(parts[3:])
                     if result is not None:send_json(self,200,result);return
                 result=competitive_get(parts[3:])
@@ -161,7 +153,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:print(f"[api] GET failed: {exc}",flush=True);send_json(self,500,{"ok":False,"error":"internal_error"});return
         send_json(self,404,{"ok":False,"error":"not_found"})
 
-    def do_POST(self):
+    def do_POST(self,):
         path=unquote(self.path.split("?",1)[0]).rstrip("/")
         if not token_ok(self):send_json(self,401,{"ok":False,"error":"unauthorized"});return
         try:
