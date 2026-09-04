@@ -1,8 +1,4 @@
-"""Small HTTP API used by public Monster Maze servers.
-
-The Discord bot remains the source of truth. This module deliberately uses only
-Python's standard library so it adds no runtime dependency to the bot.
-"""
+"""Small HTTP API used by public Monster Maze servers."""
 from __future__ import annotations
 
 import json
@@ -38,9 +34,7 @@ def configure(*, db_fn, insert_submission, upsert_run, create_competition,
 
 def token_ok(handler: BaseHTTPRequestHandler) -> bool:
     expected = os.getenv("MM_API_TOKEN", "").strip()
-    if not expected:
-        return False
-    return handler.headers.get("Authorization", "") == "Bearer " + expected
+    return bool(expected) and handler.headers.get("Authorization", "") == "Bearer " + expected
 
 
 def send_json(handler, status: int, payload: dict):
@@ -55,92 +49,73 @@ def send_json(handler, status: int, payload: dict):
 
 def refresh_bot(platform: str):
     if REFRESH_BOT:
-        try:
-            REFRESH_BOT(platform)
-        except Exception as exc:
-            print(f"[api] leaderboard refresh failed: {exc}", flush=True)
+        try: REFRESH_BOT(platform)
+        except Exception as exc: print(f"[api] leaderboard refresh failed: {exc}", flush=True)
 
 
 def post_feed(run: dict):
     if POST_FEED:
-        try:
-            POST_FEED(run)
-        except Exception as exc:
-            print(f"[api] feed post failed: {exc}", flush=True)
+        try: POST_FEED(run)
+        except Exception as exc: print(f"[api] feed post failed: {exc}", flush=True)
 
 
 def background_updates(platform: str, run: dict, should_feed: bool):
     def work():
-        if should_feed:
-            post_feed(run)
+        if should_feed: post_feed(run)
         refresh_bot(platform)
     threading.Thread(target=work, name="MonsterMazeAPIUpdate", daemon=True).start()
 
 
-def _competitive_get(path_parts):
+def _season_row(r):
+    if not r: return None
+    return {"uuid":r[0],"name":r[1],"elo":round(float(r[2]),3),"weeklyPoints":int(r[3]),"tournamentPoints":int(r[4]),"eloComponent":round(float(r[5]),3),"weeklyComponent":round(float(r[6]),3),"tournamentComponent":round(float(r[7]),3),"mmcl":round(float(r[8]),3)}
+
+
+def _competitive_get(parts):
     c = DB()
     try:
         competitive.ensure_schema(c)
         season = competitive.ensure_current_season(c)
         sid = int(season[0])
-        if path_parts == ["season", "current"]:
+        if parts == ["season", "current"]:
             competitive.recalculate_components(c, sid)
-            rows = c.execute("SELECT uuid,name,elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component,mmcl FROM season_players WHERE season_id=? ORDER BY mmcl DESC,uuid ASC",(sid,)).fetchall()
+            rows=c.execute("SELECT uuid,name,elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component,mmcl FROM season_players WHERE season_id=? ORDER BY mmcl DESC,uuid ASC",(sid,)).fetchall()
             return {"ok":True,"season":{"id":sid,"number":int(season[1]),"start":season[2],"end":season[3],"status":season[4]},"rows":[_season_row(r) for r in rows]}
-        if len(path_parts) == 3 and path_parts[0] in ("mmcl","elo") and path_parts[1] == "leaderboard":
-            kind=path_parts[0]
+        if len(parts)==2 and parts[0] in ("mmcl","elo","weekly","tournament") and parts[1]=="leaderboard":
             competitive.recalculate_components(c,sid)
-            col="mmcl" if kind=="mmcl" else "elo"
+            col={"mmcl":"mmcl","elo":"elo","weekly":"weekly_points","tournament":"tournament_points"}[parts[0]]
             rows=c.execute(f"SELECT uuid,name,{col} FROM season_players WHERE season_id=? ORDER BY {col} DESC,uuid ASC LIMIT 25",(sid,)).fetchall()
-            return {"ok":True,"seasonId":sid,"kind":kind,"rows":[{"uuid":u,"name":n,"score":round(float(v),3)} for u,n,v in rows]}
-        if len(path_parts) == 2 and path_parts[0] == "mmcl" and path_parts[1].startswith("player-"):
-            uuid=path_parts[1][7:].lower()
-            competitive.recalculate_components(c,sid)
+            return {"ok":True,"seasonId":sid,"kind":parts[0],"rows":[{"uuid":u,"name":n,"score":round(float(v),3)} for u,n,v in rows]}
+        if len(parts)==3 and parts[0] in ("mmcl","season") and parts[1]=="player":
+            uuid=parts[2].lower(); competitive.recalculate_components(c,sid)
             r=c.execute("SELECT uuid,name,elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component,mmcl FROM season_players WHERE season_id=? AND uuid=?",(sid,uuid)).fetchone()
-            return {"ok":True,"seasonId":sid,"player":_season_row(r) if r else None}
-        if len(path_parts) == 3 and path_parts[0] == "season" and path_parts[1] == "player":
-            uuid=path_parts[2].lower()
-            competitive.recalculate_components(c,sid)
-            r=c.execute("SELECT uuid,name,elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component,mmcl FROM season_players WHERE season_id=? AND uuid=?",(sid,uuid)).fetchone()
-            return {"ok":True,"seasonId":sid,"player":_season_row(r) if r else None}
+            return {"ok":True,"seasonId":sid,"player":_season_row(r)}
         return None
     finally:
         c.close()
 
 
-def _season_row(r):
-    if not r:return None
-    return {"uuid":r[0],"name":r[1],"elo":round(float(r[2]),3),"weeklyPoints":int(r[3]),"tournamentPoints":int(r[4]),"eloComponent":round(float(r[5]),3),"weeklyComponent":round(float(r[6]),3),"tournamentComponent":round(float(r[7]),3),"mmcl":round(float(r[8]),3)}
-
-
 class Handler(BaseHTTPRequestHandler):
-    server_version = "MonsterMazeAPI/1.1"
-
-    def log_message(self, fmt, *args):
-        print(f"[api] {self.address_string()} - {fmt % args}", flush=True)
+    server_version="MonsterMazeAPI/1.2"
+    def log_message(self,fmt,*args): print(f"[api] {self.address_string()} - {fmt % args}",flush=True)
 
     def do_GET(self):
-        path = unquote(self.path.split("?", 1)[0]).rstrip("/")
-        if path == "/health":
-            send_json(self, 200, {"ok": True, "service": "monstermaze-api"})
-            return
-        if not token_ok(self):
-            send_json(self, 401, {"ok": False, "error": "unauthorized"})
-            return
-        parts = path.strip("/").split("/")
+        path=unquote(self.path.split("?",1)[0]).rstrip("/")
+        if path=="/health": send_json(self,200,{"ok":True,"service":"monstermaze-api"}); return
+        if not token_ok(self): send_json(self,401,{"ok":False,"error":"unauthorized"}); return
+        parts=path.strip("/").split("/")
         try:
-            if len(parts) == 4 and parts[:3] == ["api", "v1", "challenge"]:
-                platform = parts[3]
-                if platform not in ("1.8", "1.21"): raise ValueError("unsupported platform")
-                comp = CREATE_COMPETITION(platform)
-                send_json(self, 200, {"ok":True,"platform":platform,"week":comp["week_key"],"number":comp["number"],"mode":comp["mode"],"pattern":int(comp["pattern"]),"kit":comp["kit"],"start":comp["start_ts"],"end":comp["end_ts"],"status":comp["status"]}); return
-            if len(parts) == 5 and parts[:3] == ["api", "v1", "challenge"] and parts[4] == "leaderboard":
+            if len(parts)==4 and parts[:3]==["api","v1","challenge"]:
                 platform=parts[3]
                 if platform not in ("1.8","1.21"): raise ValueError("unsupported platform")
-                if COMPETITION_ROWS is None: raise ValueError("competition standings unavailable")
+                comp=CREATE_COMPETITION(platform)
+                send_json(self,200,{"ok":True,"platform":platform,"week":comp["week_key"],"number":comp["number"],"mode":comp["mode"],"pattern":int(comp["pattern"]),"kit":comp["kit"],"start":comp["start_ts"],"end":comp["end_ts"],"status":comp["status"]}); return
+            if len(parts)==5 and parts[:3]==["api","v1","challenge"] and parts[4]=="leaderboard":
+                platform=parts[3]
+                if platform not in ("1.8","1.21"): raise ValueError("unsupported platform")
                 comp=CREATE_COMPETITION(platform); rows=COMPETITION_ROWS(comp,10)
                 send_json(self,200,{"ok":True,"platform":platform,"week":comp["week_key"],"number":comp["number"],"mode":comp["mode"],"pattern":int(comp["pattern"]),"kit":comp["kit"],"start":comp["start_ts"],"end":comp["end_ts"],"status":comp["status"],"rows":[{"name":n,"stage":int(s),"timeMs":int(t)} for n,s,t in rows]}); return
-            if len(parts) in (6,7) and parts[:3] == ["api","v1","leaderboard"]:
+            if len(parts) in (6,7) and parts[:3]==["api","v1","leaderboard"]:
                 platform,mode=parts[3],parts[4]
                 if platform not in ("1.8","1.21"): raise ValueError("unsupported platform")
                 if len(parts)==6 and parts[5]=="overall": rows=BOARD_ROWS("platform=? AND mode=?",[platform,mode],10); kind,pattern="overall",None
@@ -174,16 +149,14 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length=int(self.headers.get("Content-Length","0"))
             if length<=0 or length>64*1024: raise ValueError("invalid content length")
-            raw=self.rfile.read(length); payload=json.loads(raw.decode("utf-8"))
+            payload=json.loads(self.rfile.read(length).decode("utf-8"))
             if path=="/api/v1/runs":
-                required=("submissionId","platform","mode","pattern","kit","uuid","name","stage","timeMs")
-                missing=[k for k in required if k not in payload]
+                required=("submissionId","platform","mode","pattern","kit","uuid","name","stage","timeMs"); missing=[k for k in required if k not in payload]
                 if missing: raise ValueError("missing fields: "+",".join(missing))
                 platform=str(payload["platform"])
                 if platform not in ("1.8","1.21"): raise ValueError("unsupported platform")
-                pattern=int(payload["pattern"])
+                pattern=int(payload["pattern"]); stage=int(payload["stage"])
                 if not 0<=pattern<3: raise ValueError("invalid pattern")
-                stage=int(payload["stage"])
                 if stage<1 or stage>10000: raise ValueError("invalid stage")
                 kit=str(payload["kit"]); kit="Slowball" if kit.lower()=="slowballer" else kit
                 if kit not in ("Jumper","Slowball","Body Builder","Repulsor","Maverick"): raise ValueError("invalid kit")
@@ -193,32 +166,29 @@ class Handler(BaseHTTPRequestHandler):
                 inserted=INSERT_SUBMISSION(normalized); improved=UPSERT_RUN(normalized)
                 send_json(self,200,{"ok":True,"accepted":True,"newSubmission":bool(inserted),"newLifetimePB":bool(improved)}); background_updates(platform,normalized,bool(inserted)); return
             if path=="/api/v1/matches":
-                required=("matchId","platform","mode","pattern","kit","startedAt","endedAt","players")
-                missing=[k for k in required if k not in payload]
+                required=("matchId","platform","mode","pattern","kit","startedAt","endedAt","players"); missing=[k for k in required if k not in payload]
                 if missing: raise ValueError("missing fields: "+",".join(missing))
                 platform=str(payload["platform"])
                 if platform not in ("1.8","1.21"): raise ValueError("unsupported platform")
-                players=payload["players"]
-                if not isinstance(players,list) or len(players)<2: raise ValueError("a multiplayer match needs at least 2 players")
-                if len(players)>64: raise ValueError("too many players")
-                seen=set(); normalized_players=[]
-                for p in players:
+                if not isinstance(payload["players"],list) or len(payload["players"])<2 or len(payload["players"])>64: raise ValueError("invalid player list")
+                players=[]; seen=set()
+                for p in payload["players"]:
                     uuid=str(p.get("uuid","")).lower()[:64]
                     if not uuid or uuid in seen: raise ValueError("invalid or duplicate player uuid")
                     seen.add(uuid)
                     placement=int(p["placement"]); tick=int(p["eliminationTick"])
                     if placement<1 or tick<0: raise ValueError("invalid placement or elimination tick")
-                    normalized_players.append({"uuid":uuid,"name":str(p.get("name",""))[:256],"placement":placement,"elimination_tick":tick})
-                c=DB(); competitive.ensure_schema(c); competitive.record_match(c,{"id":str(payload["matchId"])[:128],"platform":platform,"mode":str(payload["mode"]).lower()[:64],"pattern":int(payload["pattern"]),"kit":str(payload["kit"])[:64],"started_at":int(payload["startedAt"]),"ended_at":int(payload["endedAt"]),"tournament_id":payload.get("tournamentId")},normalized_players); c.close()
-                send_json(self,200,{"ok":True,"accepted":True,"matchId":str(payload["matchId"])}) ; return
+                    players.append({"uuid":uuid,"name":str(p.get("name",""))[:256],"placement":placement,"elimination_tick":tick})
+                c=DB(); competitive.ensure_schema(c)
+                accepted=competitive.record_match(c,{"id":str(payload["matchId"])[:128],"platform":platform,"mode":str(payload["mode"]).lower()[:64],"pattern":int(payload["pattern"]),"kit":str(payload["kit"])[:64],"started_at":int(payload["startedAt"]),"ended_at":int(payload["endedAt"]),"tournament_id":payload.get("tournamentId")},players); c.close()
+                send_json(self,200,{"ok":True,"accepted":bool(accepted),"matchId":str(payload["matchId"])}); return
             send_json(self,404,{"ok":False,"error":"not_found"})
-        except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:
-            send_json(self,400,{"ok":False,"error":str(exc)})
+        except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc: send_json(self,400,{"ok":False,"error":str(exc)})
         except Exception as exc:
             print(f"[api] POST failed: {exc}",flush=True); send_json(self,500,{"ok":False,"error":"internal_error"})
 
 
 def start_server(*,host="0.0.0.0",port=8090):
     server=ThreadingHTTPServer((host,int(port)),Handler)
-    thread=threading.Thread(target=server.serve_forever,name="MonsterMazeAPI",daemon=True); thread.start()
+    threading.Thread(target=server.serve_forever,name="MonsterMazeAPI",daemon=True).start()
     print(f"[api] listening on {host}:{port}",flush=True); return server
