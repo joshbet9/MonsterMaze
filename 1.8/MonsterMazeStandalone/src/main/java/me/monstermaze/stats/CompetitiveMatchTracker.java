@@ -24,7 +24,7 @@ public final class CompetitiveMatchTracker implements Listener {
     private final MonsterMazePlugin plugin;
     private final Map<UUID, Integer> eliminationTicks = new HashMap<UUID, Integer>();
     private final Map<UUID, String> names = new HashMap<UUID, String>();
-    private Set<UUID> participants = new HashSet<UUID>();
+    private final Set<UUID> participants = new HashSet<UUID>();
     private String matchId;
     private long startedAt;
     private int tick;
@@ -34,9 +34,7 @@ public final class CompetitiveMatchTracker implements Listener {
     public CompetitiveMatchTracker(MonsterMazePlugin plugin) {
         this.plugin = plugin;
         Bukkit.getPluginManager().registerEvents(this, plugin);
-        tickTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
-            @Override public void run() { tick(); }
-        }, 1L, 1L);
+        tickTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() { @Override public void run() { tick(); } }, 1L, 1L);
     }
 
     private void tick() {
@@ -45,17 +43,13 @@ public final class CompetitiveMatchTracker implements Listener {
             List<Player> players = plugin.getGameManager().getAlivePlayers();
             if (players.size() >= 2) begin(players);
         }
-        if (active) {
-            tick++;
-            if (eliminationTicks.size() == participants.size()) finish();
-        }
+        if (active) tick++;
     }
 
     private void begin(List<Player> players) {
         participants.clear(); eliminationTicks.clear(); names.clear();
         for (Player p : players) { participants.add(p.getUniqueId()); names.put(p.getUniqueId(), p.getName()); }
-        matchId = UUID.randomUUID().toString();
-        startedAt = System.currentTimeMillis(); tick = 0; active = true;
+        matchId = UUID.randomUUID().toString(); startedAt = System.currentTimeMillis(); tick = 0; active = true;
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -75,42 +69,35 @@ public final class CompetitiveMatchTracker implements Listener {
     }
 
     private void scheduleFinishCheck() {
-        Bukkit.getScheduler().runTask(plugin, new Runnable() {
-            @Override public void run() { if (active && eliminationTicks.size() >= participants.size() - 1) finish(); }
-        });
+        Bukkit.getScheduler().runTask(plugin, new Runnable() { @Override public void run() { if (active && eliminationTicks.size() >= participants.size() - 1) finish(); } });
     }
 
     private void finish() {
         if (!active) return;
         active = false;
         List<Result> eliminated = new ArrayList<Result>();
-        for (UUID id : participants) {
-            Integer t = eliminationTicks.get(id);
-            if (t != null) eliminated.add(new Result(id, names.get(id), t));
-        }
+        for (UUID id : participants) { Integer t = eliminationTicks.get(id); if (t != null) eliminated.add(new Result(id, names.get(id), t)); }
         int survivors = participants.size() - eliminated.size();
         List<Map<String,Object>> rows = new ArrayList<Map<String,Object>>();
         for (Result r : eliminated) {
-            int betterDeaths = 0;
-            for (Result other : eliminated) if (other.tick > r.tick) betterDeaths++;
-            int placement = survivors > 0 ? 2 + betterDeaths : 1 + betterDeaths;
+            int later = 0;
+            for (Result other : eliminated) if (other.tick > r.tick) later++;
+            int placement = survivors > 0 ? 2 + later : 1 + later;
             Map<String,Object> row = new HashMap<String,Object>();
-            row.put("uuid", r.uuid.toString()); row.put("name", r.name); row.put("placement", placement); row.put("eliminationTick", r.tick);
-            rows.add(row);
+            row.put("uuid",r.uuid.toString()); row.put("name",r.name); row.put("placement",placement); row.put("eliminationTick",r.tick); rows.add(row);
         }
-        if (survivors > 0) {
-            for (UUID id : participants) if (!eliminationTicks.containsKey(id)) {
-                Map<String,Object> row = new HashMap<String,Object>();
-                row.put("uuid", id.toString()); row.put("name", names.get(id)); row.put("placement", 1); row.put("eliminationTick", -1); rows.add(row);
-            }
+        if (survivors > 0) for (UUID id : participants) if (!eliminationTicks.containsKey(id)) {
+            Map<String,Object> row = new HashMap<String,Object>(); row.put("uuid",id.toString()); row.put("name",names.get(id)); row.put("placement",1); row.put("eliminationTick",-1); rows.add(row);
         }
-        plugin.getBackendClient().submitMatch(matchId, plugin.getMode().id, plugin.getMode().name(), plugin.getGameManager().getPatternIndex(), rows, startedAt, System.currentTimeMillis());
+        int pattern = plugin.getGameManager().getPatternIndex();
+        if (pattern < 0) pattern = 0;
+        plugin.getBackendClient().submitMatch(matchId,"1.8",plugin.getMode().id,pattern,rows,startedAt,System.currentTimeMillis());
     }
 
     public void shutdown() { if (tickTask != null) { tickTask.cancel(); tickTask = null; } }
 
     private static final class Result {
         final UUID uuid; final String name; final int tick;
-        Result(UUID uuid, String name, int tick) { this.uuid=uuid; this.name=name; this.tick=tick; }
+        Result(UUID uuid,String name,int tick) { this.uuid=uuid; this.name=name; this.tick=tick; }
     }
 }
