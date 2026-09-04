@@ -7,6 +7,7 @@ import me.monstermaze.game.GameState;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.kit.KitType;
 import me.monstermaze.stats.ChallengeManager;
+import me.monstermaze.stats.CompetitiveUI;
 import me.monstermaze.stats.LeaderboardManager;
 import me.monstermaze.stats.RunRecorder;
 import org.bukkit.ChatColor;
@@ -20,7 +21,8 @@ import java.util.List;
 
 public class MMCommand implements CommandExecutor {
     private final MonsterMazePlugin plugin;
-    public MMCommand(MonsterMazePlugin plugin) { this.plugin = plugin; }
+    private final CompetitiveUI competitiveUI;
+    public MMCommand(MonsterMazePlugin plugin) { this.plugin = plugin; this.competitiveUI = new CompetitiveUI(plugin); }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
@@ -31,6 +33,8 @@ public class MMCommand implements CommandExecutor {
             sender.sendMessage(ChatColor.YELLOW + "/mm kit <jumper|slowball|body|repulsor|maverick>");
             sender.sendMessage(ChatColor.YELLOW + "/mm kits " + ChatColor.GRAY + "- list kits");
             sender.sendMessage(ChatColor.YELLOW + "/mm pb " + ChatColor.GRAY + "- your bests per pattern");
+            sender.sendMessage(ChatColor.YELLOW + "/mm stats " + ChatColor.GRAY + "- competitive stats");
+            sender.sendMessage(ChatColor.YELLOW + "/mm clb <mmcl|mmr|elo|weekly|tournament> " + ChatColor.GRAY + "- competitive leaderboard");
             sender.sendMessage(ChatColor.YELLOW + "/mm challenge " + ChatColor.GRAY + "- this week's hosted challenge");
             sender.sendMessage(ChatColor.YELLOW + "/mm challenge lb " + ChatColor.GRAY + "- challenge standings");
             sender.sendMessage(ChatColor.YELLOW + "/mm exportpbs " + ChatColor.GRAY + "- export all stored PBs for submission");
@@ -42,6 +46,14 @@ public class MMCommand implements CommandExecutor {
         }
 
         String sub = args[0].toLowerCase();
+        if (sub.equals("stats") || sub.equals("profile")) {
+            if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Players only."); return true; }
+            competitiveUI.showStats((Player) sender); return true;
+        }
+        if (sub.equals("clb") || sub.equals("competitive") || sub.equals("competitiveleaderboard")) {
+            if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Players only."); return true; }
+            competitiveUI.showLeaderboard((Player) sender, args.length >= 2 ? args[1] : "mmcl"); return true;
+        }
         if (sub.equals("challenge") || sub.equals("competition")) {
             if (!(sender instanceof Player)) { sender.sendMessage(ChatColor.RED + "Players only."); return true; }
             plugin.getChallengeManager().show((Player) sender, args.length >= 2 && args[1].equalsIgnoreCase("lb"));
