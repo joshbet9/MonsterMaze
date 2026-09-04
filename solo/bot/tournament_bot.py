@@ -9,8 +9,10 @@ import tournament
 from monster_bot_v2 import MonsterBot, load_config, db
 
 PREFIX = "!tournament"
+SEASON_PREFIX = "!season"
 POLL_SECONDS = 30
 ANNOUNCEMENT_TABLE = "tournament_discord_announcements"
+ARCHIVE_TABLE = "season_discord_archives"
 
 
 def schema(c):
@@ -18,6 +20,9 @@ def schema(c):
     c.execute(f"""CREATE TABLE IF NOT EXISTS {ANNOUNCEMENT_TABLE}(
         tournament_id INTEGER PRIMARY KEY, channel_id TEXT, message_id TEXT,
         announced_matches INTEGER NOT NULL DEFAULT 0)""")
+    c.execute(f"""CREATE TABLE IF NOT EXISTS {ARCHIVE_TABLE}(
+        season_id INTEGER PRIMARY KEY, channel_id TEXT NOT NULL, message_id TEXT NOT NULL,
+        published_at INTEGER NOT NULL)""")
     c.commit()
 
 
@@ -70,6 +75,68 @@ def bracket_embed(c, tid):
             lines.append(f"{icon} **{pname(m[3],names)}** vs **{pname(m[4],names)}** — {m[6]}–{m[7]} ({m[9]})")
         e.add_field(name=label, value="\n".join(lines)[:1024] or "—", inline=False)
     e.set_footer(text="Best-of-3 • First to 2 wins advances")
+    return e
+
+
+def season_archive_channel_ref(cfg):
+    return cfg.get("competitive_channels", {}).get("season_archive", "season-archive")
+
+
+def _archive_rows(c, sid, column, limit):
+    return c.execute(f"""SELECT name,{column} FROM season_players
+        WHERE season_id=? ORDER BY {column} DESC,name ASC LIMIT ?""", (sid, limit)).fetchall()
+
+
+def _archive_lines(rows, integer=False):
+    if integer:
+        return [f"{i}. **{name or 'Unknown'}** — {int(value)} pts" for i,(name,value) in enumerate(rows, 1)]
+    return [f"{i}. **{name or 'Unknown'}** — {float(value):.1f}" for i,(name,value) in enumerate(rows, 1)]
+
+
+def season_archive_embed(c, sid, top_n=10):
+    season = c.execute("SELECT id,season_number,start_ts,end_ts,status,finalized_at FROM seasons WHERE id=?", (sid,)).fetchone()
+    if not season or season[4] != "archived":
+        return None
+
+    mmcl = _archive_rows(c, sid, "mmcl", top_n)
+    elo = _archive_rows(c, sid, "elo", top_n)
+    weekly = _archive_rows(c, sid, "weekly_points", top_n)
+    tournament_points = _archive_rows(c, sid, "tournament_points", top_n)
+
+    e = discord.Embed(
+        title=f"📜 Season {int(season[1])} — Archived",
+        description=f"{dt(int(datetime.fromisoformat(season[2]).timestamp() * 1000))} → {dt(int(datetime.fromisoformat(season[3]).timestamp() * 1000))}",
+        color=0x9B59B6,
+    )
+
+    champion = mmcl[0] if mmcl else None
+    if champion:
+        e.add_field(name="👑 Season Champion", value=f"**{champion[0] or 'Unknown'}** — {float(champion[1]):.1f} MMCL", inline=False)
+    else:
+        e.add_field(name="👑 Season Champion", value="No ranked players.", inline=False)
+
+    e.add_field(name="MMCL — Final", value="\n".join(_archive_lines(mmcl)) or "No results.", inline=False)
+    e.add_field(name="ELO — Final", value="\n".join(_archive_lines(elo)) or "No results.", inline=False)
+    e.add_field(name="Weekly — Final", value="\n".join(_archive_lines(weekly, True)) or "No results.", inline=False)
+    e.add_field(name="Tournament — Final", value="\n".join(_archive_lines(tournament_points, True)) or "No results.", inline=False)
+
+    tournaments = c.execute("""SELECT id,number,name,status FROM tournaments
+        WHERE season_id=? ORDER BY number""", (sid,)).fetchall()
+    if tournaments:
+        lines = []
+        for tid, number, name, status in tournaments:
+            placements = c.execute("""SELECT placement,name,points FROM tournament_players
+                WHERE tournament_id=? AND placement IS NOT NULL ORDER BY placement ASC LIMIT 4""", (tid,)).fetchall()
+            if placements:
+                winners = " • ".join(f"{int(p)}. {n or 'Unknown'} ({int(pts)} pts)" for p,n,pts in placements)
+            else:
+                winners = "No recorded placements"
+            lines.append(f"**#{int(number):03d} — {name}** ({status})\n{winners}")
+        e.add_field(name="🏆 Season Tournaments", value="\n\n".join(lines)[:1024], inline=False)
+    else:
+        e.add_field(name="🏆 Season Tournaments", value="No tournaments recorded.", inline=False)
+
+    e.set_footer(text="Historical season record • MMCL = ELO 40% + Weekly 30% + Tournament 30%")
     return e
 
 
@@ -129,6 +196,48 @@ class TournamentBot(MonsterBot):
             ref = self.competitive_channel_ref(kind)
             if ref:
                 await self.post_edit(f"competitive|{kind}", ref, self.competitive_embed(kind), f"competitive {kind}")
+
+    async def publish_season_archives(self):
+        ref = season_archive_channel_ref(self.cfg)
+        channel = self.channel(ref)
+        if not channel:
+            return
+        c = db()
+        try:
+            schema(c)
+            seasons = c.execute("SELECT id,season_number FROM seasons WHERE status='archived' ORDER BY season_number ASC").fetchall()
+            pending = []
+            for sid, number in seasons:
+                exists = c.execute(f"SELECT 1 FROM {ARCHIVE_TABLE} WHERE season_id=?", (int(sid),)).fetchone()
+                if not exists:
+                    pending.append((int(sid), int(number)))
+        finally:
+            c.close()
+
+        for sid, number in pending:
+            c = db()
+            try:
+                schema(c)
+                embed = season_archive_embed(c, sid, self.top_n)
+                if not embed:
+                    continue
+            finally:
+                c.close()
+            try:
+                msg = await self.call(lambda: channel.send(embed=embed), f"season {number} archive")
+                try:
+                    await self.call(lambda: msg.pin(), f"season {number} archive pin")
+                except discord.HTTPException:
+                    pass
+                c = db()
+                try:
+                    schema(c)
+                    c.execute(f"INSERT OR IGNORE INTO {ARCHIVE_TABLE}(season_id,channel_id,message_id,published_at) VALUES(?,?,?,?)", (sid, str(channel.id), str(msg.id), int(time.time()*1000)))
+                    c.commit()
+                finally:
+                    c.close()
+            except discord.HTTPException as exc:
+                print(f"season {number} archive publish failed: {exc}", flush=True)
 
     async def announce(self, tid):
         channel = self.competition_channel()
@@ -212,6 +321,7 @@ class TournamentBot(MonsterBot):
         for tid in ids:
             await self.announce_results(tid)
             await self.announce(tid)
+        await self.publish_season_archives()
         await self.refresh_competitive_rankings()
 
     async def tournament_scheduler(self):
@@ -225,8 +335,40 @@ class TournamentBot(MonsterBot):
     async def on_ready(self):
         await super().on_ready()
         await self.refresh_competitive_rankings()
+        await self.publish_season_archives()
         if self.tournament_task is None or self.tournament_task.done():
             self.tournament_task = asyncio.create_task(self.tournament_scheduler())
+
+    async def season_command(self, message, args):
+        c = db()
+        try:
+            schema(c)
+            if not args or args[0].lower() == "current":
+                season = competitive.ensure_current_season(c)
+                sid = int(season[0])
+                row = c.execute("SELECT season_number,start_ts,end_ts,status FROM seasons WHERE id=?", (sid,)).fetchone()
+                await message.channel.send(f"📅 **Season {int(row[0])}** — {row[3].upper()} — {dt(int(datetime.fromisoformat(row[1]).timestamp()*1000))} → {dt(int(datetime.fromisoformat(row[2]).timestamp()*1000))}")
+                return
+            if args[0].lower() in ("archive", "history"):
+                if len(args) > 1:
+                    number = int(args[1])
+                    row = c.execute("SELECT id FROM seasons WHERE season_number=? AND status='archived'", (number,)).fetchone()
+                else:
+                    row = c.execute("SELECT id FROM seasons WHERE status='archived' ORDER BY season_number DESC LIMIT 1").fetchone()
+                if not row:
+                    await message.channel.send("No archived season was found.")
+                    return
+                embed = season_archive_embed(c, int(row[0]), self.top_n)
+            else:
+                await message.channel.send("Usage: `!season` • `!season archive [season-number]`")
+                return
+        except (ValueError, TypeError):
+            await message.channel.send("❌ Season number must be a whole number.")
+            return
+        finally:
+            c.close()
+        if embed:
+            await message.channel.send(embed=embed)
 
     async def command(self, message, args):
         if not args:
@@ -299,6 +441,8 @@ class TournamentBot(MonsterBot):
         text = message.content.strip()
         if text.lower() == PREFIX: await self.command(message, []); return
         if text.lower().startswith(PREFIX + " "): await self.command(message, text[len(PREFIX):].strip().split()); return
+        if text.lower() == SEASON_PREFIX: await self.season_command(message, []); return
+        if text.lower().startswith(SEASON_PREFIX + " "): await self.season_command(message, text[len(SEASON_PREFIX):].strip().split()); return
         await super().on_message(message)
 
 
