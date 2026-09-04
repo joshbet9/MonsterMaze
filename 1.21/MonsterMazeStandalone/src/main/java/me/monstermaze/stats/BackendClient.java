@@ -6,6 +6,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.*;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -36,8 +37,12 @@ public final class BackendClient {
     }
     public String get(String path) throws Exception {
         if (!isEnabled()) return null;
-        String suffix = path == null ? "" : path; if (!suffix.startsWith("/")) suffix = "/" + suffix;
-        HttpURLConnection c = (HttpURLConnection) new URL(baseUrl + suffix).openConnection(); c.setRequestMethod("GET"); c.setConnectTimeout(5000); c.setReadTimeout(10000); c.setRequestProperty("Authorization", "Bearer " + token); c.setRequestProperty("Accept", "application/json");
+        String suffix = path == null ? "" : path;
+        if (!suffix.startsWith("/")) suffix = "/" + suffix;
+        // Build the URL from a URI so path characters such as spaces are percent-encoded
+        // correctly without encoding the path separators themselves.
+        String encodedSuffix = new URI(null, null, null, -1, suffix, null, null).getRawPath();
+        HttpURLConnection c = (HttpURLConnection) new URL(baseUrl + encodedSuffix).openConnection(); c.setRequestMethod("GET"); c.setConnectTimeout(5000); c.setReadTimeout(10000); c.setRequestProperty("Authorization", "Bearer " + token); c.setRequestProperty("Accept", "application/json");
         try { int status = c.getResponseCode(); InputStream stream = status >= 200 && status < 300 ? c.getInputStream() : c.getErrorStream(); StringBuilder body = new StringBuilder(); if (stream != null) { BufferedReader r = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8)); try { String line; while ((line=r.readLine())!=null) body.append(line); } finally { r.close(); } } if (status < 200 || status >= 300) throw new IllegalStateException("HTTP " + status + (body.length()>0 ? " " + body : "")); return body.toString(); } finally { c.disconnect(); }
     }
     private void flushPending() { if (!isEnabled() || !pendingDir.exists()) return; new BukkitRunnable() { @Override public void run() { File[] files = pendingDir.listFiles(); if (files == null) return; for (File f : files) if (f.isFile() && f.getName().startsWith("backend-") && f.getName().endsWith(".json")) trySubmitPending(f); } }.runTaskAsynchronously(plugin); }
