@@ -4,6 +4,7 @@ import json, os, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
 import competitive
+import tournament
 
 DB=INSERT_SUBMISSION=UPSERT_RUN=CREATE_COMPETITION=BOARD_ROWS=COMPETITION_ROWS=REFRESH_BOT=POST_FEED=None
 
@@ -12,10 +13,10 @@ def configure(*,db_fn,insert_submission,upsert_run,create_competition,board_rows
     DB=db_fn;INSERT_SUBMISSION=insert_submission;UPSERT_RUN=upsert_run;CREATE_COMPETITION=create_competition;BOARD_ROWS=board_rows;COMPETITION_ROWS=competition_rows;REFRESH_BOT=refresh_bot;POST_FEED=post_feed
 
 def token_ok(h):
-    expected=os.getenv("MM_API_TOKEN","").strip(); return bool(expected) and h.headers.get("Authorization","")=="Bearer "+expected
+    expected=os.getenv("MM_API_TOKEN","").strip();return bool(expected) and h.headers.get("Authorization","")=="Bearer "+expected
 
 def send_json(h,status,payload):
-    body=json.dumps(payload,separators=(",",":"),ensure_ascii=False).encode("utf-8"); h.send_response(status); h.send_header("Content-Type","application/json; charset=utf-8"); h.send_header("Content-Length",str(len(body))); h.send_header("Cache-Control","no-store"); h.end_headers(); h.wfile.write(body)
+    body=json.dumps(payload,separators=(",",":"),ensure_ascii=False).encode("utf-8");h.send_response(status);h.send_header("Content-Type","application/json; charset=utf-8");h.send_header("Content-Length",str(len(body)));h.send_header("Cache-Control","no-store");h.end_headers();h.wfile.write(body)
 
 def refresh_bot(platform):
     if REFRESH_BOT:
@@ -40,26 +41,46 @@ def season_row(r):
 def competitive_get(parts):
     c=DB()
     try:
-        competitive.ensure_schema(c); season=competitive.ensure_current_season(c); sid=int(season[0])
+        competitive.ensure_schema(c);season=competitive.ensure_current_season(c);sid=int(season[0])
         if parts==["season","current"]:
-            competitive.recalculate_components(c,sid); rows=c.execute("SELECT uuid,name,elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component,mmcl FROM season_players WHERE season_id=? ORDER BY mmcl DESC,uuid ASC",(sid,)).fetchall()
+            competitive.recalculate_components(c,sid);rows=c.execute("SELECT uuid,name,elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component,mmcl FROM season_players WHERE season_id=? ORDER BY mmcl DESC,uuid ASC",(sid,)).fetchall()
             return {"ok":True,"season":{"id":sid,"number":int(season[1]),"start":season[2],"end":season[3],"status":season[4]},"rows":[season_row(r) for r in rows]}
         if len(parts)==2 and parts[0] in ("mmcl","elo","weekly","tournament") and parts[1]=="leaderboard":
-            competitive.recalculate_components(c,sid); col={"mmcl":"mmcl","elo":"elo","weekly":"weekly_points","tournament":"tournament_points"}[parts[0]]; rows=c.execute(f"SELECT uuid,name,{col} FROM season_players WHERE season_id=? ORDER BY {col} DESC,uuid ASC LIMIT 25",(sid,)).fetchall()
+            competitive.recalculate_components(c,sid);col={"mmcl":"mmcl","elo":"elo","weekly":"weekly_points","tournament":"tournament_points"}[parts[0]];rows=c.execute(f"SELECT uuid,name,{col} FROM season_players WHERE season_id=? ORDER BY {col} DESC,uuid ASC LIMIT 25",(sid,)).fetchall()
             return {"ok":True,"seasonId":sid,"kind":parts[0],"rows":[{"uuid":u,"name":n,"score":round(float(v),3)} for u,n,v in rows]}
         if parts==["mmr","leaderboard"]:
-            competitive.calculate_mmr(c); rows=c.execute("SELECT uuid,name,mmr FROM permanent_ratings ORDER BY mmr DESC,uuid ASC LIMIT 25").fetchall()
+            competitive.calculate_mmr(c);rows=c.execute("SELECT uuid,name,mmr FROM permanent_ratings ORDER BY mmr DESC,uuid ASC LIMIT 25").fetchall()
             return {"ok":True,"kind":"mmr","rows":[{"uuid":u,"name":n,"score":round(float(v),3)} for u,n,v in rows]}
         if len(parts)==3 and parts[0] in ("mmcl","season","mmr") and parts[1]=="player":
             uuid=parts[2].lower()
             if parts[0]=="mmr":
-                competitive.calculate_mmr(c); r=c.execute("SELECT uuid,name,mmr FROM permanent_ratings WHERE uuid=?",(uuid,)).fetchone(); return {"ok":True,"player":{"uuid":r[0],"name":r[1],"mmr":round(float(r[2]),3)} if r else None}
-            competitive.recalculate_components(c,sid); r=c.execute("SELECT uuid,name,elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component,mmcl FROM season_players WHERE season_id=? AND uuid=?",(sid,uuid)).fetchone(); return {"ok":True,"seasonId":sid,"player":season_row(r)}
+                competitive.calculate_mmr(c);r=c.execute("SELECT uuid,name,mmr FROM permanent_ratings WHERE uuid=?",(uuid,)).fetchone();return {"ok":True,"player":{"uuid":r[0],"name":r[1],"mmr":round(float(r[2]),3)} if r else None}
+            competitive.recalculate_components(c,sid);r=c.execute("SELECT uuid,name,elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component,mmcl FROM season_players WHERE season_id=? AND uuid=?",(sid,uuid)).fetchone();return {"ok":True,"seasonId":sid,"player":season_row(r)}
+        return None
+    finally:c.close()
+
+def tournament_payload(c,t):
+    if not t:return None
+    tid=int(t[0]);rows=c.execute("SELECT uuid,name,seed,placement,points FROM tournament_players WHERE tournament_id=? ORDER BY CASE WHEN placement IS NULL THEN 99 ELSE placement END,registered_at ASC",(tid,)).fetchall()
+    matches=c.execute("SELECT id,round_number,slot,player1_uuid,player2_uuid,best_of,player1_wins,player2_wins,winner_uuid,status FROM tournament_matches WHERE tournament_id=? ORDER BY round_number,slot",(tid,)).fetchall()
+    return {"id":tid,"seasonId":int(t[1]),"number":int(t[2]),"name":t[3],"registrationStart":t[4],"registrationEnd":t[5],"start":t[6],"status":t[7],"bracketSize":t[8],"players":[{"uuid":u,"name":n,"seed":s,"placement":p,"points":int(pt)} for u,n,s,p,pt in rows],"matches":[{"id":int(i),"round":int(r),"slot":int(sl),"player1":p1,"player2":p2,"bestOf":int(bo),"player1Wins":int(w1),"player2Wins":int(w2),"winner":w,"status":st} for i,r,sl,p1,p2,bo,w1,w2,w,st in matches]}
+
+def tournament_get(parts):
+    c=DB()
+    try:
+        competitive.ensure_schema(c);tournament.ensure_schema(c);season=competitive.ensure_current_season(c);sid=int(season[0])
+        if parts==["current"]:
+            row=c.execute("SELECT id,season_id,number,name,registration_start,registration_end,start_ts,status,bracket_size FROM tournaments WHERE season_id=? AND status!='complete' ORDER BY number DESC LIMIT 1",(sid,)).fetchone()
+            return {"ok":True,"tournament":tournament_payload(c,row)}
+        if len(parts)==1:
+            tid=int(parts[0]);row=c.execute("SELECT id,season_id,number,name,registration_start,registration_end,start_ts,status,bracket_size FROM tournaments WHERE id=?",(tid,)).fetchone();return {"ok":True,"tournament":tournament_payload(c,row)}
+        if len(parts)==2 and parts[0]=="player":
+            tid=int(c.execute("SELECT id FROM tournaments WHERE season_id=? AND status!='complete' ORDER BY number DESC LIMIT 1",(sid,)).fetchone()[0]);return {"ok":True,"tournamentId":tid,"match":tournament.current_match(c,tid,parts[1])}
         return None
     finally:c.close()
 
 class Handler(BaseHTTPRequestHandler):
-    server_version="MonsterMazeAPI/1.3"
+    server_version="MonsterMazeAPI/1.4"
     def log_message(self,fmt,*args):print(f"[api] {self.address_string()} - {fmt % args}",flush=True)
     def do_GET(self):
         path=unquote(self.path.split("?",1)[0]).rstrip("/")
@@ -94,6 +115,9 @@ class Handler(BaseHTTPRequestHandler):
                 if platform not in ("1.8","1.21"):raise ValueError("unsupported platform")
                 c=DB();rows=c.execute("SELECT pattern,kit,stage,time_ms FROM runs WHERE platform=? AND mode=? AND uuid=? ORDER BY pattern ASC,stage DESC,time_ms ASC,kit ASC",(platform,mode.lower(),uuid.lower())).fetchall();c.close();send_json(self,200,{"ok":True,"platform":platform,"mode":mode.lower(),"uuid":uuid.lower(),"rows":[{"pattern":int(p),"kit":k,"stage":int(s),"timeMs":int(t)} for p,k,s,t in rows]});return
             if len(parts)>=4 and parts[:3]==["api","v1"]:
+                if parts[3]=="tournament":
+                    result=tournament_get(parts[4:])
+                    if result is not None:send_json(self,200,result);return
                 result=competitive_get(parts[3:])
                 if result is not None:send_json(self,200,result);return
         except (ValueError,TypeError,KeyError,IndexError) as exc:send_json(self,400,{"ok":False,"error":str(exc)});return
@@ -135,7 +159,7 @@ class Handler(BaseHTTPRequestHandler):
                     uuid=str(p.get("uuid","")).lower()[:64]
                     if not uuid or uuid in seen:raise ValueError("invalid or duplicate player uuid")
                     seen.add(uuid);placement=int(p["placement"]);tick=int(p["eliminationTick"])
-                    if placement<1 or tick<-1:raise ValueError("invalid placement or elimination tick")
+                    if placement<1 or placement>len(payload["players"]) or tick<-1:raise ValueError("invalid placement or elimination tick")
                     players.append({"uuid":uuid,"name":str(p.get("name",""))[:256],"placement":placement,"elimination_tick":tick})
                 c=DB();competitive.ensure_schema(c);accepted=competitive.record_match(c,{"id":str(payload["matchId"])[:128],"platform":platform,"mode":str(payload["mode"]).lower()[:64],"pattern":int(payload["pattern"]),"kit":str(payload["kit"])[:64],"started_at":int(payload["startedAt"]),"ended_at":int(payload["endedAt"]),"tournament_id":payload.get("tournamentId")},players);c.close();send_json(self,200,{"ok":True,"accepted":bool(accepted),"matchId":str(payload["matchId"])});return
             send_json(self,404,{"ok":False,"error":"not_found"})
