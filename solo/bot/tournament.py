@@ -87,9 +87,15 @@ def current_match(c,tournament_id,uuid):
 
 
 def record_game(c,tournament_match_id,game_number,platform,mode,pattern,kit,match_id,winner_uuid):
-    ensure_schema(c);row=c.execute("SELECT tournament_id,player1_uuid,player2_uuid,status,player1_wins,player2_wins,round_number FROM tournament_matches WHERE id=?",(tournament_match_id,)).fetchone()
+    ensure_schema(c)
+    row=c.execute("SELECT tournament_id,player1_uuid,player2_uuid,status,player1_wins,player2_wins,round_number,best_of FROM tournament_matches WHERE id=?",(tournament_match_id,)).fetchone()
     if not row:raise ValueError("unknown tournament match")
     if row[3] not in ('ready','active'):raise ValueError("tournament match is not playable")
+    if not row[1] or not row[2]:raise ValueError("tournament match does not have two players")
+    game_number=int(game_number)
+    if game_number<1 or game_number>int(row[7]):raise ValueError("invalid tournament game number")
+    played=int(c.execute("SELECT COUNT(*) FROM tournament_games WHERE tournament_match_id=?",(tournament_match_id,)).fetchone()[0])
+    if game_number!=played+1:raise ValueError("tournament games must be recorded in order")
     winner=winner_uuid.lower()
     if winner not in (row[1],row[2]):raise ValueError("winner is not a player in this match")
     c.execute("INSERT INTO tournament_games(tournament_match_id,game_number,platform,mode,pattern,kit,match_id,winner_uuid,created_at) VALUES(?,?,?,?,?,?,?,?,?)",(tournament_match_id,game_number,platform,mode,pattern,kit,match_id,winner,int(time.time()*1000)))
@@ -101,7 +107,7 @@ def record_game(c,tournament_match_id,game_number,platform,mode,pattern,kit,matc
         if player_count>=4 and int(row[6])==final_round-1 and final_round>=2:
             third=c.execute("SELECT id FROM tournament_matches WHERE tournament_id=? AND round_number=?",(row[0],final_round+1)).fetchone()
             if third:
-                c.execute("UPDATE tournament_matches SET player1_uuid=? WHERE id=? AND player1_uuid IS NULL AND player2_uuid IS NULL",(loser,third[0]));c.execute("UPDATE tournament_matches SET player2_uuid=? WHERE id=? AND player1_uuid IS NOT NULL AND player2_uuid IS NULL",(loser,third[0]));_activate_if_ready(c,third[0])
+                c.execute("UPDATE tournament_matches SET player1_uuid=? WHERE id=? AND player1_uuid IS NULL AND player2_uuid IS NULL",(loser,third[0]));c.execute("UPDATE tournament_matches SET player2_uuid=? WHERE id=? AND player1_uuid IS NOT NULL AND player2_uuid IS NULL",(loser,third[0]));_activate_if_ready(c,int(third[0]))
         c.execute("UPDATE tournament_players SET placement=0 WHERE tournament_id=? AND uuid=? AND placement IS NULL",(row[0],loser))
     c.commit()
 
