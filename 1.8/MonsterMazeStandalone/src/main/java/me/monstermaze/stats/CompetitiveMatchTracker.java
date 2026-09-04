@@ -7,7 +7,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -34,49 +34,102 @@ public final class CompetitiveMatchTracker implements Listener {
     public CompetitiveMatchTracker(MonsterMazePlugin plugin) {
         this.plugin = plugin;
         Bukkit.getPluginManager().registerEvents(this, plugin);
-        tickTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() { @Override public void run() { tick(); } }, 1L, 1L);
+        tickTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
+            @Override public void run() { tick(); }
+        }, 1L, 1L);
     }
 
     private void tick() {
-        GameState state = plugin.getGameManager() == null ? GameState.IDLE : plugin.getGameManager().getState();
+        if (plugin.getGameManager() == null) return;
+        GameState state = plugin.getGameManager().getState();
+
         if (!active && state == GameState.LIVE) {
             List<Player> players = plugin.getGameManager().getAlivePlayers();
             if (players.size() >= 2) begin(players);
         }
-        if (active) tick++;
+        if (!active) return;
+
+        tick++;
+
+        // GameManager's repeating tasks were scheduled before this tracker's
+        // observer. The deferred observer therefore runs after the current game
+        // tick and catches every elimination path, including safe-pad expiry and
+        // falling into the void, not just PlayerDeathEvent/quit.
+        Bukkit.getScheduler().runTask(plugin, new Runnable() {
+            @Override public void run() { observeAfterGameTick(); }
+        });
     }
 
     private void begin(List<Player> players) {
-        participants.clear(); eliminationTicks.clear(); names.clear();
-        for (Player p : players) { participants.add(p.getUniqueId()); names.put(p.getUniqueId(), p.getName()); }
-        matchId = UUID.randomUUID().toString(); startedAt = System.currentTimeMillis(); tick = 0; active = true;
+        participants.clear();
+        eliminationTicks.clear();
+        names.clear();
+        for (Player p : players) {
+            participants.add(p.getUniqueId());
+            names.put(p.getUniqueId(), p.getName());
+        }
+        matchId = UUID.randomUUID().toString();
+        startedAt = System.currentTimeMillis();
+        tick = 0;
+        active = true;
     }
 
+    /**
+     * Death and quit are captured immediately. Other elimination paths are
+     * picked up by observeAfterGameTick(). Multiple eliminations detected during
+     * one server tick therefore receive the same logical elimination tick.
+     */
     @EventHandler(priority = EventPriority.LOWEST)
     public void onDeath(PlayerDeathEvent event) {
         if (!active) return;
-        UUID id = event.getEntity().getUniqueId();
-        if (participants.contains(id) && !eliminationTicks.containsKey(id)) eliminationTicks.put(id, tick);
-        scheduleFinishCheck();
+        captureIfParticipant(event.getEntity().getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onQuit(PlayerQuitEvent event) {
         if (!active) return;
-        UUID id = event.getPlayer().getUniqueId();
-        if (participants.contains(id) && !eliminationTicks.containsKey(id)) eliminationTicks.put(id, tick);
-        scheduleFinishCheck();
+        captureIfParticipant(event.getPlayer().getUniqueId());
     }
 
-    private void scheduleFinishCheck() {
-        Bukkit.getScheduler().runTask(plugin, new Runnable() { @Override public void run() { if (active && eliminationTicks.size() >= participants.size() - 1) finish(); } });
+    private void captureIfParticipant(UUID id) {
+        if (participants.contains(id) && !eliminationTicks.containsKey(id)) {
+            eliminationTicks.put(id, tick);
+        }
+    }
+
+    private void observeAfterGameTick() {
+        if (!active || plugin.getGameManager() == null) return;
+
+        GameState state = plugin.getGameManager().getState();
+        Set<UUID> aliveNow = new HashSet<UUID>();
+        for (Player p : plugin.getGameManager().getAlivePlayers()) {
+            aliveNow.add(p.getUniqueId());
+        }
+
+        // Any participant no longer in GameManager's authoritative alive set has
+        // been eliminated by death, fall, safe-pad timeout, or another game rule.
+        for (UUID id : participants) {
+            if (!aliveNow.contains(id)) captureIfParticipant(id);
+        }
+
+        if (eliminationTicks.size() >= participants.size() - 1) {
+            finish();
+        } else if (state == GameState.IDLE || state == GameState.STARTING) {
+            // An administrative force-stop/restart is not a competitive result.
+            abort();
+        }
     }
 
     private void finish() {
         if (!active) return;
         active = false;
+
         List<Result> eliminated = new ArrayList<Result>();
-        for (UUID id : participants) { Integer t = eliminationTicks.get(id); if (t != null) eliminated.add(new Result(id, names.get(id), t)); }
+        for (UUID id : participants) {
+            Integer t = eliminationTicks.get(id);
+            if (t != null) eliminated.add(new Result(id, names.get(id), t));
+        }
+
         int survivors = participants.size() - eliminated.size();
         List<Map<String,Object>> rows = new ArrayList<Map<String,Object>>();
         for (Result r : eliminated) {
@@ -84,20 +137,55 @@ public final class CompetitiveMatchTracker implements Listener {
             for (Result other : eliminated) if (other.tick > r.tick) later++;
             int placement = survivors > 0 ? 2 + later : 1 + later;
             Map<String,Object> row = new HashMap<String,Object>();
-            row.put("uuid",r.uuid.toString()); row.put("name",r.name); row.put("placement",placement); row.put("eliminationTick",r.tick); rows.add(row);
+            row.put("uuid", r.uuid.toString());
+            row.put("name", r.name);
+            row.put("placement", placement);
+            row.put("eliminationTick", r.tick);
+            rows.add(row);
         }
-        if (survivors > 0) for (UUID id : participants) if (!eliminationTicks.containsKey(id)) {
-            Map<String,Object> row = new HashMap<String,Object>(); row.put("uuid",id.toString()); row.put("name",names.get(id)); row.put("placement",1); row.put("eliminationTick",-1); rows.add(row);
+
+        if (survivors > 0) {
+            for (UUID id : participants) if (!eliminationTicks.containsKey(id)) {
+                Map<String,Object> row = new HashMap<String,Object>();
+                row.put("uuid", id.toString());
+                row.put("name", names.get(id));
+                row.put("placement", 1);
+                row.put("eliminationTick", -1);
+                rows.add(row);
+            }
         }
+
         int pattern = plugin.getGameManager().getPatternIndex();
-        if (pattern < 0) pattern = 0;
-        plugin.getBackendClient().submitMatch(matchId,"1.8",plugin.getMode().id,pattern,rows,startedAt,System.currentTimeMillis());
+        if (pattern < 0) pattern = capturedPattern;
+        String mode = capturedMode != null ? capturedMode : plugin.getMode().id;
+        plugin.getBackendClient().submitMatch(matchId, "1.8", mode, pattern, rows, startedAt, System.currentTimeMillis());
     }
 
-    public void shutdown() { if (tickTask != null) { tickTask.cancel(); tickTask = null; } }
+    private String capturedMode;
+    private int capturedPattern = 0;
+
+    private void abort() {
+        active = false;
+        participants.clear();
+        eliminationTicks.clear();
+        names.clear();
+    }
+
+    public void shutdown() {
+        if (tickTask != null) {
+            tickTask.cancel();
+            tickTask = null;
+        }
+    }
 
     private static final class Result {
-        final UUID uuid; final String name; final int tick;
-        Result(UUID uuid,String name,int tick) { this.uuid=uuid; this.name=name; this.tick=tick; }
+        final UUID uuid;
+        final String name;
+        final int tick;
+        Result(UUID uuid, String name, int tick) {
+            this.uuid = uuid;
+            this.name = name;
+            this.tick = tick;
+        }
     }
 }
