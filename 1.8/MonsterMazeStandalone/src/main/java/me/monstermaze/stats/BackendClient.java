@@ -43,16 +43,81 @@ public final class BackendClient {
         new BukkitRunnable() { @Override public void run() { if (!queuePayload(pending, payload)) return; trySubmitPending(pending); } }.runTaskAsynchronously(plugin);
     }
     /** Perform an authenticated backend GET. Intended for async callers only. */
-    public String get(String path) throws Exception {
-        if (!isEnabled()) return null;
-        String suffix = path == null ? "" : path;
-        if (!suffix.startsWith("/")) suffix = "/" + suffix;
-        // Build the URL from a URI so path characters such as spaces are percent-encoded
-        // correctly without encoding the path separators themselves.
-        String encodedSuffix = new URI(null, null, null, -1, suffix, null, null).getRawPath();
-        URL url = new URL(baseUrl + encodedSuffix); HttpURLConnection connection = (HttpURLConnection) url.openConnection(); connection.setRequestMethod("GET"); connection.setConnectTimeout(5000); connection.setReadTimeout(10000); connection.setRequestProperty("Authorization", "Bearer " + token); connection.setRequestProperty("Accept", "application/json"); connection.setRequestProperty("User-Agent", "MonsterMaze-Server/1.0");
-        try { int status = connection.getResponseCode(); InputStream stream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream(); StringBuilder body = new StringBuilder(); if (stream != null) { BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8)); try { String line; while ((line = reader.readLine()) != null) body.append(line); } finally { reader.close(); } } if (status < 200 || status >= 300) throw new IllegalStateException("HTTP " + status + (body.length() > 0 ? " " + body : "")); return body.toString(); } finally { connection.disconnect(); }
+   /** Perform an authenticated backend GET. Intended for async callers only. */
+public String get(String path) throws Exception {
+    if (!isEnabled()) return null;
+
+    String suffix = path == null ? "" : path;
+    if (!suffix.startsWith("/")) suffix = "/" + suffix;
+
+    String encodedSuffix =
+            new URI(null, null, null, -1, suffix, null, null).getRawPath();
+
+    URL url = new URL(baseUrl + encodedSuffix);
+
+    plugin.getLogger().info("[BACKEND DEBUG] path=[" + path + "]");
+    plugin.getLogger().info("[BACKEND DEBUG] encoded=[" + encodedSuffix + "]");
+    plugin.getLogger().info("[BACKEND DEBUG] url=[" + url.toString() + "]");
+
+    HttpURLConnection connection =
+            (HttpURLConnection) url.openConnection();
+
+    connection.setRequestMethod("GET");
+    connection.setConnectTimeout(5000);
+    connection.setReadTimeout(10000);
+    connection.setRequestProperty("Authorization", "Bearer " + token);
+    connection.setRequestProperty("Accept", "application/json");
+    connection.setRequestProperty("User-Agent", "MonsterMaze-Server/1.0");
+
+    try {
+        int status = connection.getResponseCode();
+
+        plugin.getLogger().info(
+                "[BACKEND DEBUG] response=" + status +
+                " for [" + encodedSuffix + "]"
+        );
+
+        InputStream stream =
+                status >= 200 && status < 300
+                        ? connection.getInputStream()
+                        : connection.getErrorStream();
+
+        StringBuilder body = new StringBuilder();
+
+        if (stream != null) {
+            BufferedReader reader =
+                    new BufferedReader(
+                            new InputStreamReader(stream, StandardCharsets.UTF_8)
+                    );
+
+            try {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    body.append(line);
+                }
+            } finally {
+                reader.close();
+            }
+        }
+
+        if (status < 200 || status >= 300) {
+            plugin.getLogger().warning(
+                    "[BACKEND DEBUG] ERROR BODY for [" +
+                    encodedSuffix + "]: " + body.toString()
+            );
+
+            throw new IllegalStateException(
+                    "HTTP " + status +
+                    (body.length() > 0 ? " " + body : "")
+            );
+        }
+
+        return body.toString();
+
+    } finally {
+        connection.disconnect();
     }
+}
     private void flushPending() { if (!isEnabled() || !pendingDir.exists()) return; new BukkitRunnable() { @Override public void run() { File[] current = pendingDir.listFiles(); if (current == null) return; for (File pending : current) if (pending.isFile() && pending.getName().startsWith("backend-") && pending.getName().endsWith(".json")) trySubmitPending(pending); } }.runTaskAsynchronously(plugin); }
     private boolean queuePayload(File pending, String payload) { if (pending.exists()) return true; if (!pendingDir.exists() && !pendingDir.mkdirs()) { plugin.getLogger().warning("Could not create backend retry directory: " + pendingDir); return false; } try { OutputStream out = new FileOutputStream(pending); try { out.write(payload.getBytes(StandardCharsets.UTF_8)); out.flush(); } finally { out.close(); } return true; } catch (IOException e) { plugin.getLogger().warning("Could not queue backend submission: " + e.getMessage()); return false; } }
     private void trySubmitPending(File pending) { String payload; try { payload = readFile(pending); } catch (IOException e) { plugin.getLogger().warning("Could not read backend queue file " + pending.getName() + ": " + e.getMessage()); return; } int attempts = 0; long delay = 1000L; while (attempts < 4) { attempts++; try { post(payload); if (!pending.delete() && pending.exists()) plugin.getLogger().warning("Backend accepted " + pending.getName() + " but it could not be deleted."); plugin.getLogger().info("Run submitted to Monster Maze backend: " + pending.getName()); if (plugin.getLeaderboards() != null) plugin.getLeaderboards().refreshFromBackend(); if (plugin.getChallengeManager() != null) plugin.getChallengeManager().refresh(); return; } catch (Exception e) { if (attempts >= 4) { plugin.getLogger().warning("Backend submission failed for " + pending.getName() + " after " + attempts + " attempts: " + e.getMessage()); return; } try { Thread.sleep(delay); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); return; } delay *= 2L; } } }
