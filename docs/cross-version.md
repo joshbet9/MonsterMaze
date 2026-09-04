@@ -1,88 +1,112 @@
-# Monster Maze � Cross-Version Tracking
+# Monster Maze — Cross-Version Reference
 
-This document tracks gameplay mechanics that exist across the Minecraft 1.8 and 1.21 implementations.
-
-The two implementations should aim for equivalent gameplay behaviour where the original Mineplex behaviour is shared, while allowing version-specific technical implementations.
+This document tracks the intended player-facing behaviour of the Minecraft
+1.8.9 and 1.21.11 Monster Maze implementations. The two versions should
+match wherever the original gameplay is shared, while allowing version-specific
+technical implementations where Minecraft requires them.
 
 ## Status Legend
 
-- `Unknown` � not investigated
-- `Investigating` � currently being researched
-- `Implemented` � implemented in source
-- `Build Verified` � implementation builds successfully
-- `Gameplay Verified` � tested in-game
-- `Original Verified` � supported by original Mineplex source/evidence
-- `Version Specific` � intentionally differs because of Minecraft/version behaviour
+- `Implemented` — present in the current source.
+- `Build Verified` — the implementation has built successfully.
+- `Gameplay Verified` — tested in-game.
+- `Original Verified` — supported by original Mineplex source or captured evidence.
+- `Version Specific` — intentionally different because of the Minecraft version.
+- `Open` — still requires investigation or gameplay verification.
 
 ---
 
-## Core Gameplay
+## Modes
 
-| Mechanic | 1.8 | 1.21 | Original Evidence | Cross-Version Status | Notes |
-|---|---|---|---|---|---|
-| Game lifecycle | | | | | |
-| Maze generation | | | | | |
-| Safe pads | | | | | |
-| Wave progression | | | | | |
-| Monster spawning | | | | | |
-| Monster movement | | | | | |
-| Monster targeting | | | | | |
-| Monster collision | | | | | |
-| Monster knockback | | | | | |
-| Player movement | | | | | |
-| Jump behaviour | | | | | |
-| Speed effects | | | | | |
-| Abilities | | | | | |
-| Player death | | | | | |
-| Scoring | | | | | |
-| Victory conditions | | | | | |
-| Kit selection | Implemented | Implemented | | Implemented | Same KitType enum both versions; JUMPER default; QOL-only kits downgrade to JUMPER when QOL disabled |
-| Kit secondaries (Body Rush / Cryo Blitz) | Build Verified | Build Verified | | Implemented | New in this session; QOL modes only. Body Builder Body Rush (right-click, 5 uses, deflect+immunity); Slowballer Cryo Blitz (Q-drop, freeze 5-block/3s, 60s CD) |
+| Platform | Mode | Timer | Starter monsters | Key differences |
+|---|---|---:|---:|---|
+| 1.8.9 | Original | 60s → 15s | 150 | Original gameplay and 5 Jumper charges |
+| 1.8.9 | Speed | 60s → 15s | 150 | Enhanced kits and Safe Pad Jumper restoration while retaining original pacing/spawning |
+| 1.8.9 | Modern | 35s → 15s | 225 | Enhanced kits, faster pacing and heavier monster spawning |
+| 1.8.9 | Lagless | 35s → 15s | 500 fixed | No per-stage monster batches; monster speed increases every 5 stages |
+| 1.21.11 | Original | 60s → 15s | 150 | Original gameplay and 5 Jumper charges |
+| 1.21.11 | Modern | 35s → 15s | 225 | Enhanced kits and Modern movement-speed handling |
+| 1.21.11 | Classic | 35s → 15s | 225 | Modern tuning without the Modern movement-speed boost |
 
 ---
 
-## Maps
+## Kits
 
-| Mechanic | 1.8 | 1.21 | Original Evidence | Status | Notes |
-|---|---|---|---|---|---|
-| Maze layouts | | | | | |
-| Maze dimensions | | | | | |
-| Maze generation rules | | | | | |
-| Spawn locations | | | | | |
-| Safe pad locations | | | | | |
+All five kits exist on both platforms. Maverick and the secondary abilities
+are unavailable in Original mode.
 
----
-
-## Timing
-
-| Mechanic | 1.8 | 1.21 | Original Evidence | Status | Notes |
-|---|---|---|---|---|---|
-| Lobby countdown | | | | | |
-| Game start timing | | | | | |
-| Wave timing | | | | | |
-| Monster spawn timing | | | | | |
-| Safe pad timing | | | | | |
-| Game ending timing | | | | | |
+| Kit | Original | Enhanced modes |
+|---|---|---|
+| Jumper | 5 charged jumps | 3 charged jumps; Safe Pads restore charges and jumps on Safe Pads are free |
+| Slowballer | Snowballs slow other players; 16 maximum, regenerating over time | Adds Cryo Blitz: freezes nearby monsters for 3s, 30s cooldown |
+| Body Builder | First to a Safe Pad gains 1 heart of maximum health, up to 15 hearts | Adds Body Rush: 2 activations, 10s each; monster contacts are deflected and cost 2s of duration |
+| Repulsor | 3 charges; launches nearby monsters away | Same |
+| Maverick | Unavailable | Monster hits launch the player toward the next Safe Pad |
 
 ---
 
-## Movement / Physics
+## Movement and Collision
 
-| Mechanic | 1.8 | 1.21 | Original Evidence | Status | Notes |
-|---|---|---|---|---|---|
-| Base player speed | | | | | |
-| Speed II behaviour | Version Specific | Implemented | | Version Specific | 1.21 Modern only: lock-pinned players get Speed II boost (1.8 "speeding" was a vanilla -10 jump-amp side effect, dropped as unreproducible) |
-| Jump height | | | | | |
-| Air control | | | | | |
-| Gap crossing | | | | | |
-| Monster knockback | | | | | |
-| Player knockback | Implemented | Implemented | | Implemented | 4 dmg + knockback, 1s CD; Body Builder Body Rush grants immunity + deflecting knock instead |
-| Collision behaviour | Implemented | Implemented | | Implemented | Ghost snowmen with collision off; server-driven bump() range < 1.0; frozen mobs (Cryo Blitz) skip bump |
+### 1.8.9
+
+- The recreation uses the legacy Minecraft movement/effect system.
+- The original "speeding" behaviour remains active in all 1.8 modes.
+- Jumper jump locking and charged-jump handling use the legacy mechanics available
+  on the 1.8 client/server stack.
+
+### 1.21.11
+
+- Jumper jump locking uses modern player attributes rather than the legacy
+  negative jump-effect approach.
+- Modern applies an additional movement-speed adjustment while a player's
+  jumping is locked. Classic intentionally omits this adjustment.
+- Collision and knockback are implemented with modern server APIs while aiming
+  for the same player-facing Monster Maze behaviour.
+
+These are implementation differences, not separate gameplay systems.
 
 ---
 
-## Open Questions
+## Safe Pads
 
-Record unresolved questions here rather than allowing agents to silently make assumptions.
+Across both versions:
 
-- 
+- Safe Pads are the progression checkpoints.
+- The first player to reach a Safe Pad receives the first-player reward.
+- Other players receive the normal Safe Pad healing.
+- Body Builder gains 1 heart of maximum health when first to a Safe Pad, capped
+  at 15 hearts.
+- In enhanced modes, Safe Pads restore Jumper charges and jumping while on the
+  Safe Pad is free.
+- Maverick directs monster-hit knockback toward the next Safe Pad.
+
+---
+
+## Monster Progression
+
+- Original pacing starts at 60 seconds and decreases by 2 seconds per stage,
+  stopping at 15 seconds.
+- Modern pacing starts at 35 seconds and reaches the 15-second floor over the
+  first 10 stages.
+- 1.8 Speed keeps Original pacing and spawning while using enhanced gameplay.
+- 1.8 Lagless replaces recurring monster batches with a fixed 500-monster pool
+  and increases monster speed every 5 stages.
+- 1.8 Modern adds 30 monsters per Safe Pad transition.
+
+---
+
+## Scoring and Records
+
+- Personal bests are tracked separately by platform, mode, maze pattern and kit.
+- Completed solo attempts are recorded with their platform, mode, pattern, kit,
+  stage and timestamp.
+- The permanent leaderboard uses the best result; competition history can retain
+  every submitted attempt.
+
+---
+
+## Verification
+
+The detailed gameplay source of truth is `docs/mechanics.md`. This document is
+for comparing the two implementations at a high level; unresolved parity issues
+should be recorded there and investigated against the original Mineplex evidence.
