@@ -8,6 +8,7 @@ import me.monstermaze.game.LobbyListener;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.stats.BackendClient;
 import me.monstermaze.stats.ChallengeManager;
+import me.monstermaze.stats.CompetitiveMatchTracker;
 import me.monstermaze.stats.RunRecorder;
 import me.monstermaze.stats.SoloRunCompletionListener;
 import me.monstermaze.util.UtilEnt;
@@ -33,6 +34,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private RunRecorder runRecorder;
     private SoloRunCompletionListener soloRunCompletionListener;
     private ChallengeManager challengeManager;
+    private CompetitiveMatchTracker competitiveMatchTracker;
 
     @Override
     public void onEnable() {
@@ -62,6 +64,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         mapManager.loadActiveMapFromConfig();
         mapManager.ensureActiveWorld();
         this.gameManager = new GameManager(this);
+        this.competitiveMatchTracker = new CompetitiveMatchTracker(this);
         this.soloRunCompletionListener = new SoloRunCompletionListener(this);
         gameManager.applyMap();
         new LobbyListener(this, gameManager, voidWorlds);
@@ -69,9 +72,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         getCommand("mm").setExecutor(new MMCommand(this));
         getCommand("mmdebug").setExecutor(new MMDebugCommand(this));
         Bukkit.getScheduler().runTaskLater(this, new Runnable() {
-            @Override public void run() {
-                for (Player p : Bukkit.getOnlinePlayers()) gameManager.sendToLobby(p);
-            }
+            @Override public void run() { for (Player p : Bukkit.getOnlinePlayers()) gameManager.sendToLobby(p); }
         }, 20L);
         getLogger().info("MonsterMazeStandalone enabled ('" + mapManager.getActiveMap() + "' map).");
         getLogger().info("Players join into the lobby. Admin: /mm start");
@@ -79,6 +80,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     }
 
     @Override public void onDisable() {
+        if (competitiveMatchTracker != null) competitiveMatchTracker.shutdown();
         if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown();
         if (gameManager != null) gameManager.forceStop();
         getLogger().info("MonsterMazeStandalone disabled.");

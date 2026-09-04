@@ -10,6 +10,7 @@ import me.monstermaze.game.LobbyListener;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.stats.BackendClient;
 import me.monstermaze.stats.ChallengeManager;
+import me.monstermaze.stats.CompetitiveMatchTracker;
 import me.monstermaze.stats.RunRecorder;
 import me.monstermaze.stats.SoloRunCompletionListener;
 import me.monstermaze.world.MapCommandListener;
@@ -43,6 +44,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private MonsterEntityListener monsterEntityListener;
     private MonsterDisguiseListener monsterDisguiseListener;
     private ChallengeManager challengeManager;
+    private CompetitiveMatchTracker competitiveMatchTracker;
 
     @Override
     public void onEnable() {
@@ -85,6 +87,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         } else getLogger().warning("ProtocolLib not installed; Monster Maze mobs will render as Snow Golems.");
         this.mapThemeApplier.start();
         this.soloRunCompletionListener = new SoloRunCompletionListener(this);
+        this.competitiveMatchTracker = new CompetitiveMatchTracker(this);
         gameManager.bootstrapLobby(mapCenter);
         new LobbyListener(this, gameManager, voidWorlds);
         new MapCommandListener(this);
@@ -100,7 +103,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         getLogger().info("Run backend: " + (backendClient.isEnabled() ? "enabled" : "Solo/local webhook mode"));
         getLogger().info("Players join into the active map lobby. Admin: /mm start");
     }
-    @Override public void onDisable() { if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown(); if (gameManager != null) gameManager.forceStop(); }
+    @Override public void onDisable() { if (competitiveMatchTracker != null) competitiveMatchTracker.shutdown(); if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown(); if (gameManager != null) gameManager.forceStop(); }
     public static MonsterMazePlugin getInstance() { return instance; }
     public GameManager getGameManager() { return gameManager; }
     public MazeMode getMode() { return mode; }

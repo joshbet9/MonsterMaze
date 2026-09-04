@@ -103,17 +103,17 @@ public class ArenaListener implements Listener {
         }
     }
 
-    /** Disable weather for the whole game. */
+    /** Disable weather for every Monster Maze world, not just the void lobby world. */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onWeather(WeatherChangeEvent event) {
-        if (inVoidWorld(event.getWorld()) && event.toWeatherState()) {
+        if (isMonsterMazeWorld(event.getWorld()) && event.toWeatherState()) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onThunder(ThunderChangeEvent event) {
-        if (inVoidWorld(event.getWorld()) && event.toThunderState()) {
+        if (isMonsterMazeWorld(event.getWorld()) && event.toThunderState()) {
             event.setCancelled(true);
         }
     }
@@ -233,6 +233,11 @@ public class ArenaListener implements Listener {
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    /** True for all Monster Maze-managed worlds, including map worlds and mm_void. */
+    private boolean isMonsterMazeWorld(World w) {
+        return w != null && w.getName().startsWith("mm_");
     }
 
     private boolean inVoidWorld(World w) {
