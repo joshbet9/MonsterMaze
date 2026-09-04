@@ -1,4 +1,6 @@
+import os
 import sqlite3
+import tempfile
 import unittest
 from datetime import datetime, timezone
 
@@ -8,7 +10,9 @@ import competitive
 
 class SeasonApiTests(unittest.TestCase):
     def setUp(self):
-        self.db = sqlite3.connect(":memory:")
+        fd, self.db_path = tempfile.mkstemp(prefix="monstermaze-season-api-", suffix=".db")
+        os.close(fd)
+        self.db = sqlite3.connect(self.db_path)
         competitive.ensure_schema(self.db)
         start = datetime(2026, 1, 5, tzinfo=timezone.utc)
         season = competitive.ensure_current_season(self.db, start)
@@ -29,11 +33,15 @@ class SeasonApiTests(unittest.TestCase):
         )
         self.db.commit()
         self.old_db = api_server.DB
-        api_server.DB = lambda: self.db
+        api_server.DB = lambda: sqlite3.connect(self.db_path)
 
     def tearDown(self):
         api_server.DB = self.old_db
         self.db.close()
+        try:
+            os.unlink(self.db_path)
+        except FileNotFoundError:
+            pass
 
     def test_season_list_and_summary(self):
         listing = api_server.historical_get(["seasons"])
