@@ -75,7 +75,9 @@ def tournament_get(parts):
         if len(parts)==1:
             tid=int(parts[0]);row=c.execute("SELECT id,season_id,number,name,registration_start,registration_end,start_ts,status,bracket_size FROM tournaments WHERE id=?",(tid,)).fetchone();return {"ok":True,"tournament":tournament_payload(c,row)}
         if len(parts)==2 and parts[0]=="player":
-            tid=int(c.execute("SELECT id FROM tournaments WHERE season_id=? AND status!='complete' ORDER BY number DESC LIMIT 1",(sid,)).fetchone()[0]);return {"ok":True,"tournamentId":tid,"match":tournament.current_match(c,tid,parts[1])}
+            current=c.execute("SELECT id FROM tournaments WHERE season_id=? AND status!='complete' ORDER BY number DESC LIMIT 1",(sid,)).fetchone()
+            if not current:return {"ok":True,"tournamentId":None,"match":None}
+            tid=int(current[0]);return {"ok":True,"tournamentId":tid,"match":tournament.current_match(c,tid,parts[1])}
         return None
     finally:c.close()
 
@@ -116,6 +118,8 @@ class Handler(BaseHTTPRequestHandler):
                 c=DB();rows=c.execute("SELECT pattern,kit,stage,time_ms FROM runs WHERE platform=? AND mode=? AND uuid=? ORDER BY pattern ASC,stage DESC,time_ms ASC,kit ASC",(platform,mode.lower(),uuid.lower())).fetchall();c.close();send_json(self,200,{"ok":True,"platform":platform,"mode":mode.lower(),"uuid":uuid.lower(),"rows":[{"pattern":int(p),"kit":k,"stage":int(s),"timeMs":int(t)} for p,k,s,t in rows]});return
             if len(parts)>=4 and parts[:3]==["api","v1"]:
                 if parts[3]=="tournament":
+                    if parts[4:]==["leaderboard"]:
+                        result=competitive_get(["tournament","leaderboard"]);send_json(self,200,result);return
                     result=tournament_get(parts[4:])
                     if result is not None:send_json(self,200,result);return
                 result=competitive_get(parts[3:])
@@ -161,7 +165,11 @@ class Handler(BaseHTTPRequestHandler):
                     seen.add(uuid);placement=int(p["placement"]);tick=int(p["eliminationTick"])
                     if placement<1 or placement>len(payload["players"]) or tick<-1:raise ValueError("invalid placement or elimination tick")
                     players.append({"uuid":uuid,"name":str(p.get("name",""))[:256],"placement":placement,"elimination_tick":tick})
-                c=DB();competitive.ensure_schema(c);accepted=competitive.record_match(c,{"id":str(payload["matchId"])[:128],"platform":platform,"mode":str(payload["mode"]).lower()[:64],"pattern":int(payload["pattern"]),"kit":str(payload["kit"])[:64],"started_at":int(payload["startedAt"]),"ended_at":int(payload["endedAt"]),"tournament_id":payload.get("tournamentId")},players);c.close();send_json(self,200,{"ok":True,"accepted":bool(accepted),"matchId":str(payload["matchId"])});return
+                tournament_id=payload.get("tournamentId")
+                tournament_match_id=payload.get("tournamentMatchId")
+                tournament_game_number=payload.get("tournamentGameNumber")
+                if tournament_id is not None and (tournament_match_id is None or tournament_game_number is None):raise ValueError("tournament match metadata is incomplete")
+                c=DB();competitive.ensure_schema(c);accepted=competitive.record_match(c,{"id":str(payload["matchId"])[:128],"platform":platform,"mode":str(payload["mode"]).lower()[:64],"pattern":int(payload["pattern"]),"kit":str(payload["kit"])[:64],"started_at":int(payload["startedAt"]),"ended_at":int(payload["endedAt"]),"tournament_id":tournament_id,"tournament_match_id":tournament_match_id,"tournament_game_number":tournament_game_number},players);c.close();send_json(self,200,{"ok":True,"accepted":bool(accepted),"matchId":str(payload["matchId"])});return
             send_json(self,404,{"ok":False,"error":"not_found"})
         except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:send_json(self,400,{"ok":False,"error":str(exc)})
         except Exception as exc:print(f"[api] POST failed: {exc}",flush=True);send_json(self,500,{"ok":False,"error":"internal_error"})
