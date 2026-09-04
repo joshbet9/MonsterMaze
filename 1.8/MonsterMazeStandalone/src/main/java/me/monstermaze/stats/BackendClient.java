@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -44,8 +45,12 @@ public final class BackendClient {
     /** Perform an authenticated backend GET. Intended for async callers only. */
     public String get(String path) throws Exception {
         if (!isEnabled()) return null;
-        String suffix = path == null ? "" : path; if (!suffix.startsWith("/")) suffix = "/" + suffix;
-        URL url = new URL(baseUrl + suffix); HttpURLConnection connection = (HttpURLConnection) url.openConnection(); connection.setRequestMethod("GET"); connection.setConnectTimeout(5000); connection.setReadTimeout(10000); connection.setRequestProperty("Authorization", "Bearer " + token); connection.setRequestProperty("Accept", "application/json"); connection.setRequestProperty("User-Agent", "MonsterMaze-Server/1.0");
+        String suffix = path == null ? "" : path;
+        if (!suffix.startsWith("/")) suffix = "/" + suffix;
+        // Build the URL from a URI so path characters such as spaces are percent-encoded
+        // correctly without encoding the path separators themselves.
+        String encodedSuffix = new URI(null, null, null, -1, suffix, null, null).getRawPath();
+        URL url = new URL(baseUrl + encodedSuffix); HttpURLConnection connection = (HttpURLConnection) url.openConnection(); connection.setRequestMethod("GET"); connection.setConnectTimeout(5000); connection.setReadTimeout(10000); connection.setRequestProperty("Authorization", "Bearer " + token); connection.setRequestProperty("Accept", "application/json"); connection.setRequestProperty("User-Agent", "MonsterMaze-Server/1.0");
         try { int status = connection.getResponseCode(); InputStream stream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream(); StringBuilder body = new StringBuilder(); if (stream != null) { BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8)); try { String line; while ((line = reader.readLine()) != null) body.append(line); } finally { reader.close(); } } if (status < 200 || status >= 300) throw new IllegalStateException("HTTP " + status + (body.length() > 0 ? " " + body : "")); return body.toString(); } finally { connection.disconnect(); }
     }
     private void flushPending() { if (!isEnabled() || !pendingDir.exists()) return; new BukkitRunnable() { @Override public void run() { File[] current = pendingDir.listFiles(); if (current == null) return; for (File pending : current) if (pending.isFile() && pending.getName().startsWith("backend-") && pending.getName().endsWith(".json")) trySubmitPending(pending); } }.runTaskAsynchronously(plugin); }
