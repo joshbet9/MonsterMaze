@@ -26,7 +26,8 @@
     "mmr": "mmr-rankings",
     "elo": "elo-rankings",
     "weekly": "weekly-rankings",
-    "tournament": "tournament-rankings"
+    "tournament": "tournament-rankings",
+    "season_archive": "season-archive"
   },
   "top_n": 10,
   "migration": {
