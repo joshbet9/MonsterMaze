@@ -143,6 +143,38 @@ class CompetitiveTests(unittest.TestCase):
         summary = competitive.season_summary(self.db, self.sid)
         self.assertEqual(summary["players"][0]["mmcl"], round(archived_mmcl, 3))
 
+    def test_incomplete_tournament_closes_on_season_rollover(self):
+        tournament = __import__("tournament")
+        tid = tournament.create_tournament(
+            self.db,
+            self.sid,
+            1,
+            "Rollover Test",
+            None,
+            None,
+            None,
+        )
+        self.db.execute("UPDATE tournaments SET status='active', bracket_size=4 WHERE id=?", (tid,))
+        self.db.commit()
+
+        new_season = competitive.ensure_current_season(
+            self.db, datetime(2026, 12, 1, 12, tzinfo=timezone.utc)
+        )
+
+        old_status = self.db.execute(
+            "SELECT status FROM tournaments WHERE id=?", (tid,)
+        ).fetchone()[0]
+        self.assertEqual(old_status, "complete")
+        self.assertEqual(int(new_season[1]), 2)
+        self.assertEqual(
+            self.db.execute("SELECT status FROM seasons WHERE id=?", (self.sid,)).fetchone()[0],
+            "archived",
+        )
+        self.assertEqual(
+            self.db.execute("SELECT COUNT(*) FROM tournament_players WHERE tournament_id=? AND placement IS NOT NULL", (tid,)).fetchone()[0],
+            0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
