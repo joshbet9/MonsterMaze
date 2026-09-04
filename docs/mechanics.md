@@ -12,8 +12,8 @@ For each mechanic, distinguish between:
 - **1.21 implementation** — how the Java 1.21 recreation currently implements it.
 - **Verification** — whether the current implementation has been tested.
 
-> Internal implementation groupings such as `QOL` are not gameplay categories. Where a mechanic differs
-> by mode, this document describes the actual mode behaviour instead.
+> Internal implementation labels are not gameplay categories. Where a mechanic differs by mode, this
+document describes the actual mode behaviour instead.
 
 ---
 
@@ -34,7 +34,7 @@ For each mechanic, distinguish between:
 
 - Jumper has 5 charged jumps in Original and 3 in Modern/Classic.
 - The modern implementation uses the player's jump-strength attribute for jump locking because the old
-  negative jump-effect technique is not suitable for modern Minecraft.
+  negative jump potion amplifiers are not suitable for modern Minecraft.
 - Modern provides additional ground movement speed to players whose jumping is locked, reproducing the
   gameplay effect of the 1.8 movement handling as closely as the modern client allows.
 - Classic keeps normal movement speed instead of that Modern speed boost.
@@ -122,7 +122,7 @@ matches Modern and it retains the non-Original kit mechanics.
 ## Kits
 
 Kit descriptions in the lobby should describe the abilities available in the currently selected mode.
-They should not contain implementation labels such as `QOL`.
+They should not contain implementation labels.
 
 ### Jumper
 
