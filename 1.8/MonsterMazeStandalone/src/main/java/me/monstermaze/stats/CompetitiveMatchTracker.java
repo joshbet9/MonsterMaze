@@ -42,15 +42,13 @@ public final class CompetitiveMatchTracker implements Listener {
     }
 
     private void tick() {
-        if (plugin.getGameManager() == null) return;
+        if (plugin.getGameManager() == null || plugin.isSoloMode()) return;
         GameState state = plugin.getGameManager().getState();
-
         if (!active && state == GameState.LIVE) {
             List<Player> players = plugin.getGameManager().getAlivePlayers();
             if (players.size() >= 2) begin(players);
         }
         if (!active) return;
-
         tick++;
         Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override public void run() { observeAfterGameTick(); }
@@ -87,44 +85,30 @@ public final class CompetitiveMatchTracker implements Listener {
     }
 
     private void captureIfParticipant(UUID id) {
-        if (participants.contains(id) && !eliminationTicks.containsKey(id)) {
-            eliminationTicks.put(id, tick);
-        }
+        if (participants.contains(id) && !eliminationTicks.containsKey(id)) eliminationTicks.put(id, tick);
     }
 
     private void observeAfterGameTick() {
         if (!active || plugin.getGameManager() == null) return;
-
         GameState state = plugin.getGameManager().getState();
-        // A force-stop clears the GameManager state/alive set. Never turn that into
-        // a fake completed competitive match.
         if (state == GameState.IDLE || state == GameState.STARTING) {
             abort();
             return;
         }
-
         Set<UUID> aliveNow = new HashSet<UUID>();
-        for (Player p : plugin.getGameManager().getAlivePlayers()) {
-            aliveNow.add(p.getUniqueId());
-        }
-
-        for (UUID id : participants) {
-            if (!aliveNow.contains(id)) captureIfParticipant(id);
-        }
-
+        for (Player p : plugin.getGameManager().getAlivePlayers()) aliveNow.add(p.getUniqueId());
+        for (UUID id : participants) if (!aliveNow.contains(id)) captureIfParticipant(id);
         if (eliminationTicks.size() >= participants.size() - 1) finish();
     }
 
     private void finish() {
         if (!active) return;
         active = false;
-
         List<Result> eliminated = new ArrayList<Result>();
         for (UUID id : participants) {
             Integer t = eliminationTicks.get(id);
             if (t != null) eliminated.add(new Result(id, names.get(id), t));
         }
-
         int survivors = participants.size() - eliminated.size();
         List<Map<String,Object>> rows = new ArrayList<Map<String,Object>>();
         for (Result r : eliminated) {
@@ -138,7 +122,6 @@ public final class CompetitiveMatchTracker implements Listener {
             row.put("eliminationTick", r.tick);
             rows.add(row);
         }
-
         if (survivors > 0) {
             for (UUID id : participants) if (!eliminationTicks.containsKey(id)) {
                 Map<String,Object> row = new HashMap<String,Object>();
@@ -149,9 +132,7 @@ public final class CompetitiveMatchTracker implements Listener {
                 rows.add(row);
             }
         }
-
-        plugin.getBackendClient().submitMatch(matchId, "1.8", capturedMode, capturedPattern,
-                rows, startedAt, System.currentTimeMillis());
+        plugin.getBackendClient().submitMatch(matchId, "1.8", capturedMode, capturedPattern, rows, startedAt, System.currentTimeMillis());
     }
 
     private void abort() {
@@ -172,10 +153,6 @@ public final class CompetitiveMatchTracker implements Listener {
         final UUID uuid;
         final String name;
         final int tick;
-        Result(UUID uuid, String name, int tick) {
-            this.uuid = uuid;
-            this.name = name;
-            this.tick = tick;
-        }
+        Result(UUID uuid, String name, int tick) { this.uuid = uuid; this.name = name; this.tick = tick; }
     }
 }
