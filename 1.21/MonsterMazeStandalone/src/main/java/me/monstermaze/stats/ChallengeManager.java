@@ -5,8 +5,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -56,7 +59,7 @@ public final class ChallengeManager {
             player.sendMessage(ChatColor.AQUA + "Mode: " + ChatColor.WHITE + pretty(c.mode));
             player.sendMessage(ChatColor.AQUA + "Maze: " + ChatColor.WHITE + (c.pattern + 1));
             player.sendMessage(ChatColor.AQUA + "Kit: " + ChatColor.WHITE + c.kit);
-            player.sendMessage(ChatColor.AQUA + "Ends: " + ChatColor.WHITE + c.end);
+            player.sendMessage(ChatColor.AQUA + "Ends: " + ChatColor.WHITE + formatDate(c.end));
         }
         player.sendMessage(ChatColor.YELLOW + "--- Challenge Standings ---");
         if (rows.isEmpty()) player.sendMessage(ChatColor.GRAY + "No completed challenge runs yet.");
@@ -97,6 +100,19 @@ public final class ChallengeManager {
     private static int integer(String json, String key, int fallback) { String v = string(json, key); try { return v == null ? fallback : Integer.parseInt(v); } catch (NumberFormatException e) { return fallback; } }
     private static String unescape(String value) { return value == null ? "" : value.replace("\\\"", "\"").replace("\\\\", "\\").replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t"); }
     private static String pretty(String mode) { return mode == null || mode.isEmpty() ? "Unknown" : Character.toUpperCase(mode.charAt(0)) + mode.substring(1); }
+    private static String formatDate(String iso) {
+        if (iso == null) return "Unknown";
+        try {
+            SimpleDateFormat input = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX");
+            input.setTimeZone(TimeZone.getTimeZone("UTC"));
+            Date date = input.parse(iso);
+            SimpleDateFormat output = new SimpleDateFormat("EEE d MMM, HH:mm z");
+            output.setTimeZone(TimeZone.getTimeZone("Australia/Brisbane"));
+            return output.format(date);
+        } catch (Exception ignored) {
+            return iso.replace('T', ' ').replace("+00:00", " UTC");
+        }
+    }
     private static String formatTime(long ms) { long seconds = Math.max(0L, ms) / 1000L; return (seconds / 60L) + ":" + String.format("%02d", seconds % 60L); }
     public static final class Challenge { public final String week; public final int number; public final String mode; public final int pattern; public final String kit; public final String start; public final String end; public final String status; Challenge(String w,int n,String m,int p,String k,String s,String e,String st){week=w;number=n;mode=m;pattern=p;kit=k;start=s;end=e;status=st;} }
     public static final class Row { public final String name; public final int stage; public final long timeMs; Row(String n,int s,long t){name=n;stage=s;timeMs=t;} }
