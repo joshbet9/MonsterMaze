@@ -56,9 +56,7 @@ public class LeaderboardBoard implements Listener {
 
         // 0. Purge any lingering ghost armor stands in the immediate area left from reloads/crashes
         for (Entity e : world.getNearbyEntities(spawnCenter, 2.5, 3.5, 2.5)) {
-            if (e instanceof ArmorStand) {
-                e.remove();
-            }
+            if (e instanceof ArmorStand) e.remove();
         }
 
         // 1. Spawn marker stands for crisp, perfectly spaced hologram text lines
@@ -68,14 +66,11 @@ public class LeaderboardBoard implements Listener {
             stand.setVisible(false);
             stand.setGravity(false);
             stand.setSmall(true);
-            stand.setMarker(true); // Prevents gravity drops and text stacking
+            stand.setMarker(true);
             stand.setBasePlate(false);
             stand.setArms(false);
             stand.setCustomNameVisible(true);
-            try {
-                stand.setRightArmPose(new EulerAngle(i * 0.1, 0, 0));
-            } catch (Exception ignored) {
-            }
+            try { stand.setRightArmPose(new EulerAngle(i * 0.1, 0, 0)); } catch (Exception ignored) { }
             stands.add(stand);
         }
 
@@ -83,7 +78,7 @@ public class LeaderboardBoard implements Listener {
         clickTarget = (ArmorStand) world.spawnEntity(spawnCenter, EntityType.ARMOR_STAND);
         clickTarget.setVisible(false);
         clickTarget.setGravity(false);
-        clickTarget.setMarker(false); // Hitbox active for interactions
+        clickTarget.setMarker(false);
         clickTarget.setBasePlate(false);
         clickTarget.setSmall(false);
 
@@ -91,14 +86,9 @@ public class LeaderboardBoard implements Listener {
     }
 
     public void remove() {
-        for (ArmorStand stand : stands) {
-            if (stand != null) stand.remove();
-        }
+        for (ArmorStand stand : stands) if (stand != null) stand.remove();
         stands.clear();
-        if (clickTarget != null) {
-            clickTarget.remove();
-            clickTarget = null;
-        }
+        if (clickTarget != null) { clickTarget.remove(); clickTarget = null; }
         anchor = null;
     }
 
@@ -110,9 +100,8 @@ public class LeaderboardBoard implements Listener {
 
     public void cycleKit() {
         KitType[] kits = KitType.values();
-        if (activeKit == null) {
-            activeKit = kits[0];
-        } else {
+        if (activeKit == null) activeKit = kits[0];
+        else {
             int nextIndex = activeKit.ordinal() + 1;
             activeKit = (nextIndex < kits.length) ? kits[nextIndex] : null;
         }
@@ -123,13 +112,12 @@ public class LeaderboardBoard implements Listener {
         if (anchor == null) return;
         this.activeMode = mode;
         LeaderboardManager lb = plugin.getLeaderboards();
-
-        // Pull kit-filtered entries if a kit is selected; otherwise pull overall mode entries
         List<LeaderboardManager.OverallEntry> rows = (activeKit == null)
                 ? lb.getModeLeaderboard(mode, LINES - 2)
                 : lb.getModeAndKitLeaderboard(mode, activeKit, LINES - 2);
-
         String kitLabel = (activeKit == null) ? "All Kits" : activeKit.display;
+        ChallengeManager cm = plugin.getChallengeManager();
+        ChallengeManager.Challenge challenge = cm == null ? null : cm.getChallenge();
 
         for (int i = 0; i < stands.size(); i++) {
             ArmorStand stand = stands.get(i);
@@ -137,17 +125,24 @@ public class LeaderboardBoard implements Listener {
             if (i == 0) {
                 text = ChatColor.GOLD + "" + ChatColor.BOLD + "Leaderboard (" + mode.color + mode.id
                         + ChatColor.GRAY + " - " + ChatColor.YELLOW + kitLabel + ChatColor.GOLD + ")";
-            } else if (i - 1 < rows.size()) {
+            } else if (i - 1 < rows.size() && i < LINES - 1) {
                 LeaderboardManager.OverallEntry e = rows.get(i - 1);
-                text = ChatColor.GRAY + "#" + (i)
-                        + " " + ChatColor.WHITE + e.name
-                        + ChatColor.DARK_GRAY + " - Stage "
-                        + ChatColor.GOLD + e.stage;
+                text = ChatColor.GRAY + "#" + i + " " + ChatColor.WHITE + e.name
+                        + ChatColor.DARK_GRAY + " - Stage " + ChatColor.GOLD + e.stage;
+            } else if (i == LINES - 1 && challenge != null) {
+                text = ChatColor.AQUA + "Weekly Challenge #" + challenge.number
+                        + ChatColor.GRAY + " — " + ChatColor.WHITE + pretty(challenge.mode)
+                        + ChatColor.GRAY + " / Maze " + (challenge.pattern + 1)
+                        + ChatColor.GRAY + " / " + ChatColor.WHITE + challenge.kit;
             } else {
                 text = "";
             }
             stand.setCustomName(text);
         }
+    }
+
+    private static String pretty(String mode) {
+        return mode == null || mode.isEmpty() ? "Unknown" : Character.toUpperCase(mode.charAt(0)) + mode.substring(1);
     }
 
     private boolean isBoardEntity(Entity entity) {
@@ -158,9 +153,7 @@ public class LeaderboardBoard implements Listener {
     private boolean checkCooldown(Player player) {
         long now = System.currentTimeMillis();
         Long last = lastClick.get(player.getUniqueId());
-        if (last != null && (now - last) < 150) {
-            return false; // Suppress double-firing packet in same click tick
-        }
+        if (last != null && (now - last) < 150) return false;
         lastClick.put(player.getUniqueId(), now);
         return true;
     }
@@ -179,27 +172,20 @@ public class LeaderboardBoard implements Listener {
     @EventHandler
     public void onRightClickAt(PlayerInteractAtEntityEvent event) {
         if (!isBoardEntity(event.getRightClicked())) return;
-
         event.setCancelled(true);
-        if (checkCooldown(event.getPlayer())) {
-            handleInteract(event.getPlayer());
-        }
+        if (checkCooldown(event.getPlayer())) handleInteract(event.getPlayer());
     }
 
     @EventHandler
     public void onRightClick(PlayerInteractEntityEvent event) {
         if (!isBoardEntity(event.getRightClicked())) return;
-
         event.setCancelled(true);
-        if (checkCooldown(event.getPlayer())) {
-            handleInteract(event.getPlayer());
-        }
+        if (checkCooldown(event.getPlayer())) handleInteract(event.getPlayer());
     }
 
     @EventHandler
     public void onLeftClick(EntityDamageByEntityEvent event) {
         if (!isBoardEntity(event.getEntity())) return;
-
         event.setCancelled(true);
         if (event.getDamager() instanceof Player) {
             Player player = (Player) event.getDamager();
@@ -213,8 +199,6 @@ public class LeaderboardBoard implements Listener {
 
     public void clear() {
         if (anchor == null) return;
-        for (ArmorStand stand : stands) {
-            stand.setCustomName("");
-        }
+        for (ArmorStand stand : stands) stand.setCustomName("");
     }
 }
