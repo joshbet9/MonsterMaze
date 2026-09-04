@@ -106,7 +106,7 @@ class Handler(BaseHTTPRequestHandler):
                 })
                 return
 
-            if len(parts) == 5 and parts[:4] == ["api", "v1", "challenge"] and parts[4] == "leaderboard":
+            if len(parts) == 5 and parts[:3] == ["api", "v1", "challenge"] and parts[4] == "leaderboard":
                 platform = parts[3]
                 if platform not in ("1.8", "1.21"):
                     raise ValueError("unsupported platform")
