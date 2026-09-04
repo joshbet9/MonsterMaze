@@ -102,7 +102,10 @@ try {
     $entries = @($probe.Entries | ForEach-Object { $_.FullName })
     $bad = @($entries | Where-Object { $_ -match '\\' }).Count -gt 0
     $requiredRoots = @('server/','launcher/','submitter/','runtime/')
-    $missingRoots = @($requiredRoots | Where-Object { -not (@($entries | Where-Object { $_.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) })).Count })
+    $missingRoots = @($requiredRoots | Where-Object {
+        $root = $_
+        -not (@($entries | Where-Object { $_.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) }).Count)
+    })
     $hasForbiddenWrapper = @($entries | Where-Object { $_ -like 'solo-dist/*' }).Count -gt 0
 } finally { $probe.Dispose() }
 if ($bad) { throw "ZIP contains backslash entry names." }
