@@ -27,6 +27,8 @@
     "elo": "elo-rankings",
     "weekly": "weekly-rankings",
     "tournament": "tournament-rankings",
+    "tournament_registration": "tournament-registration",
+    "tournament_results": "tournament-results",
     "season_archive": "season-archive"
   },
   "top_n": 10,

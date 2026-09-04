@@ -240,7 +240,10 @@ class TournamentBot(MonsterBot):
                 print(f"season {number} archive publish failed: {exc}", flush=True)
 
     async def announce(self, tid):
-        channel = self.competition_channel()
+        channel = self.channel(
+            self.competitive_channel_ref("tournament_registration")
+            or "tournament-registration"
+        )
         if not channel:
             return
         async with self.tournament_lock:
@@ -279,7 +282,10 @@ class TournamentBot(MonsterBot):
                 print(f"tournament announcement failed: {exc}", flush=True)
 
     async def announce_results(self, tid):
-        channel = self.competition_channel()
+        channel = self.channel(
+            self.competitive_channel_ref("tournament_results")
+            or "tournament-results"
+        )
         if not channel:
             return
         c = db()
