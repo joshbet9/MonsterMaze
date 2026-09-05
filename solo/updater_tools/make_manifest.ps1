@@ -11,10 +11,10 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $soloRoot = Split-Path -Parent $here
 
 $UPDATEABLE = @(
-    "launcher\play.bat", "launcher\stop.bat", "launcher\config.bat",
-    "submitter\submit.bat", "submitter\submit.ps1",
-    "server\plugins\MonsterMazeStandalone.jar",
-    "server\bukkit.yml", "server\eula.txt", "server\server.properties", "server\spigot.yml",
+    "launcher/play.bat", "launcher/stop.bat", "launcher/config.bat",
+    "submitter/submit.bat", "submitter/submit.ps1",
+    "server/plugins/MonsterMazeStandalone.jar",
+    "server/bukkit.yml", "server/eula.txt", "server/server.properties", "server/spigot.yml",
     "HOW_TO_PLAY.txt", "README.md"
 )
 
@@ -50,8 +50,8 @@ foreach ($map in $mapNames) {
     $mapRoot = Join-Path $mapsRoot $map
     if (-not (Test-Path $mapRoot)) { throw "Required map missing: $map" }
     Get-ChildItem -LiteralPath $mapRoot -Recurse -File | ForEach-Object {
-        $relative = $_.FullName.Substring($mapsRoot.Length).TrimStart('\','/')
-        Add-ManifestFile $files ("server\$relative") $_.FullName ("maps\$relative")
+        $relative = $_.FullName.Substring($mapsRoot.Length).TrimStart('\\','/')
+        Add-ManifestFile $files ("server/$relative") $_.FullName ("maps/$relative")
     }
 }
 
