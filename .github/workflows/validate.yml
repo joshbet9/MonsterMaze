@@ -1,0 +1,78 @@
+name: Validate Monster Maze
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-1-8:
+    name: Build Minecraft 1.8.8
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      - name: Build
+        working-directory: 1.8/MonsterMazeStandalone
+        run: mvn -B clean package
+
+  build-1-21:
+    name: Build Minecraft 1.21.x
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build
+        working-directory: 1.21/MonsterMazeStandalone
+        run: mvn -B clean package
+
+  repository-hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check generated/build output is not tracked
+        shell: bash
+        run: |
+          set -euo pipefail
+          forbidden='(^|/)(target|solo-dist)(/|$)|\.class$'
+          if git ls-files | grep -E "$forbidden"; then
+            echo 'Tracked generated/build output detected.'
+            exit 1
+          fi
+
+      - name: Check for oversized tracked files
+        shell: bash
+        run: |
+          set -euo pipefail
+          max=$((95 * 1024 * 1024))
+          failed=0
+          while IFS= read -r -d '' file; do
+            size=$(stat -c '%s' "$file")
+            if [ "$size" -gt "$max" ]; then
+              echo "Tracked file is too large for a safe GitHub repository: $file ($size bytes)"
+              failed=1
+            fi
+          done < <(git ls-files -z)
+          exit "$failed"
