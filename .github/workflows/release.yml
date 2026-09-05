@@ -1,0 +1,209 @@
+name: Release Monster Maze
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing vX.Y.Z tag to build and publish'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  RELEASE_NOTE: 'Automated Monster Maze release: tested 1.8 and 1.21 builds with fresh-install Solo distributions.'
+  BUILDTOOLS_URL: 'https://hub.spigotmc.org/jenkins/job/BuildTools/200/artifact/target/BuildTools.jar'
+  PROTOCOLLIB_URL: 'https://github.com/dmulloy2/ProtocolLib/releases/download/5.4.0/ProtocolLib.jar'
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - name: Validate tag format
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Release tag must match vX.Y.Z; got '$env:RELEASE_TAG'."
+          }
+
+      - name: Setup Java 8
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      - name: Record Java 8 toolchain
+        shell: pwsh
+        run: |
+          "MM_JDK8=$env:JAVA_HOME" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          java -version
+
+      - name: Download pinned BuildTools
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri $env:BUILDTOOLS_URL -OutFile "$env:RUNNER_TEMP\BuildTools.jar"
+          if (-not (Test-Path "$env:RUNNER_TEMP\BuildTools.jar")) { throw 'BuildTools download failed.' }
+
+      - name: Build Spigot 1.8.8 server
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $java8 = Join-Path $env:MM_JDK8 'bin\java.exe'
+          & $java8 -jar "$env:RUNNER_TEMP\BuildTools.jar" --rev 1.8.8 --output-dir "$env:RUNNER_TEMP\spigot"
+          if ($LASTEXITCODE -ne 0) { throw "BuildTools failed with exit code $LASTEXITCODE." }
+          $spigot = Join-Path "$env:RUNNER_TEMP\spigot" 'spigot-1.8.8.jar'
+          if (-not (Test-Path $spigot)) { throw "Spigot 1.8.8 JAR was not produced: $spigot" }
+          "MM_SPIGOT_JAR=$spigot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Test 1.8
+        shell: pwsh
+        working-directory: ${{ github.workspace }}\1.8\MonsterMazeStandalone
+        run: |
+          mvn.cmd clean test
+          if ($LASTEXITCODE -ne 0) { throw "1.8 tests failed with exit code $LASTEXITCODE." }
+
+      - name: Package Solo 1.8
+        shell: pwsh
+        working-directory: ${{ github.workspace }}\solo
+        env:
+          MM_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
+          MM_RELEASE_NOTE: ${{ env.RELEASE_NOTE }}
+          MM_RELEASE_SOURCE_BASE_URL: https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${{ env.RELEASE_TAG }}/solo
+        run: |
+          .\pack.ps1 -ReleaseVersion $env:RELEASE_TAG -ReleaseNote $env:MM_RELEASE_NOTE
+          if ($LASTEXITCODE -ne 0) { throw "1.8 Solo packaging failed with exit code $LASTEXITCODE." }
+          Copy-Item -Force .\solo-dist.zip .\MonsterMaze-Solo.zip
+          Copy-Item -Force .\version.json .\solo-1.8-version.json
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Record Java 21 toolchain
+        shell: pwsh
+        run: |
+          "MM_JDK21=$env:JAVA_HOME" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          java -version
+
+      - name: Download Paper 1.21.11 stable build
+        shell: pwsh
+        run: |
+          $headers = @{ 'User-Agent' = 'MonsterMaze-Release/1.0 (https://github.com/joshbet9/MonsterMaze)' }
+          $builds = Invoke-RestMethod -Uri 'https://fill.papermc.io/v3/projects/paper/versions/1.21.11/builds' -Headers $headers
+          $stable = @($builds | Where-Object { $_.channel -eq 'STABLE' } | Sort-Object id -Descending | Select-Object -First 1)
+          if ($stable.Count -ne 1) { throw 'No stable Paper 1.21.11 build was returned.' }
+          $download = $stable[0].downloads.'server:default'
+          if (-not $download.url) { throw 'Paper stable build has no server download URL.' }
+          $paperPath = Join-Path $env:RUNNER_TEMP $download.name
+          Invoke-WebRequest -Uri $download.url -Headers $headers -OutFile $paperPath
+          $actual = (Get-FileHash $paperPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $download.checksums.sha256.ToLowerInvariant()) { throw "Paper SHA-256 mismatch." }
+          "MM_PAPER_JAR=$paperPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MM_PAPER_VERSION=$($download.name)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Using $($download.name)"
+
+      - name: Download ProtocolLib 5.4.0
+        shell: pwsh
+        run: |
+          $protocol = Join-Path $env:RUNNER_TEMP 'ProtocolLib.jar'
+          Invoke-WebRequest -Uri $env:PROTOCOLLIB_URL -OutFile $protocol
+          if (-not (Test-Path $protocol)) { throw 'ProtocolLib download failed.' }
+          "MM_PROTOCOLLIB_JAR=$protocol" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Test 1.21
+        shell: pwsh
+        working-directory: ${{ github.workspace }}\1.21\MonsterMazeStandalone
+        run: |
+          mvn.cmd clean test
+          if ($LASTEXITCODE -ne 0) { throw "1.21 tests failed with exit code $LASTEXITCODE." }
+
+      - name: Package Solo 1.21
+        shell: pwsh
+        working-directory: ${{ github.workspace }}\solo\1.21
+        env:
+          MM_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
+          MM_RELEASE_NOTE: ${{ env.RELEASE_NOTE }}
+          MM_RELEASE_SOURCE_BASE_URL: https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${{ env.RELEASE_TAG }}/solo/1.21
+        run: |
+          .\pack.ps1 -ReleaseVersion $env:RELEASE_TAG -ReleaseNote $env:MM_RELEASE_NOTE
+          if ($LASTEXITCODE -ne 0) { throw "1.21 Solo packaging failed with exit code $LASTEXITCODE." }
+          Copy-Item -Force .\solo-1.21-dist.zip .\1.21-MonsterMaze-Solo.zip
+          Copy-Item -Force .\version.json .\solo-1.21-version.json
+
+      - name: Create release checksums
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $assets = @(
+            'solo\MonsterMaze-Solo.zip',
+            'solo\solo-1.8-version.json',
+            'solo\1.21\1.21-MonsterMaze-Solo.zip',
+            'solo\1.21\solo-1.21-version.json'
+          )
+          $lines = foreach ($asset in $assets) {
+            $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($asset.Replace('\','/'))"
+          }
+          $lines | Set-Content -Path "$env:GITHUB_WORKSPACE\SHA256SUMS.txt" -Encoding ascii
+          Get-Content "$env:GITHUB_WORKSPACE\SHA256SUMS.txt"
+
+      - name: Validate release assets
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $required = @(
+            'solo\MonsterMaze-Solo.zip',
+            'solo\solo-1.8-version.json',
+            'solo\1.21\1.21-MonsterMaze-Solo.zip',
+            'solo\1.21\solo-1.21-version.json',
+            'SHA256SUMS.txt'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) { throw "Release asset missing: $path" }
+          }
+          $m18 = Get-Content 'solo\solo-1.8-version.json' -Raw | ConvertFrom-Json
+          $m21 = Get-Content 'solo\1.21\solo-1.21-version.json' -Raw | ConvertFrom-Json
+          if ($m18.'install-version' -ne $env:RELEASE_TAG) { throw '1.8 manifest version does not match tag.' }
+          if ($m21.'install-version' -ne $env:RELEASE_TAG) { throw '1.21 manifest version does not match tag.' }
+          foreach ($manifest in @($m18, $m21)) {
+            foreach ($property in $manifest.files.PSObject.Properties) {
+              if (-not $property.Value.sha256 -or $property.Value.sha256.Length -ne 64) { throw "Invalid SHA-256 for $($property.Name)" }
+              if (-not $property.Value.url) { throw "Release manifest is missing immutable source URL for $($property.Name)" }
+            }
+          }
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: ${{ github.workspace }}
+        run: |
+          gh release create $env:RELEASE_TAG `
+            'solo\MonsterMaze-Solo.zip' `
+            'solo\solo-1.8-version.json' `
+            'solo\1.21\1.21-MonsterMaze-Solo.zip' `
+            'solo\1.21\solo-1.21-version.json' `
+            'SHA256SUMS.txt' `
+            --title "Monster Maze $env:RELEASE_TAG" `
+            --generate-notes `
+            --verify-tag
