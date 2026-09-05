@@ -10,14 +10,35 @@ $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $here
 $dist = Join-Path $here "solo-dist"
-$JDK8 = if ($env:MM_JDK8) { $env:MM_JDK8 } else { "C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium\jdk-8.0.502.7-hotspot" }
 $SPIGOT = if ($env:MM_SPIGOT_JAR) { $env:MM_SPIGOT_JAR } else { "C:\monstermaze_test\spigot-1.8.8.jar" }
 $maps = Join-Path $here "maps"
 $sourceProject = Join-Path $repoRoot "1.8/MonsterMazeStandalone"
 $sourceJar = Join-Path $sourceProject "target/MonsterMazeStandalone.jar"
 $soloJar = Join-Path $here "server/plugins/MonsterMazeStandalone.jar"
 $maven = "mvn"
-$javaExe = if ($IsWindows) { "java.exe" } else { "java" }
+
+if ($env:MM_SOLO_JDK8_WINDOWS) {
+    $JDK8 = $env:MM_SOLO_JDK8_WINDOWS
+} elseif ($IsWindows -and $env:MM_JDK8) {
+    $JDK8 = $env:MM_JDK8
+} elseif (-not $IsWindows) {
+    $jdkUrl = 'https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u492-b09/OpenJDK8U-jdk_x64_windows_hotspot_8u492b09.zip'
+    $jdkZip = Join-Path ([System.IO.Path]::GetTempPath()) 'MonsterMaze-Temurin8-Windows.zip'
+    $jdkExtract = Join-Path ([System.IO.Path]::GetTempPath()) 'MonsterMaze-Temurin8-Windows'
+    if (Test-Path $jdkZip) { Remove-Item -Force $jdkZip }
+    if (Test-Path $jdkExtract) { Remove-Item -Recurse -Force $jdkExtract }
+    Invoke-WebRequest -Uri $jdkUrl -OutFile $jdkZip
+    $checksumText = (Invoke-WebRequest -Uri ($jdkUrl + '.sha256.txt')).Content
+    $expectedChecksum = (($checksumText -split '\s+')[0]).ToLowerInvariant()
+    $actualChecksum = (Get-FileHash $jdkZip -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualChecksum -ne $expectedChecksum) { throw "Windows JDK 8 SHA-256 mismatch." }
+    Expand-Archive -LiteralPath $jdkZip -DestinationPath $jdkExtract -Force
+    $JDK8 = (Get-ChildItem $jdkExtract -Directory | Select-Object -First 1).FullName
+} else {
+    $JDK8 = "C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium\jdk-8.0.502.7-hotspot"
+}
+
+$javaExe = if ($IsWindows) { "java.exe" } else { "java.exe" }
 
 if (-not (Test-Path (Join-Path $JDK8 "bin/$javaExe"))) { throw "JDK8 not found at $JDK8" }
 if (-not (Test-Path $SPIGOT)) { throw "spigot jar not found at $SPIGOT" }
