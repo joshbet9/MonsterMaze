@@ -1,17 +1,24 @@
 # Owner-side release manifest generator for solo/1.21.
 [CmdletBinding()]
 param(
-    [string]$Version='0.1.0-1.21',
-    [string]$Note='Initial 1.21 Solo release.',
-    [string]$Root=''
+    [string]$Version='1.0.0',
+    [string]$Note='Monster Maze Solo 1.21 release.',
+    [string]$Root='',
+    [string]$SourceBaseUrl=''
 )
 $ErrorActionPreference='Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $Root) { $Root = $here }
 $files = [ordered]@{}
-function Add-File([string]$rel,[string]$src) {
+function Add-File([string]$rel,[string]$src,[string]$sourceRel='') {
     if (-not (Test-Path $src)) { throw "Missing manifest file: $src" }
-    $files[$rel.Replace('\','/')] = [ordered]@{sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant();size=(Get-Item $src).Length}
+    $norm = $rel.Replace('\','/')
+    $entry = [ordered]@{sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant();size=(Get-Item $src).Length}
+    if ($SourceBaseUrl) {
+        if (-not $sourceRel) { $sourceRel = $norm }
+        $entry.url = $SourceBaseUrl.TrimEnd('/') + '/' + $sourceRel.Replace('\','/')
+    }
+    $files[$norm] = $entry
 }
 $updateable = @(
  'launcher/play.bat','launcher/stop.bat','launcher/config.bat',
@@ -27,7 +34,7 @@ foreach ($map in @('mm_colombia','mm_sandycoast','mm_siberian','mm_swampland','m
     if (-not (Test-Path (Join-Path $mapRoot 'level.dat'))) { throw "1.21 map missing or invalid: $map" }
     Get-ChildItem $mapRoot -Recurse -File | ForEach-Object {
         $rel = $_.FullName.Substring($maps.Length).TrimStart('\','/')
-        Add-File ("server/$rel") $_.FullName
+        Add-File ("server/$rel") $_.FullName ("maps/$rel")
     }
 }
 $manifest = [ordered]@{'install-version'=$Version;note=$Note;updated=(Get-Date -Format "yyyy-MM-dd HH:mm 'UTC'K");files=$files}
