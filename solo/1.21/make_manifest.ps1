@@ -20,8 +20,7 @@ function Add-File([string]$rel,[string]$src,[string]$sourceRel='') {
     if (-not (Test-Path $src)) { throw "Missing manifest file: $src" }
     $norm = $rel.Replace('\','/')
     $entry = [ordered]@{sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant();size=(Get-Item $src).Length}
-    if ($RELEASE_ASSETS.ContainsKey($norm)) {
-        if (-not $ReleaseAssetBaseUrl) { throw "ReleaseAssetBaseUrl is required for release asset: $norm" }
+    if ($RELEASE_ASSETS.ContainsKey($norm) -and $ReleaseAssetBaseUrl) {
         $entry.url = $ReleaseAssetBaseUrl.TrimEnd('/') + '/' + $RELEASE_ASSETS[$norm]
     } elseif ($SourceBaseUrl) {
         if (-not $sourceRel) { $sourceRel = $norm }
