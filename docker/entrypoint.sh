@@ -6,12 +6,14 @@ case "$PLATFORM" in
   1.8)
     ROOT=/data/1.8
     TEMPLATE=/opt/mm18-template
+    DEPLOYMENT_CONFIG=/opt/mm18-deployment-config.yml
     PORT=25565
     JAR=spigot-1.8.8.jar
     ;;
   1.21)
     ROOT=/data/1.21
     TEMPLATE=/opt/mm21-template
+    DEPLOYMENT_CONFIG=/opt/mm21-deployment-config.yml
     PORT=25566
     JAR=paper-1.21.11.jar
     ;;
@@ -39,7 +41,35 @@ init_server() {
   mkdir -p "$ROOT/logs" "$ROOT/plugins/MonsterMazeStandalone/solo-runs"
 }
 
+apply_deployment_config() {
+  local plugin_config="$ROOT/plugins/MonsterMazeStandalone/config.yml"
+  local solo_mode
+
+  if [ ! -f "$DEPLOYMENT_CONFIG" ]; then
+    echo "Deployment configuration missing: $DEPLOYMENT_CONFIG" >&2
+    exit 1
+  fi
+
+  solo_mode="$(awk -F': *' '$1 == "solo-mode" { print $2; exit }' "$DEPLOYMENT_CONFIG")"
+  case "$solo_mode" in
+    true|false) ;;
+    *)
+      echo "Invalid solo-mode in deployment configuration: '$solo_mode'" >&2
+      exit 1
+      ;;
+  esac
+
+  if grep -q '^solo-mode:' "$plugin_config"; then
+    sed -i "s/^solo-mode:.*/solo-mode: $solo_mode/" "$plugin_config"
+  else
+    printf '\nsolo-mode: %s\n' "$solo_mode" >> "$plugin_config"
+  fi
+
+  echo "Deployment configuration: solo-mode=$solo_mode"
+}
+
 init_server
+apply_deployment_config
 
 # The 1.8 Solo template contains the Linux-safe Netty setting verified during
 # production testing. Reassert it at startup in case an older template is used.
