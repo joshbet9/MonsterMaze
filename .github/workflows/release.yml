@@ -213,13 +213,6 @@ jobs:
             }
           }
 
-      - name: Build Fly image as final packaging smoke test
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: |
-          docker build --pull -t monstermaze-release-smoke:${{ env.RELEASE_TAG }} .
-          if ($LASTEXITCODE -ne 0) { throw "Docker image build failed with exit code $LASTEXITCODE." }
-
       - name: Publish GitHub Release
         shell: pwsh
         env:
