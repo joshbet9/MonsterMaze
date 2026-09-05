@@ -103,4 +103,4 @@ cleanup() {
 trap cleanup TERM INT EXIT
 
 cd "$ROOT"
-"$JAVA_BIN" -Xms512M -Xmx1536M -jar "$JAR" nogui
+exec "$JAVA_BIN" -Xms512M -Xmx1536M -jar "$JAR" nogui
