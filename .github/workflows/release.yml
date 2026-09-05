@@ -208,7 +208,14 @@ jobs:
           if ((Get-Item 'MonsterMaze-Server-1.8.zip').Length -le 0) { throw '1.8 server artifact is empty.' }
           if ((Get-Item 'MonsterMaze-Server-1.21.zip').Length -le 0) { throw '1.21 server artifact is empty.' }
 
-      - name: Build and publish immutable Docker image
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and publish release Docker image
         id: docker
         uses: docker/build-push-action@v6
         with:
