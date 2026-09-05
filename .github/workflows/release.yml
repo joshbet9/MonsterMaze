@@ -41,9 +41,9 @@ jobs:
         shell: pwsh
         run: |
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "Release tag must match vX.Y.Z; got '$env:RELEASE_TAG'." }
-          $commit = git rev-parse 'HEAD'
+          $commit = git rev-parse HEAD
           $tagCommit = git rev-list -n 1 "$env:RELEASE_TAG"
-          if ($commit -ne $tagCommit) { throw "Checkout is not exactly the requested tag commit." }
+          if ($commit -ne $tagCommit) { throw 'Checkout is not exactly the requested tag commit.' }
           Write-Host "Building immutable source ref $env:RELEASE_TAG at $commit"
 
       - name: Refuse injected production credentials
@@ -62,7 +62,7 @@ jobs:
       - name: Record Java 8 toolchain
         shell: pwsh
         run: |
-          "MM_JDK8=$env:JAVA_HOME" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MM_JDK8=$env:JAVA_HOME" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           java -version
 
       - name: Download pinned BuildTools
@@ -78,8 +78,8 @@ jobs:
           & $java8 -Xmx2G -jar "$env:RUNNER_TEMP\BuildTools.jar" --rev 1.8.8 --output-dir "$env:RUNNER_TEMP\spigot"
           if ($LASTEXITCODE -ne 0) { throw "BuildTools failed with exit code $LASTEXITCODE." }
           $spigot = Join-Path "$env:RUNNER_TEMP\spigot" 'spigot-1.8.8.jar'
-          if (-not (Test-Path $spigot)) { throw "Spigot 1.8.8 JAR was not produced: $spigot" }
-          "MM_SPIGOT_JAR=$spigot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          if (-not (Test-Path $spigot)) { throw 'Spigot 1.8.8 JAR was not produced.' }
+          "MM_SPIGOT_JAR=$spigot" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Install tested Spigot artifact into Maven local repository
         shell: pwsh
@@ -109,12 +109,14 @@ jobs:
           MM_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
           MM_RELEASE_NOTE: ${{ env.RELEASE_NOTE }}
           MM_RELEASE_SOURCE_BASE_URL: https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${{ env.RELEASE_TAG }}/solo
+          MM_RELEASE_ASSET_BASE_URL: https://github.com/joshbet9/MonsterMaze/releases/download/${{ env.RELEASE_TAG }}
         run: |
           $version = $env:RELEASE_TAG -replace '^v', ''
           .\pack.ps1 -ReleaseVersion $version -ReleaseNote $env:MM_RELEASE_NOTE -SkipBuild
           if ($LASTEXITCODE -ne 0) { throw "1.8 Solo packaging failed with exit code $LASTEXITCODE." }
           Copy-Item -Force .\solo-dist.zip .\MonsterMaze-Solo.zip
           Copy-Item -Force .\version.json .\solo-1.8-version.json
+          Copy-Item -Force .\server\plugins\MonsterMazeStandalone.jar ..\MonsterMaze-Solo-1.8-plugin.jar
 
       - name: Setup Java 21
         uses: actions/setup-java@v5
@@ -126,7 +128,7 @@ jobs:
       - name: Record Java 21 toolchain
         shell: pwsh
         run: |
-          "MM_JDK21=$env:JAVA_HOME" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MM_JDK21=$env:JAVA_HOME" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           java -version
 
       - name: Download Paper 1.21.11 stable build
@@ -142,8 +144,7 @@ jobs:
           Invoke-WebRequest -Uri $download.url -Headers $headers -OutFile $paperPath
           $actual = (Get-FileHash $paperPath -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $download.checksums.sha256.ToLowerInvariant()) { throw 'Paper SHA-256 mismatch.' }
-          "MM_PAPER_JAR=$paperPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "MM_PAPER_VERSION=$($download.name)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MM_PAPER_JAR=$paperPath" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Download ProtocolLib 5.4.0
         shell: pwsh
@@ -151,7 +152,7 @@ jobs:
           $protocol = Join-Path $env:RUNNER_TEMP 'ProtocolLib.jar'
           Invoke-WebRequest -Uri $env:PROTOCOLLIB_URL -OutFile $protocol
           if (-not (Test-Path $protocol)) { throw 'ProtocolLib download failed.' }
-          "MM_PROTOCOLLIB_JAR=$protocol" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MM_PROTOCOLLIB_JAR=$protocol" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Build and test 1.21
         shell: pwsh
@@ -170,12 +171,16 @@ jobs:
           MM_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
           MM_RELEASE_NOTE: ${{ env.RELEASE_NOTE }}
           MM_RELEASE_SOURCE_BASE_URL: https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${{ env.RELEASE_TAG }}/solo/1.21
+          MM_RELEASE_ASSET_BASE_URL: https://github.com/joshbet9/MonsterMaze/releases/download/${{ env.RELEASE_TAG }}
         run: |
           $version = $env:RELEASE_TAG -replace '^v', ''
           .\pack.ps1 -ReleaseVersion $version -ReleaseNote $env:MM_RELEASE_NOTE -SkipBuild
           if ($LASTEXITCODE -ne 0) { throw "1.21 Solo packaging failed with exit code $LASTEXITCODE." }
           Copy-Item -Force .\solo-1.21-dist.zip .\1.21-MonsterMaze-Solo.zip
           Copy-Item -Force .\version.json .\solo-1.21-version.json
+          Copy-Item -Force .\solo-dist\server\plugins\MonsterMazeStandalone.jar ..\..\MonsterMaze-Solo-1.21-plugin.jar
+          Copy-Item -Force .\solo-dist\server\plugins\ProtocolLib.jar ..\..\MonsterMaze-Solo-1.21-ProtocolLib.jar
+          Copy-Item -Force .\solo-dist\server\paper-1.21.11.jar ..\..\MonsterMaze-Solo-1.21-Paper.jar
 
       - name: Prepare canonical hosted server artifacts
         shell: pwsh
@@ -205,8 +210,7 @@ jobs:
           foreach ($root in $scanRoots) {
             $files = Get-ChildItem $root -Recurse -File | Where-Object { $_.Extension -in @('.yml','.yaml','.properties','.json','.txt','.conf','.env') }
             foreach ($file in $files) {
-              $hit = Select-String -Path $file.FullName -Pattern $patterns -AllMatches -ErrorAction SilentlyContinue
-              if ($hit) { throw "Potential production credential in artifact: $($file.FullName)" }
+              if (Select-String -Path $file.FullName -Pattern $patterns -AllMatches -ErrorAction SilentlyContinue) { throw "Potential production credential in artifact: $($file.FullName)" }
             }
           }
 
@@ -253,18 +257,23 @@ jobs:
           $assets = @(
             'solo\MonsterMaze-Solo.zip',
             'solo\solo-1.8-version.json',
+            'MonsterMaze-Solo-1.8-plugin.jar',
             'solo\1.21\1.21-MonsterMaze-Solo.zip',
             'solo\1.21\solo-1.21-version.json',
+            'MonsterMaze-Solo-1.21-plugin.jar',
+            'MonsterMaze-Solo-1.21-Paper.jar',
+            'MonsterMaze-Solo-1.21-ProtocolLib.jar',
             'MonsterMaze-Server-1.8.zip',
             'MonsterMaze-Server-1.21.zip',
             'DOCKER-IMAGE.txt'
           )
           $lines = foreach ($asset in $assets) {
+            if (-not (Test-Path $asset)) { throw "Cannot checksum missing release asset: $asset" }
             $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($asset.Replace('\','/'))"
           }
-          $lines | Set-Content -Path "$env:GITHUB_WORKSPACE\SHA256SUMS.txt" -Encoding ascii
-          Get-Content "$env:GITHUB_WORKSPACE\SHA256SUMS.txt"
+          $lines | Set-Content 'SHA256SUMS.txt' -Encoding ascii
+          Get-Content 'SHA256SUMS.txt'
 
       - name: Validate release assets and manifests
         shell: pwsh
@@ -273,8 +282,12 @@ jobs:
           $required = @(
             'solo\MonsterMaze-Solo.zip',
             'solo\solo-1.8-version.json',
+            'MonsterMaze-Solo-1.8-plugin.jar',
             'solo\1.21\1.21-MonsterMaze-Solo.zip',
             'solo\1.21\solo-1.21-version.json',
+            'MonsterMaze-Solo-1.21-plugin.jar',
+            'MonsterMaze-Solo-1.21-Paper.jar',
+            'MonsterMaze-Solo-1.21-ProtocolLib.jar',
             'MonsterMaze-Server-1.8.zip',
             'MonsterMaze-Server-1.21.zip',
             'DOCKER-IMAGE.txt',
@@ -289,9 +302,17 @@ jobs:
           foreach ($manifest in @($m18, $m21)) {
             foreach ($property in $manifest.files.PSObject.Properties) {
               if (-not $property.Value.sha256 -or $property.Value.sha256.Length -ne 64) { throw "Invalid SHA-256 for $($property.Name)" }
-              if (-not $property.Value.url) { throw "Release manifest is missing immutable source URL for $($property.Name)" }
-              if ($property.Value.url -notmatch ('/refs/tags/' + [regex]::Escape($env:RELEASE_TAG) + '/')) { throw "Manifest URL for $($property.Name) is not pinned to the release tag." }
+              if (-not $property.Value.url) { throw "Manifest is missing URL for $($property.Name)" }
+              $url = [string]$property.Value.url
+              $sourceOk = $url -match ('/refs/tags/' + [regex]::Escape($env:RELEASE_TAG) + '/')
+              $assetOk = $url -match ('/releases/download/' + [regex]::Escape($env:RELEASE_TAG) + '/')
+              if (-not ($sourceOk -or $assetOk)) { throw "Manifest URL for $($property.Name) is not pinned to the release tag." }
             }
+          }
+          $expected18 = '/releases/download/' + [regex]::Escape($env:RELEASE_TAG) + '/MonsterMaze-Solo-1.8-plugin\.jar$'
+          if ([string]$m18.files.'server/plugins/MonsterMazeStandalone.jar'.url -notmatch $expected18) { throw '1.8 plugin manifest URL is not the release plugin asset.' }
+          foreach ($name in @('server/plugins/MonsterMazeStandalone.jar','server/plugins/ProtocolLib.jar','server/paper-1.21.11.jar')) {
+            if ([string]$m21.files.$name.url -notmatch ('/releases/download/' + [regex]::Escape($env:RELEASE_TAG) + '/')) { throw "1.21 binary manifest URL is not a release asset: $name" }
           }
 
       - name: Publish GitHub Release
@@ -303,8 +324,12 @@ jobs:
           gh release create $env:RELEASE_TAG `
             'solo\MonsterMaze-Solo.zip' `
             'solo\solo-1.8-version.json' `
+            'MonsterMaze-Solo-1.8-plugin.jar' `
             'solo\1.21\1.21-MonsterMaze-Solo.zip' `
             'solo\1.21\solo-1.21-version.json' `
+            'MonsterMaze-Solo-1.21-plugin.jar' `
+            'MonsterMaze-Solo-1.21-Paper.jar' `
+            'MonsterMaze-Solo-1.21-ProtocolLib.jar' `
             'MonsterMaze-Server-1.8.zip' `
             'MonsterMaze-Server-1.21.zip' `
             'DOCKER-IMAGE.txt' `
