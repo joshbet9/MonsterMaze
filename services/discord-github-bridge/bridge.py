@@ -45,6 +45,8 @@ def mapping_for_thread(thread_id):
 
 
 def thread_for_issue(issue_number):
+    if issue_number is None:
+        return None
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute(
             "SELECT discord_thread_id FROM mappings WHERE github_issue_number = ?",
@@ -77,6 +79,14 @@ async def github_request(method, path, payload=None):
             return await response.json()
 
 
+def issue_body(kind, starter, thread):
+    return (
+        f"## Discord {kind} report\n\n{starter.content}\n\n---\n"
+        f"Discord thread: {thread.jump_url}\nReporter: {starter.author} ({starter.author.id})\n"
+        f"<!-- monster-maze-discord-thread:{thread.id} -->"
+    )
+
+
 async def create_issue_from_thread(thread):
     if thread.guild is None or thread.guild.id != DISCORD_GUILD_ID:
         return
@@ -84,34 +94,63 @@ async def create_issue_from_thread(thread):
         return
     try:
         starter = await thread.fetch_message(thread.id)
+        kind = "bug" if thread.parent_id == BUG_CHANNEL_ID else "idea"
+        body = issue_body(kind, starter, thread)
+        issue = await github_request(
+            "POST",
+            "/issues",
+            {"title": thread.name[:256], "body": body, "labels": [kind]},
+        )
+        save_mapping(thread.id, issue["number"], thread.parent_id)
+        await thread.send(
+            f"🔗 **GitHub Issue #{issue['number']}**\n{issue['html_url']}\nLabels: `{kind}`"
+        )
+    except (discord.HTTPException, RuntimeError) as exc:
+        print(f"Failed to create GitHub issue for Discord thread {thread.id}: {exc}", flush=True)
+
+
+async def update_issue_from_thread(thread, issue_number):
+    try:
+        starter = await thread.fetch_message(thread.id)
+        kind = "bug" if thread.parent_id == BUG_CHANNEL_ID else "idea"
+        await github_request(
+            "PATCH",
+            f"/issues/{issue_number}",
+            {"title": thread.name[:256], "body": issue_body(kind, starter, thread)},
+        )
+        print(f"Updated GitHub Issue #{issue_number} from Discord thread {thread.id}", flush=True)
+    except (discord.HTTPException, RuntimeError) as exc:
+        print(f"Failed to update GitHub Issue #{issue_number} from Discord thread {thread.id}: {exc}", flush=True)
+
+
+async def handle_message_edit(message_id, channel_id):
+    if message_id != channel_id:
+        return
+    try:
+        thread = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
     except discord.HTTPException:
         return
-
-    kind = "bug" if thread.parent_id == BUG_CHANNEL_ID else "idea"
-    body = (
-        f"## Discord {kind} report\n\n{starter.content}\n\n---\n"
-        f"Discord thread: {thread.jump_url}\nReporter: {starter.author} ({starter.author.id})\n"
-        f"<!-- monster-maze-discord-thread:{thread.id} -->"
-    )
-    issue = await github_request(
-        "POST",
-        "/issues",
-        {"title": thread.name[:256], "body": body, "labels": [kind]},
-    )
-    save_mapping(thread.id, issue["number"], thread.parent_id)
-    await thread.send(
-        f"🔗 **GitHub Issue #{issue['number']}**\n{issue['html_url']}\nLabels: `{kind}`"
-    )
+    if not isinstance(thread, discord.Thread):
+        return
+    if thread.guild is None or thread.guild.id != DISCORD_GUILD_ID:
+        return
+    if thread.parent_id not in {BUG_CHANNEL_ID, IDEA_CHANNEL_ID}:
+        return
+    issue_number = mapping_for_thread(thread.id)
+    if issue_number:
+        await update_issue_from_thread(thread, issue_number)
+    else:
+        await create_issue_from_thread(thread)
 
 
 async def sync_issue_to_discord(issue):
-    thread_id = thread_for_issue(issue["number"])
+    thread_id = thread_for_issue(issue.get("number"))
     if not thread_id:
         return
     try:
         channel = bot.get_channel(thread_id) or await bot.fetch_channel(thread_id)
         labels = ", ".join(label["name"] for label in issue.get("labels", [])) or "none"
-        state = "🟢 Open" if issue["state"] == "open" else "✅ Closed"
+        state = "🟢 Open" if issue.get("state") == "open" else "✅ Closed"
         await channel.send(
             f"{state} — GitHub Issue #{issue['number']} updated.\n"
             f"Labels: `{labels}`\n{issue['html_url']}"
@@ -157,14 +196,12 @@ class WebhookHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
-
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             self.send_response(400)
             self.end_headers()
             return
-
         body = self.rfile.read(content_length)
         signature = self.headers.get("X-Hub-Signature-256", "")
         expected = hmac.new(GITHUB_WEBHOOK_SECRET, body, hashlib.sha256).hexdigest()
@@ -172,22 +209,19 @@ class WebhookHandler(BaseHTTPRequestHandler):
             self.send_response(401)
             self.end_headers()
             return
-
         try:
             payload = json.loads(body)
         except json.JSONDecodeError:
             self.send_response(400)
             self.end_headers()
             return
-
         event = self.headers.get("X-GitHub-Event", "")
         if event == "issues" and payload.get("action") in {
-            "opened", "closed", "reopened", "labeled", "unlabeled"
+            "opened", "closed", "reopened", "edited", "labeled", "unlabeled"
         }:
             asyncio.run_coroutine_threadsafe(sync_issue_to_discord(payload["issue"]), bot.loop)
         elif event == "issue_comment":
             asyncio.run_coroutine_threadsafe(forward_github_comment(payload), bot.loop)
-
         self.send_response(204)
         self.end_headers()
 
@@ -207,6 +241,11 @@ async def on_ready():
 @bot.event
 async def on_thread_create(thread):
     await create_issue_from_thread(thread)
+
+
+@bot.event
+async def on_raw_message_edit(payload):
+    await handle_message_edit(payload.message_id, payload.channel_id)
 
 
 def start_webhook_server():
