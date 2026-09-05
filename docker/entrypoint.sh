@@ -9,6 +9,7 @@ case "$PLATFORM" in
     DEPLOYMENT_CONFIG=/opt/mm18-deployment-config.yml
     PORT=25565
     JAR=spigot-1.8.8.jar
+    JAVA_BIN=/opt/java8/bin/java
     ;;
   1.21)
     ROOT=/data/1.21
@@ -16,6 +17,7 @@ case "$PLATFORM" in
     DEPLOYMENT_CONFIG=/opt/mm21-deployment-config.yml
     PORT=25566
     JAR=paper-1.21.11.jar
+    JAVA_BIN=/usr/bin/java
     ;;
   *)
     echo "Usage: $0 <1.8|1.21>" >&2
@@ -101,4 +103,4 @@ cleanup() {
 trap cleanup TERM INT EXIT
 
 cd "$ROOT"
-exec java -Xms512M -Xmx1536M -jar "$JAR" nogui
+"$JAVA_BIN" -Xms512M -Xmx1536M -jar "$JAR" nogui
