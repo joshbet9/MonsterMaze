@@ -95,6 +95,44 @@ Historical season results should remain snapshots rather than being silently rec
 
 Discord-facing functionality consumes backend/competitive state and provides player-facing commands, leaderboards and notifications. Discord integration should not become the authoritative store for competitive data.
 
+### Discord ↔ GitHub issue bridge
+
+Community bug reports and ideas are represented as Discord threads. The bridge in `services/discord-github-bridge/` connects the configured Bug Reports and Ideas channels to GitHub Issues.
+
+```text
+Discord reporting channel
+        |
+        | new thread
+        v
+Discord ↔ GitHub Bridge
+        |
+        +----> GitHub Issue
+        |          |
+        |          +--> labels / state / comments
+        |          |
+        |          +--> code / PR / CI / release
+        |
+        +<---- status and selected updates
+        |
+   original Discord thread
+```
+
+GitHub is the authoritative engineering record. Discord remains the community-facing interface. Each thread is mapped persistently to one GitHub issue in the bridge's SQLite database.
+
+The bridge must:
+
+- create issues from new threads in the configured Bug Reports and Ideas channels;
+- preserve the Discord thread URL and reporter information in the issue;
+- return the issue URL to the original thread;
+- reflect issue state and controlled labels back into the thread;
+- forward selected GitHub issue comments to the thread;
+- authenticate GitHub webhooks with a shared secret;
+- keep Discord and GitHub credentials environment-only.
+
+The bridge is deployed on persistent infrastructure (currently intended for the Oracle VM/backend host), not on an ephemeral Fly game Machine. Its SQLite mapping database must be persistent and backed up with the host's operational data.
+
+The bridge does not automatically grant an AI agent authority to change source code. ChatGPT can use the GitHub integration to investigate and work on issues when explicitly asked.
+
 ## Evidence and reverse engineering
 
 Recovered Mineplex material and recorded gameplay evidence live under `references/` and related documentation. These are evidence sources for parity work, not automatically executable source code.
@@ -105,7 +143,9 @@ When evidence conflicts with an implementation, investigate the discrepancy rath
 
 | System | Role | Persistence expectation |
 | --- | --- | --- |
-| GitHub | Source, history, documentation, release source | Authoritative |
+| GitHub | Source, history, documentation, release source, engineering issues | Authoritative |
+| Discord | Community reporting and player-facing communication | Non-authoritative |
+| Discord/GitHub bridge | Synchronisation and thread/issue mapping | Persistent service state |
 | Fly MM18 | Public Minecraft 1.8 compute | Ephemeral |
 | Fly MM21 | Public Minecraft 1.21 compute | Ephemeral |
 | Oracle VM/backend | Persistent API and competitive state | Persistent |
