@@ -25,6 +25,7 @@ env:
   BUILDTOOLS_URL: 'https://hub.spigotmc.org/jenkins/job/BuildTools/200/artifact/target/BuildTools.jar'
   PROTOCOLLIB_URL: 'https://github.com/dmulloy2/ProtocolLib/releases/download/5.4.0/ProtocolLib.jar'
   IMAGE_NAME: 'ghcr.io/joshbet9/monstermaze'
+  FLY_IMAGE_NAME: 'registry.fly.io/monstermaze'
 
 jobs:
   release:
@@ -340,3 +341,79 @@ jobs:
             --title "Monster Maze $env:RELEASE_TAG" `
             --generate-notes `
             --verify-tag
+
+  deploy-fly:
+    name: Deploy release to Fly production
+    needs: release
+    runs-on: ubuntu-22.04
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Promote exact release image to Fly registry
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          GHCR_IMAGE: ${{ env.IMAGE_NAME }}
+          FLY_IMAGE: ${{ env.FLY_IMAGE_NAME }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "$FLY_API_TOKEN" || { echo 'FLY_API_TOKEN is not configured.' >&2; exit 1; }
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "${GHCR_IMAGE}:${RELEASE_TAG}"
+          flyctl auth docker
+          docker tag "${GHCR_IMAGE}:${RELEASE_TAG}" "${FLY_IMAGE}:${RELEASE_TAG}"
+          docker push "${FLY_IMAGE}:${RELEASE_TAG}"
+
+      - name: Roll the exact image through all Fly Machines
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          FLY_IMAGE: ${{ env.FLY_IMAGE_NAME }}
+        run: |
+          set -euo pipefail
+          flyctl image update -a monstermaze --image "${FLY_IMAGE}:${RELEASE_TAG}" --yes
+          flyctl status -a monstermaze
+
+  deploy-hyperv:
+    name: Deploy release to Hyper-V integration servers
+    needs: release
+    runs-on: ubuntu-22.04
+    environment: hyperv
+    timeout-minutes: 20
+    steps:
+      - name: Prepare SSH credentials
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HYPERV_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HYPERV_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY" || { echo 'HYPERV_SSH_PRIVATE_KEY is not configured.' >&2; exit 1; }
+          test -n "$SSH_KNOWN_HOSTS" || { echo 'HYPERV_SSH_KNOWN_HOSTS is not configured.' >&2; exit 1; }
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/monstermaze_hyperv"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/monstermaze_hyperv" "$HOME/.ssh/known_hosts"
+
+      - name: Deploy immutable release to Hyper-V
+        shell: bash
+        env:
+          HYPERV_SSH_HOST: ${{ secrets.HYPERV_SSH_HOST }}
+          HYPERV_SSH_USER: ${{ secrets.HYPERV_SSH_USER }}
+          HYPERV_SSH_PORT: ${{ secrets.HYPERV_SSH_PORT }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          test -n "$HYPERV_SSH_HOST" || { echo 'HYPERV_SSH_HOST is not configured.' >&2; exit 1; }
+          test -n "$HYPERV_SSH_USER" || { echo 'HYPERV_SSH_USER is not configured.' >&2; exit 1; }
+          port="${HYPERV_SSH_PORT:-22}"
+          ssh -p "$port" -i "$HOME/.ssh/monstermaze_hyperv" -o BatchMode=yes \
+            "${HYPERV_SSH_USER}@${HYPERV_SSH_HOST}" \
+            "curl -fsSL https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${RELEASE_TAG}/ops/hyperv/deploy-release.sh | bash -s -- ${RELEASE_TAG}"
