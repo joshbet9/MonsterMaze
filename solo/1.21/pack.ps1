@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [string]$ReleaseVersion = $(if ($env:MM_RELEASE_VERSION) { $env:MM_RELEASE_VERSION } else { "1.0.0" }),
-    [string]$ReleaseNote = $(if ($env:MM_RELEASE_NOTE) { $env:MM_RELEASE_NOTE } else { "Monster Maze Solo 1.21 release." })
+    [string]$ReleaseNote = $(if ($env:MM_RELEASE_NOTE) { $env:MM_RELEASE_NOTE } else { "Monster Maze Solo 1.21 release." }),
+    [switch]$SkipBuild
 )
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -57,13 +58,17 @@ foreach ($map in $requiredMaps) {
     if (-not (Test-Path (Join-Path $mapPath 'level.dat'))) { throw "1.21 map world missing or invalid: $map" }
 }
 
-Write-Host "Building 1.21 MonsterMazeStandalone..."
-Push-Location $project
-try {
-    & mvn.cmd clean package -DskipTests
-    if ($LASTEXITCODE -ne 0) { throw "Maven build failed with exit code $LASTEXITCODE." }
-} finally { Pop-Location }
-if (-not (Test-Path $sourceJar)) { throw "Build succeeded but JAR was not produced." }
+if (-not $SkipBuild) {
+    Write-Host "Building 1.21 MonsterMazeStandalone..."
+    Push-Location $project
+    try {
+        & mvn.cmd clean package -DskipTests
+        if ($LASTEXITCODE -ne 0) { throw "Maven build failed with exit code $LASTEXITCODE." }
+    } finally { Pop-Location }
+} else {
+    Write-Host "Using existing tested 1.21 plugin build (--SkipBuild)."
+}
+if (-not (Test-Path $sourceJar)) { throw "Expected built plugin JAR was not found: $sourceJar" }
 
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 New-Item -ItemType Directory -Force -Path (Join-Path $dist 'server\plugins\MonsterMazeStandalone') | Out-Null
