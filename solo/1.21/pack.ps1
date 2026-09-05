@@ -92,7 +92,7 @@ Remove-Item (Join-Path $dist 'server\plugins\MonsterMazeStandalone\solo-runs') -
 Remove-Item (Join-Path $dist 'server\world') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $dist 'server\logs') -Recurse -Force -ErrorAction SilentlyContinue
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $here 'make_manifest.ps1') -Version $ReleaseVersion -Note $ReleaseNote -Root $dist -SourceBaseUrl $env:MM_RELEASE_SOURCE_BASE_URL
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $here 'make_manifest.ps1') -Version $ReleaseVersion -Note $ReleaseNote -Root $dist -SourceBaseUrl $env:MM_RELEASE_SOURCE_BASE_URL -ReleaseAssetBaseUrl $env:MM_RELEASE_ASSET_BASE_URL
 if ($LASTEXITCODE -ne 0) { throw "Manifest generation failed." }
 Copy-Item -Force (Join-Path $dist 'version.json') (Join-Path $here 'version.json')
 Set-Content (Join-Path $dist 'installed.version') -Value $ReleaseVersion -Encoding ascii
