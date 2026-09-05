@@ -29,6 +29,41 @@ sudo -n true 2>/dev/null || {
   exit 1
 }
 
+find_java8() {
+  local candidate
+  for candidate in \
+    /usr/lib/jvm/java-8-openjdk-amd64/bin/java \
+    /usr/lib/jvm/temurin-8-jdk-amd64/bin/java \
+    /usr/lib/jvm/*8*/bin/java; do
+    if [ -x "$candidate" ] && "$candidate" -version 2>&1 | grep -q 'version "1\.8\.'; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  if /usr/bin/java -version 2>&1 | grep -q 'version "1\.8\.'; then
+    printf '%s' /usr/bin/java
+    return 0
+  fi
+  return 1
+}
+
+find_java21() {
+  local candidate
+  for candidate in \
+    /usr/lib/jvm/java-21-openjdk-amd64/bin/java \
+    /usr/lib/jvm/temurin-21-jdk-amd64/bin/java \
+    /usr/lib/jvm/*21*/bin/java; do
+    if [ -x "$candidate" ] && "$candidate" -version 2>&1 | grep -q 'version "21\.'; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+JAVA8="$(find_java8)" || { echo 'Java 8 runtime not found on Hyper-V host.' >&2; exit 1; }
+JAVA21="$(find_java21)" || { echo 'Java 21 runtime not found on Hyper-V host.' >&2; exit 1; }
+
 log "Downloading immutable release checksums for $TAG"
 curl -fsSL "${BASE_URL}/SHA256SUMS.txt" -o "$TMP/SHA256SUMS.txt"
 for version in 1.8 1.21; do
@@ -103,13 +138,12 @@ for version in 1.8 1.21; do
     sudo install -D -m 0644 "$stage/plugins/MonsterMazeStandalone/config.yml" "$config"
   fi
 
-  # Hosted/integration instances are never Solo PB environments.
   sudo sed -i -E 's/^solo-mode:.*/solo-mode: false/' "$config"
   sudo grep -Eq '^solo-mode:[[:space:]]*false[[:space:]]*$' "$config"
 done
 
-install_service 1.8 spigot-1.8.8.jar /usr/bin/java 2G
-install_service 1.21 paper-1.21.11.jar /usr/lib/jvm/java-21-openjdk-amd64/bin/java 4G
+install_service 1.8 spigot-1.8.8.jar "$JAVA8" 2G
+install_service 1.21 paper-1.21.11.jar "$JAVA21" 4G
 sudo systemctl daemon-reload
 sudo systemctl enable monstermaze-1.8.service monstermaze-1.21.service
 sudo systemctl start monstermaze-1.8.service
