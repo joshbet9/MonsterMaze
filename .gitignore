@@ -17,10 +17,12 @@
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs / runtime state
 *.log
 
-# 1.21 Solo generated/local release files
+# Solo generated/local release output
+solo/solo-dist/
+solo/solo-dist.zip
 solo/1.21/solo-dist/
 solo/1.21/solo-1.21-dist/
 solo/1.21/solo-1.21-dist.zip
