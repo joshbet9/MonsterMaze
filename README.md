@@ -32,6 +32,8 @@ When a gameplay mechanic changes:
 
 Source code is authoritative. Maven `target/` directories and player distribution staging directories are generated output and should not be edited as source.
 
+Official releases are automated from a `vX.Y.Z` Git tag. Push the tag from `main` and GitHub Actions builds, tests, packages, validates and publishes the release assets. See `docs/release-process.md` for the exact release flow.
+
 Player releases are built from the canonical source and published as release artifacts. Release manifests, package contents and checksums must describe the exact files shipped to players.
 
 ## Development
