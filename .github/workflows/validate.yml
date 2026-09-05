@@ -195,3 +195,95 @@ jobs:
           grep -q '^aiohttp==' services/discord-github-bridge/requirements.txt
           test -f services/discord-github-bridge/Dockerfile
           test -f services/discord-github-bridge/.env.example
+
+  release-package-1-8:
+    name: Validate release packaging 1.8
+    runs-on: ubuntu-22.04
+    needs: build-1-8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+      - name: Download pinned BuildTools
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL "$BUILDTOOLS_URL" -o "$RUNNER_TEMP/BuildTools.jar"
+          java -Xmx2G -jar "$RUNNER_TEMP/BuildTools.jar" --rev 1.8.8 --output-dir "$RUNNER_TEMP/spigot"
+          test -f "$RUNNER_TEMP/spigot/spigot-1.8.8.jar"
+          mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file -Dfile="$RUNNER_TEMP/spigot/spigot-1.8.8.jar" -DgroupId=org.spigotmc -DartifactId=spigot -Dversion=1.8.8-R0.1-SNAPSHOT -Dpackaging=jar
+      - name: Build tested plugin for packer
+        working-directory: 1.8/MonsterMazeStandalone
+        env:
+          MAVEN_OPTS: '-Xmx2G'
+        run: mvn -B clean package
+      - name: Run production Solo packer
+        shell: pwsh
+        working-directory: solo
+        env:
+          MM_SPIGOT_JAR: ${{ runner.temp }}/spigot/spigot-1.8.8.jar
+          MM_RELEASE_VERSION: 'ci-validation'
+          MM_RELEASE_NOTE: 'CI release packaging validation.'
+          MM_RELEASE_SOURCE_BASE_URL: 'https://example.invalid/MonsterMaze/solo'
+          MM_RELEASE_ASSET_BASE_URL: 'https://example.invalid/MonsterMaze/releases/download/ci-validation'
+        run: ./pack.ps1 -ReleaseVersion ci-validation -ReleaseNote 'CI release packaging validation.' -SkipBuild
+      - name: Verify Windows runtime and release ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f solo/solo-dist.zip
+          unzip -l solo/solo-dist.zip | grep -q 'runtime/jdk8/bin/java.exe'
+          unzip -l solo/solo-dist.zip | grep -q '^.*server/plugins/MonsterMazeStandalone.jar$'
+          unzip -l solo/solo-dist.zip | grep -q '^.*version.json$'
+
+  release-package-1-21:
+    name: Validate release packaging 1.21
+    runs-on: ubuntu-22.04
+    needs: build-1-21
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Download pinned Paper and ProtocolLib
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p solo/1.21/tools
+          curl -fsSL 'https://api.papermc.io/v2/projects/paper/versions/1.21.11/builds/121/downloads/paper-1.21.11-121.jar' -o solo/1.21/tools/paper-1.21.11.jar
+          curl -fsSL 'https://github.com/dmulloy2/ProtocolLib/releases/download/5.4.0/ProtocolLib.jar' -o solo/1.21/tools/ProtocolLib.jar
+          test -s solo/1.21/tools/paper-1.21.11.jar
+          test -s solo/1.21/tools/ProtocolLib.jar
+      - name: Build tested plugin for packer
+        working-directory: 1.21/MonsterMazeStandalone
+        env:
+          MAVEN_OPTS: '-Xmx2G'
+        run: mvn -B clean package
+      - name: Run production Solo packer
+        shell: pwsh
+        working-directory: solo/1.21
+        env:
+          MM_PAPER_JAR: ${{ github.workspace }}/solo/1.21/tools/paper-1.21.11.jar
+          MM_PROTOCOLLIB_JAR: ${{ github.workspace }}/solo/1.21/tools/ProtocolLib.jar
+          MM_RELEASE_VERSION: 'ci-validation'
+          MM_RELEASE_NOTE: 'CI release packaging validation.'
+          MM_RELEASE_SOURCE_BASE_URL: 'https://example.invalid/MonsterMaze/solo/1.21'
+          MM_RELEASE_ASSET_BASE_URL: 'https://example.invalid/MonsterMaze/releases/download/ci-validation'
+        run: ./pack.ps1 -ReleaseVersion ci-validation -ReleaseNote 'CI release packaging validation.' -SkipBuild
+      - name: Verify Windows runtime and release ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f solo/1.21/solo-1.21-dist.zip
+          unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'runtime/jdk21/bin/java.exe'
+          unzip -l solo/1.21/solo-1.21-dist.zip | grep -q '^.*server/plugins/MonsterMazeStandalone.jar$'
+          unzip -l solo/1.21/solo-1.21-dist.zip | grep -q '^.*version.json$'
