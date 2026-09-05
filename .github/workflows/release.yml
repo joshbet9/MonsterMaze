@@ -87,7 +87,8 @@ jobs:
           MM_RELEASE_NOTE: ${{ env.RELEASE_NOTE }}
           MM_RELEASE_SOURCE_BASE_URL: https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${{ env.RELEASE_TAG }}/solo
         run: |
-          .\pack.ps1 -ReleaseVersion $env:RELEASE_TAG -ReleaseNote $env:MM_RELEASE_NOTE
+          $version = $env:RELEASE_TAG -replace '^v', ''
+          .\pack.ps1 -ReleaseVersion $version -ReleaseNote $env:MM_RELEASE_NOTE
           if ($LASTEXITCODE -ne 0) { throw "1.8 Solo packaging failed with exit code $LASTEXITCODE." }
           Copy-Item -Force .\solo-dist.zip .\MonsterMaze-Solo.zip
           Copy-Item -Force .\version.json .\solo-1.8-version.json
@@ -117,7 +118,7 @@ jobs:
           $paperPath = Join-Path $env:RUNNER_TEMP $download.name
           Invoke-WebRequest -Uri $download.url -Headers $headers -OutFile $paperPath
           $actual = (Get-FileHash $paperPath -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $download.checksums.sha256.ToLowerInvariant()) { throw "Paper SHA-256 mismatch." }
+          if ($actual -ne $download.checksums.sha256.ToLowerInvariant()) { throw 'Paper SHA-256 mismatch.' }
           "MM_PAPER_JAR=$paperPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MM_PAPER_VERSION=$($download.name)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Using $($download.name)"
@@ -145,7 +146,8 @@ jobs:
           MM_RELEASE_NOTE: ${{ env.RELEASE_NOTE }}
           MM_RELEASE_SOURCE_BASE_URL: https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${{ env.RELEASE_TAG }}/solo/1.21
         run: |
-          .\pack.ps1 -ReleaseVersion $env:RELEASE_TAG -ReleaseNote $env:MM_RELEASE_NOTE
+          $version = $env:RELEASE_TAG -replace '^v', ''
+          .\pack.ps1 -ReleaseVersion $version -ReleaseNote $env:MM_RELEASE_NOTE
           if ($LASTEXITCODE -ne 0) { throw "1.21 Solo packaging failed with exit code $LASTEXITCODE." }
           Copy-Item -Force .\solo-1.21-dist.zip .\1.21-MonsterMaze-Solo.zip
           Copy-Item -Force .\version.json .\solo-1.21-version.json
@@ -181,10 +183,11 @@ jobs:
           foreach ($path in $required) {
             if (-not (Test-Path $path)) { throw "Release asset missing: $path" }
           }
+          $expectedVersion = $env:RELEASE_TAG -replace '^v', ''
           $m18 = Get-Content 'solo\solo-1.8-version.json' -Raw | ConvertFrom-Json
           $m21 = Get-Content 'solo\1.21\solo-1.21-version.json' -Raw | ConvertFrom-Json
-          if ($m18.'install-version' -ne $env:RELEASE_TAG) { throw '1.8 manifest version does not match tag.' }
-          if ($m21.'install-version' -ne $env:RELEASE_TAG) { throw '1.21 manifest version does not match tag.' }
+          if ($m18.'install-version' -ne $expectedVersion) { throw '1.8 manifest version does not match tag.' }
+          if ($m21.'install-version' -ne $expectedVersion) { throw '1.21 manifest version does not match tag.' }
           foreach ($manifest in @($m18, $m21)) {
             foreach ($property in $manifest.files.PSObject.Properties) {
               if (-not $property.Value.sha256 -or $property.Value.sha256.Length -ne 64) { throw "Invalid SHA-256 for $($property.Name)" }
