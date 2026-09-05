@@ -41,7 +41,7 @@ foreach ($map in @('mm_colombia','mm_sandycoast','mm_siberian','mm_swampland','m
     $mapRoot = Join-Path $maps $map
     if (-not (Test-Path (Join-Path $mapRoot 'level.dat'))) { throw "1.21 map missing or invalid: $map" }
     Get-ChildItem $mapRoot -Recurse -File | ForEach-Object {
-        $rel = $_.FullName.Substring($maps.Length).TrimStart('\','/')
+        $rel = $_.FullName.Substring($maps.Length).TrimStart('\\','/')
         Add-File ("server/$rel") $_.FullName ("maps/$rel")
     }
 }
