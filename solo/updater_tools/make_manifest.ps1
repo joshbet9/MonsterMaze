@@ -29,8 +29,7 @@ function Add-ManifestFile([System.Collections.IDictionary]$files, [string]$manif
         sha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
         size = (Get-Item -LiteralPath $sourcePath).Length
     }
-    if ($RELEASE_ASSETS.ContainsKey($norm)) {
-        if (-not $ReleaseAssetBaseUrl) { throw "ReleaseAssetBaseUrl is required for release asset: $norm" }
+    if ($RELEASE_ASSETS.ContainsKey($norm) -and $ReleaseAssetBaseUrl) {
         $entry.url = ($ReleaseAssetBaseUrl.TrimEnd('/') + '/' + $RELEASE_ASSETS[$norm])
     } elseif ($SourceBaseUrl) {
         if (-not $sourceRel) { $sourceRel = $norm }
