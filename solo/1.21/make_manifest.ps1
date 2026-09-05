@@ -4,17 +4,26 @@ param(
     [string]$Version='1.0.0',
     [string]$Note='Monster Maze Solo 1.21 release.',
     [string]$Root='',
-    [string]$SourceBaseUrl=''
+    [string]$SourceBaseUrl='',
+    [string]$ReleaseAssetBaseUrl=''
 )
 $ErrorActionPreference='Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $Root) { $Root = $here }
 $files = [ordered]@{}
+$RELEASE_ASSETS = @{
+    'server/plugins/MonsterMazeStandalone.jar' = 'MonsterMaze-Solo-1.21-plugin.jar'
+    'server/plugins/ProtocolLib.jar' = 'MonsterMaze-Solo-1.21-ProtocolLib.jar'
+    'server/paper-1.21.11.jar' = 'MonsterMaze-Solo-1.21-Paper.jar'
+}
 function Add-File([string]$rel,[string]$src,[string]$sourceRel='') {
     if (-not (Test-Path $src)) { throw "Missing manifest file: $src" }
     $norm = $rel.Replace('\','/')
     $entry = [ordered]@{sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant();size=(Get-Item $src).Length}
-    if ($SourceBaseUrl) {
+    if ($RELEASE_ASSETS.ContainsKey($norm)) {
+        if (-not $ReleaseAssetBaseUrl) { throw "ReleaseAssetBaseUrl is required for release asset: $norm" }
+        $entry.url = $ReleaseAssetBaseUrl.TrimEnd('/') + '/' + $RELEASE_ASSETS[$norm]
+    } elseif ($SourceBaseUrl) {
         if (-not $sourceRel) { $sourceRel = $norm }
         $entry.url = $SourceBaseUrl.TrimEnd('/') + '/' + $sourceRel.Replace('\','/')
     }
