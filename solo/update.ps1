@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $INSTALLED_MARKER = Join-Path $here "installed.version"
-$MANIFEST_URL = if ($env:MM_UPDATE_MANIFEST_URL) { $env:MM_UPDATE_MANIFEST_URL } else { "https://raw.githubusercontent.com/joshbet9/MonsterMaze/main/solo/version.json" }
+$MANIFEST_URL = if ($env:MM_UPDATE_MANIFEST_URL) { $env:MM_UPDATE_MANIFEST_URL } else { "https://github.com/joshbet9/MonsterMaze/releases/latest/download/solo-1.8-version.json" }
 function Write-Step([string]$msg) { Write-Host "[MM-Update] $msg" }
 
 Write-Step "Checking for updates..."
@@ -38,14 +38,14 @@ if ($running) {
     exit 1
 }
 
-$rawBase = ($MANIFEST_URL -replace "version\.json$", "")
+$rawBase = ($MANIFEST_URL -replace "[^/]+$", "")
 $toUpdate = @()
 foreach ($key in $manifest.files.PSObject.Properties.Name) {
     $entry = $manifest.files.$key
     $localPath = Join-Path $here ($key -replace "/", "\")
     $currentHash = $null
     if (Test-Path -LiteralPath $localPath) { $currentHash = (Get-FileHash -LiteralPath $localPath -Algorithm SHA256).Hash.ToLowerInvariant() }
-    if ($currentHash -ne $entry.sha256) { $toUpdate += @{ file = $localPath; rel = $key; sha256 = $entry.sha256 } }
+    if ($currentHash -ne $entry.sha256) { $toUpdate += @{ file = $localPath; rel = $key; sha256 = $entry.sha256; url = [string]$entry.url } }
 }
 if ($toUpdate.Count -eq 0) {
     Write-Step "No file changes detected for this version. Recording $remoteVersion."
@@ -61,8 +61,6 @@ $failures = 0
 $changed = 0
 
 foreach ($u in $toUpdate) {
-    # Preserve the relative directory structure. This matters for maps because
-    # every map contains files with identical names such as region/r.0.0.mca.
     $tmp = Join-Path $tmpDir (($u.rel -replace "/", "\") + ".tmp")
     $backup = Join-Path $backupDir ($u.rel -replace "/", "\")
     $dest = $u.file
@@ -74,15 +72,14 @@ foreach ($u in $toUpdate) {
         continue
     }
 
-    # Arena worlds live under solo/maps in the source repository, but are
-    # installed under server/mm_* in the player's distribution.
-    $sourceRel = $u.rel
-    if ($sourceRel -match '^server/(mm_[^/]+)(/.*)?$') {
-        $sourceRel = 'maps/' + $Matches[1] + $Matches[2]
+    $sourceUrl = if ($u.url) { $u.url } else {
+        $sourceRel = $u.rel
+        if ($sourceRel -match '^server/(mm_[^/]+)(/.*)?$') { $sourceRel = 'maps/' + $Matches[1] + $Matches[2] }
+        $rawBase + $sourceRel
     }
 
     try {
-        Invoke-WebRequest -Uri ($rawBase + $sourceRel) -OutFile $tmp -TimeoutSec 120 -UseBasicParsing
+        Invoke-WebRequest -Uri $sourceUrl -OutFile $tmp -TimeoutSec 120 -UseBasicParsing
         $dlHash = (Get-FileHash -LiteralPath $tmp -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($dlHash -ne $u.sha256) { throw "Hash mismatch: expected $($u.sha256), got $dlHash" }
 

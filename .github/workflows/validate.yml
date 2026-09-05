@@ -1,0 +1,197 @@
+name: Validate Monster Maze
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BUILDTOOLS_URL: 'https://hub.spigotmc.org/jenkins/job/BuildTools/200/artifact/target/BuildTools.jar'
+
+jobs:
+  build-1-8:
+    name: Build Minecraft 1.8.8
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+      - name: Download pinned BuildTools
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL "$BUILDTOOLS_URL" -o "$RUNNER_TEMP/BuildTools.jar"
+      - name: Build Spigot 1.8.8 dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -Xmx2G -jar "$RUNNER_TEMP/BuildTools.jar" --rev 1.8.8 --output-dir "$RUNNER_TEMP/spigot"
+          test -f "$RUNNER_TEMP/spigot/spigot-1.8.8.jar"
+          mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file -Dfile="$RUNNER_TEMP/spigot/spigot-1.8.8.jar" -DgroupId=org.spigotmc -DartifactId=spigot -Dversion=1.8.8-R0.1-SNAPSHOT -Dpackaging=jar
+      - name: Build and test
+        working-directory: 1.8/MonsterMazeStandalone
+        env:
+          MAVEN_OPTS: '-Xmx2G'
+        run: mvn -B clean package
+
+  build-1-21:
+    name: Build Minecraft 1.21.x
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build and test
+        working-directory: 1.21/MonsterMazeStandalone
+        run: mvn -B clean package
+
+  deployment-config:
+    name: Validate deployment configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check Solo and hosted-server modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          assert_value() {
+            local file="$1" expected="$2" actual
+            actual=$(awk -F': *' '$1 == "solo-mode" { print $2; exit }' "$file")
+            [ "$actual" = "$expected" ] || { echo "Expected solo-mode: $expected in $file, found '$actual'"; exit 1; }
+          }
+          assert_value solo/server/plugins/MonsterMazeStandalone/config.yml true
+          assert_value solo/1.21/server/plugins/MonsterMazeStandalone/config.yml true
+          assert_value docker/deployments/fly/1.8/config.yml false
+          assert_value docker/deployments/fly/1.21/config.yml false
+      - name: Check Docker deployment inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -q 'solo/solo-dist/server' Dockerfile
+          ! grep -q 'solo/1.21/solo-dist/server' Dockerfile
+          grep -q 'docker/build-context/1.8/server' Dockerfile
+          grep -q 'docker/build-context/1.21/server' Dockerfile
+          grep -q 'docker/deployments/fly/1.8/config.yml' Dockerfile
+          grep -q 'docker/deployments/fly/1.21/config.yml' Dockerfile
+          grep -q 'apply_deployment_config' docker/entrypoint.sh
+          grep -q '/opt/mm18-deployment-config.yml' docker/entrypoint.sh
+          grep -q '/opt/mm21-deployment-config.yml' docker/entrypoint.sh
+          grep -q 'eclipse-temurin:8-jre-jammy AS java8' Dockerfile
+          grep -q 'COPY --from=java8 /opt/java/openjdk /opt/java8' Dockerfile
+          grep -q 'JAVA_BIN=/opt/java8/bin/java' docker/entrypoint.sh
+          grep -q 'JAVA_BIN=/usr/bin/java' docker/entrypoint.sh
+
+  solo-integrity:
+    name: Validate Solo PB integrity contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check both versions register Solo integrity protection
+        shell: bash
+        run: |
+          set -euo pipefail
+          for version in 1.8 1.21; do
+            base="$version/MonsterMazeStandalone/src/main/java/me/monstermaze/game"
+            test -f "$base/SoloIntegrityListener.java"
+            grep -q 'plugin.isSoloMode()' "$base/SoloIntegrityListener.java"
+            grep -q 'GameMode.CREATIVE' "$base/SoloIntegrityListener.java"
+            grep -q 'GameMode.ADVENTURE' "$base/SoloIntegrityListener.java"
+            grep -q 'gamemode' "$base/SoloIntegrityListener.java"
+            grep -q 'SoloIntegrityListener' "$base/LobbyListener.java"
+            grep -q 'setOp(false)' "$base/LobbyListener.java"
+          done
+      - name: Check backend credentials are environment-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          for version in 1.8 1.21; do
+            file="$version/MonsterMazeStandalone/src/main/java/me/monstermaze/stats/BackendClient.java"
+            grep -q 'System.getenv("MM_API_URL")' "$file"
+            grep -q 'System.getenv("MM_API_TOKEN")' "$file"
+          done
+          if git grep -nE 'MM_API_TOKEN[[:space:]]*[:=][[:space:]]*[^"$}]|Bearer[[:space:]]+[A-Za-z0-9._-]{20,}' -- ':!*.md' ':!*/target/*'; then
+            echo 'Potential hard-coded production API credential detected.'
+            exit 1
+          fi
+
+  repository-hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check generated/build output is not tracked
+        shell: bash
+        run: |
+          set -euo pipefail
+          forbidden='(^|/)(target|solo-dist|docker/build-context)(/|$)|\.class$'
+          if git ls-files | grep -E "$forbidden"; then echo 'Tracked generated/build output detected.'; exit 1; fi
+      - name: Check for oversized tracked files
+        shell: bash
+        run: |
+          set -euo pipefail
+          max=$((95 * 1024 * 1024)); failed=0
+          while IFS= read -r -d '' file; do
+            size=$(stat -c '%s' "$file")
+            if [ "$size" -gt "$max" ]; then echo "Tracked file is too large: $file ($size bytes)"; failed=1; fi
+          done < <(git ls-files -z)
+          exit "$failed"
+
+  docker-build-contract:
+    name: Validate Docker image build contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Create disposable Docker build context
+        shell: bash
+        run: |
+          set -euo pipefail
+          for version in 1.8 1.21; do
+            mkdir -p "docker/build-context/$version/server/plugins/MonsterMazeStandalone"
+            printf 'server-port=25565\nserver-ip=\n' > "docker/build-context/$version/server/server.properties"
+            printf 'solo-mode: false\n' > "docker/build-context/$version/server/plugins/MonsterMazeStandalone/config.yml"
+            printf 'placeholder' > "docker/build-context/$version/server/placeholder.jar"
+          done
+      - name: Build Docker image without pushing
+        run: docker build --pull -t monstermaze-ci-contract .
+      - name: Remove disposable context
+        if: always()
+        run: rm -rf docker/build-context
+
+  discord-github-bridge:
+    name: Validate Discord GitHub bridge
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile bridge
+        run: python -m py_compile services/discord-github-bridge/bridge.py
+      - name: Validate dependency file
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '^discord\.py==' services/discord-github-bridge/requirements.txt
+          grep -q '^aiohttp==' services/discord-github-bridge/requirements.txt
+          test -f services/discord-github-bridge/Dockerfile
+          test -f services/discord-github-bridge/.env.example

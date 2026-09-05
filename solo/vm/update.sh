@@ -40,14 +40,11 @@ req = urllib.request.Request(
 )
 with urllib.request.urlopen(req, timeout=30) as r:
     releases = json.load(r)
-if platform == "1.8":
-    prefix, asset_name = "v", "MonsterMaze-Solo.zip"
-else:
-    prefix, asset_name = "1.21-", "1.21-MonsterMaze-Solo.zip"
+asset_name = "MonsterMaze-Solo.zip" if platform == "1.8" else "1.21-MonsterMaze-Solo.zip"
 candidates = [
     r for r in releases
     if not r.get("draft") and not r.get("prerelease")
-    and r.get("tag_name", "").startswith(prefix)
+    and r.get("tag_name", "").startswith("v")
     and any(a.get("name") == asset_name for a in r.get("assets", []))
 ]
 if not candidates:
@@ -164,7 +161,6 @@ update_one() {
     install -m 0644 "$source/plugins/MonsterMazeStandalone/config.yml" "$live/plugins/MonsterMazeStandalone/config.yml"
   fi
 
-  # Canonical maps are release assets. Runtime world files remain untouched.
   shopt -s nullglob
   for map in "$source"/mm_*; do
     [[ -d "$map" ]] || continue
