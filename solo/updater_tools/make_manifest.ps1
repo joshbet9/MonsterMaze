@@ -50,7 +50,7 @@ foreach ($map in $mapNames) {
     $mapRoot = Join-Path $mapsRoot $map
     if (-not (Test-Path $mapRoot)) { throw "Required map missing: $map" }
     Get-ChildItem -LiteralPath $mapRoot -Recurse -File | ForEach-Object {
-        $relative = $_.FullName.Substring($mapsRoot.Length).TrimStart('\\','/')
+        $relative = $_.FullName.Substring($mapsRoot.Length).TrimStart('\','/')
         Add-ManifestFile $files ("server/$relative") $_.FullName ("maps/$relative")
     }
 }
