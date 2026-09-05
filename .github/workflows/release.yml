@@ -28,7 +28,7 @@ env:
 
 jobs:
   release:
-    runs-on: windows-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:
       - name: Checkout tagged source
@@ -84,7 +84,7 @@ jobs:
       - name: Install tested Spigot artifact into Maven local repository
         shell: pwsh
         run: |
-          mvn.cmd -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file `
+          mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file `
             -Dfile="$env:MM_SPIGOT_JAR" `
             -DgroupId=org.spigotmc `
             -DartifactId=spigot `
@@ -98,7 +98,7 @@ jobs:
         env:
           MAVEN_OPTS: '-Xmx2G'
         run: |
-          mvn.cmd clean package
+          mvn clean package
           if ($LASTEXITCODE -ne 0) { throw "1.8 build/tests failed with exit code $LASTEXITCODE." }
           if (-not (Test-Path '.\target\MonsterMazeStandalone.jar')) { throw '1.8 tested plugin JAR was not produced.' }
 
@@ -160,7 +160,7 @@ jobs:
         env:
           MAVEN_OPTS: '-Xmx2G'
         run: |
-          mvn.cmd clean package
+          mvn clean package
           if ($LASTEXITCODE -ne 0) { throw "1.21 build/tests failed with exit code $LASTEXITCODE." }
           if (-not (Test-Path '.\target\MonsterMazeStandalone.jar')) { throw '1.21 tested plugin JAR was not produced.' }
 
