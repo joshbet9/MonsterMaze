@@ -122,8 +122,8 @@ $archive = New-Object System.IO.Compression.ZipArchive($fs,[System.IO.Compressio
 try {
     $fileCount = 0
     Get-ChildItem -LiteralPath $dist -Recurse -File | ForEach-Object {
-        $relative = $_.FullName.Substring($dist.Length).TrimStart('\\','/')
-        $entryName = $relative.Replace('\\','/')
+        $relative = $_.FullName.Substring($dist.Length).TrimStart([char]92,[char]47)
+        $entryName = $relative.Replace([char]92,[char]47)
         $entry = $archive.CreateEntry($entryName,[System.IO.Compression.CompressionLevel]::Optimal)
         $in = $_.OpenRead()
         try { $out = $entry.Open(); try { $in.CopyTo($out) } finally { $out.Dispose() } } finally { $in.Dispose() }
