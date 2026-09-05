@@ -85,6 +85,7 @@ jobs:
 
       - name: Install tested Spigot artifact into Maven local repository
         shell: pwsh
+        working-directory: ${{ github.workspace }}/1.8/MonsterMazeStandalone
         run: |
           mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file `
             -Dfile="$env:MM_SPIGOT_JAR" `
@@ -272,7 +273,7 @@ jobs:
           $lines = foreach ($asset in $assets) {
             if (-not (Test-Path $asset)) { throw "Cannot checksum missing release asset: $asset" }
             $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $($asset.Replace('\','/'))"
+            "$hash  $($asset.Replace('\\','/'))"
           }
           $lines | Set-Content 'SHA256SUMS.txt' -Encoding ascii
           Get-Content 'SHA256SUMS.txt'
