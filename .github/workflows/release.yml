@@ -81,6 +81,17 @@ jobs:
           if (-not (Test-Path $spigot)) { throw "Spigot 1.8.8 JAR was not produced: $spigot" }
           "MM_SPIGOT_JAR=$spigot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Install tested Spigot artifact into Maven local repository
+        shell: pwsh
+        run: |
+          mvn.cmd -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file `
+            -Dfile="$env:MM_SPIGOT_JAR" `
+            -DgroupId=org.spigotmc `
+            -DartifactId=spigot `
+            -Dversion=1.8.8-R0.1-SNAPSHOT `
+            -Dpackaging=jar
+          if ($LASTEXITCODE -ne 0) { throw "Spigot Maven installation failed with exit code $LASTEXITCODE." }
+
       - name: Build and test 1.8
         shell: pwsh
         working-directory: ${{ github.workspace }}\1.8\MonsterMazeStandalone
