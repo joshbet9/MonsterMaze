@@ -387,6 +387,14 @@ jobs:
     environment: hyperv
     timeout-minutes: 20
     steps:
+      - name: Connect runner to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions
+          ping: 100.98.188.97
+
       - name: Prepare SSH credentials
         shell: bash
         env:
