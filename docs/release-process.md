@@ -19,9 +19,10 @@ The GitHub Actions release workflow then:
 4. obtains the required server/runtime dependencies;
 5. builds the complete fresh-install Solo 1.8 package;
 6. builds the complete fresh-install Solo 1.21 package;
-7. generates updater manifests and SHA-256 checksums;
-8. validates package structure, versions and manifest hashes;
-9. publishes the packages and manifests to the GitHub Release for that tag.
+7. creates release assets for generated/external updater binaries;
+8. generates updater manifests and SHA-256 checksums;
+9. validates package structure, versions and manifest hashes;
+10. publishes the packages and manifests to the GitHub Release for that tag.
 
 The release assets are:
 
@@ -29,7 +30,16 @@ The release assets are:
 - `1.21-MonsterMaze-Solo.zip` — fresh-install 1.21 Solo distribution;
 - `solo-1.8-version.json` — 1.8 updater manifest;
 - `solo-1.21-version.json` — 1.21 updater manifest;
+- `MonsterMaze-Solo-1.8-plugin.jar` — tested 1.8 plugin binary used by the updater;
+- `MonsterMaze-Solo-1.21-plugin.jar` — tested 1.21 plugin binary used by the updater;
+- `MonsterMaze-Solo-1.21-Paper.jar` — pinned Paper runtime used by the 1.21 Solo package;
+- `MonsterMaze-Solo-1.21-ProtocolLib.jar` — pinned ProtocolLib runtime used by the 1.21 Solo package;
+- `MonsterMaze-Server-1.8.zip` — canonical hosted MM18 server artifact;
+- `MonsterMaze-Server-1.21.zip` — canonical hosted MM21 server artifact;
+- `DOCKER-IMAGE.txt` — published GHCR image tag and digest;
 - `SHA256SUMS.txt` — release asset checksums.
+
+Generated binaries and downloaded third-party runtime dependencies are release assets rather than repository source files. Updater manifest entries for those files point to the immutable asset belonging to the same release tag. Source-controlled scripts and map files point to the immutable tagged repository contents.
 
 ## Configuration ownership
 
@@ -45,7 +55,7 @@ There is one application build per Minecraft version, not a separate gameplay bu
 
 ## Updater source integrity
 
-Release manifests contain SHA-256 hashes and immutable source URLs pointing at the exact tagged repository contents. This means an existing Solo installation can update from the published release without depending on mutable `main` files.
+Release manifests contain SHA-256 hashes and immutable URLs. Source-controlled files resolve to the exact tagged repository contents, while generated/external binary files resolve to release assets attached to that exact tag. The updater verifies the SHA-256 before replacing any file.
 
 ## Recovery
 
