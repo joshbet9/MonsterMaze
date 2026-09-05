@@ -1,45 +1,54 @@
 # Release Process
 
-The release process exists to make a player release reproducible and traceable to a specific source state.
+Monster Maze releases are generated from an immutable Git tag. The goal is to make a release reproducible and remove manual pull/build/package/upload steps.
 
-## Principles
+## Official release
 
-1. Build from a known Git commit.
-2. Build the affected Minecraft implementation from canonical source.
-3. Run automated validation before publishing.
-4. Generate the player package from the packaging script rather than editing a staged package by hand.
-5. Generate the updater manifest from the exact package contents.
-6. Verify hashes and required package paths.
-7. Publish the release artifact and record the release version in the changelog.
-8. Keep the Git tag/release as the immutable reference for what players received.
+Create and push a semantic version tag from `main`:
 
-## Release versus development state
+```text
+git tag v1.0.7
+git push origin v1.0.7
+```
 
-A release may represent a stable subset of `main`; development work after a release does not invalidate the historical release artifact.
+The GitHub Actions release workflow then:
 
-Player updaters must not depend on an accidentally stale working-tree manifest. The manifest used by a released package must correspond to the exact files and version that package contains.
+1. checks out the exact tagged commit;
+2. builds and tests the 1.8 implementation;
+3. builds and tests the 1.21 implementation;
+4. obtains the required server/runtime dependencies;
+5. builds the complete fresh-install Solo 1.8 package;
+6. builds the complete fresh-install Solo 1.21 package;
+7. generates updater manifests and SHA-256 checksums;
+8. validates package structure, versions and manifest hashes;
+9. publishes the packages and manifests to the GitHub Release for that tag.
 
-## Pre-release checklist
+The release assets are:
 
-- [ ] Working tree is clean or the release commit is explicitly identified.
-- [ ] Relevant 1.8 build passes.
-- [ ] Relevant 1.21 build passes when included in the release.
-- [ ] Packaging completes without ignored failures.
-- [ ] Generated package contains the expected files.
-- [ ] Generated manifest hashes match the packaged files.
-- [ ] Package archive structure is validated.
-- [ ] Changelog is updated.
-- [ ] Release notes identify the user-facing changes.
-- [ ] No unrelated development output is included.
+- `MonsterMaze-Solo.zip` — fresh-install 1.8 Solo distribution;
+- `1.21-MonsterMaze-Solo.zip` — fresh-install 1.21 Solo distribution;
+- `solo-1.8-version.json` — 1.8 updater manifest;
+- `solo-1.21-version.json` — 1.21 updater manifest;
+- `SHA256SUMS.txt` — release asset checksums.
+
+## Configuration ownership
+
+The release contains a safe, fresh-install Solo configuration. It does not contain production Hyper-V or Fly credentials.
+
+Existing environments retain their own configuration:
+
+- Solo installations preserve player/runtime configuration during updates;
+- Hyper-V uses the same canonical server build with its existing production configuration and `soloMode=false`;
+- Fly MM18/MM21 use the corresponding canonical server build with their existing production/Fly configuration.
+
+There is one application build per Minecraft version, not a separate gameplay build for each endpoint.
+
+## Updater source integrity
+
+Release manifests contain SHA-256 hashes and immutable source URLs pointing at the exact tagged repository contents. This means an existing Solo installation can update from the published release without depending on mutable `main` files.
 
 ## Recovery
 
-Never rewrite an already-published release to silently change its contents. If a release is wrong, publish a corrected release with a new version and explain the correction.
+Published releases are immutable deployment records. Never rewrite a published tag or release to repair a bad build. Fix the source, create a new version tag, and publish a new release.
 
-This preserves a straightforward chain:
-
-```text
-Git commit -> release tag -> package -> manifest -> installed client
-```
-
-A future agent should be able to trace a player package backwards through that chain.
+Before a structural release-pipeline change, keep a recoverable Git reference to the known-good `main` state.
