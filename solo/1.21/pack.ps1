@@ -19,8 +19,23 @@ $paper = if ($env:MM_PAPER_JAR) { $env:MM_PAPER_JAR } else {
 }
 $protocol = if ($env:MM_PROTOCOLLIB_JAR) { $env:MM_PROTOCOLLIB_JAR } else { Join-Path $here 'tools/ProtocolLib.jar' }
 
-if ($env:MM_JDK21) {
+if ($env:MM_SOLO_JDK21_WINDOWS) {
+    $jdk21 = $env:MM_SOLO_JDK21_WINDOWS
+} elseif ($IsWindows -and $env:MM_JDK21) {
     $jdk21 = $env:MM_JDK21
+} elseif (-not $IsWindows) {
+    $jdkUrl = 'https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_windows_hotspot_21.0.12.1_1.zip'
+    $jdkZip = Join-Path ([System.IO.Path]::GetTempPath()) 'MonsterMaze-Temurin21-Windows.zip'
+    $jdkExtract = Join-Path ([System.IO.Path]::GetTempPath()) 'MonsterMaze-Temurin21-Windows'
+    if (Test-Path $jdkZip) { Remove-Item -Force $jdkZip }
+    if (Test-Path $jdkExtract) { Remove-Item -Recurse -Force $jdkExtract }
+    Invoke-WebRequest -Uri $jdkUrl -OutFile $jdkZip
+    $checksumText = (Invoke-WebRequest -Uri ($jdkUrl + '.sha256.txt')).Content
+    $expectedChecksum = (($checksumText -split '\s+')[0]).ToLowerInvariant()
+    $actualChecksum = (Get-FileHash $jdkZip -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualChecksum -ne $expectedChecksum) { throw "Windows JDK 21 SHA-256 mismatch." }
+    Expand-Archive -LiteralPath $jdkZip -DestinationPath $jdkExtract -Force
+    $jdk21 = (Get-ChildItem $jdkExtract -Directory | Select-Object -First 1).FullName
 } else {
     $jdkRoots = @(
         'C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium',
@@ -37,10 +52,10 @@ if ($env:MM_JDK21) {
         }
     }
     if (-not $jdk21) {
-        $java = Get-Command (if ($IsWindows) { 'java.exe' } else { 'java' }) -ErrorAction SilentlyContinue
+        $java = Get-Command java.exe -ErrorAction SilentlyContinue
         if ($java) {
             $javaHome = Split-Path -Parent (Split-Path -Parent $java.Source)
-            $javaExe = Join-Path $javaHome (if ($IsWindows) { 'bin/java.exe' } else { 'bin/java' })
+            $javaExe = Join-Path $javaHome 'bin/java.exe'
             if ((Test-Path $javaExe) -and ((& $javaExe -version 2>&1) -match 'version "21')) {
                 $jdk21 = $javaHome
             }
@@ -54,6 +69,7 @@ if (-not (Test-Path (Join-Path $project 'pom.xml'))) { throw "1.21 source projec
 if (-not (Test-Path $paper)) { throw "Paper 1.21.11 jar not found: $paper" }
 if (-not (Test-Path $protocol)) { throw "ProtocolLib.jar not found: $protocol" }
 if (-not $jdk21 -or -not (Test-Path $jdk21)) { throw "JDK 21 directory not found. Set MM_JDK21 or install a JDK 21." }
+if (-not (Test-Path (Join-Path $jdk21 'bin/java.exe'))) { throw "Windows JDK 21 runtime is missing bin/java.exe: $jdk21" }
 foreach ($map in $requiredMaps) {
     $mapPath = Join-Path $maps $map
     if (-not (Test-Path (Join-Path $mapPath 'level.dat'))) { throw "1.21 map world missing or invalid: $map" }
