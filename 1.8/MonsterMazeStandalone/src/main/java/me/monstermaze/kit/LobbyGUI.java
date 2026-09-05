@@ -141,6 +141,8 @@ public class LobbyGUI implements Listener {
     }
 
     @EventHandler public void onDrag(InventoryDragEvent event){String title=event.getInventory()==null?"":event.getInventory().getTitle();if(TITLE.equals(title)||MODE_TITLE.equals(title)||MAP_TITLE.equals(title)||KIT_TITLE.equals(title)||PATTERN_TITLE.equals(title)||MOB_TITLE.equals(title))event.setCancelled(true);}
+    private void back(Inventory inv){inv.setItem(0,item(Material.ARROW,ChatColor.YELLOW+"Back",null));}
+    private void fill(Inventory inv){ItemStack pane=item(Material.STAINED_GLASS_PANE," ",null);for(int i=0;i<inv.getSize();i++)inv.setItem(i,pane);}
     private List<String> loreForKit(KitType k,boolean selected,MazeMode mode){List<String> lore=new ArrayList<String>(Arrays.asList(k.description));lore.clear();for(String line:k.description){lore.add(line);}lore.add("");lore.add(selected?ChatColor.GREEN+"SELECTED":ChatColor.YELLOW+"Click to select");return lore;}
     private ItemStack item(Material material,String name,List<String> lore){ItemStack stack=new ItemStack(material,1);ItemMeta meta=stack.getItemMeta();meta.setDisplayName(name);if(lore!=null)meta.setLore(lore);stack.setItemMeta(meta);return stack;}
     private String patternName(int pattern){return pattern<0?"Random":LeaderboardManager.patternName(pattern);}
