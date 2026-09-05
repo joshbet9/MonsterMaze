@@ -1,0 +1,4 @@
+# Deployment overlay for the hosted 1.21 multiplayer server.
+# This file is applied at container startup and is intentionally separate
+# from the player-facing Solo configuration.
+solo-mode: false

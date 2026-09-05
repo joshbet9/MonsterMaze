@@ -1,4 +1,10 @@
 # Builds the 1.21 Solo distribution.
+[CmdletBinding()]
+param(
+    [string]$ReleaseVersion = $(if ($env:MM_RELEASE_VERSION) { $env:MM_RELEASE_VERSION } else { "1.0.0" }),
+    [string]$ReleaseNote = $(if ($env:MM_RELEASE_NOTE) { $env:MM_RELEASE_NOTE } else { "Monster Maze Solo 1.21 release." }),
+    [switch]$SkipBuild
+)
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent (Split-Path -Parent $here)
@@ -6,8 +12,6 @@ $project = Join-Path $repoRoot '1.21\MonsterMazeStandalone'
 $sourceJar = Join-Path $project 'target\MonsterMazeStandalone.jar'
 $dist = Join-Path $here 'solo-dist'
 $maps = Join-Path $here 'maps'
-$releaseVersion = '1.0.6'
-$releaseNote = 'Current Monster Maze Solo implementation: competitive backend, seasonal ratings, tournaments, challenge functionality, and release-package fixes.'
 $paper = if ($env:MM_PAPER_JAR) { $env:MM_PAPER_JAR } else {
     $preferredPaper = Join-Path $here 'tools\paper-1.21.11.jar'
     $genericPaper = Join-Path $here 'tools\paper.jar'
@@ -15,7 +19,6 @@ $paper = if ($env:MM_PAPER_JAR) { $env:MM_PAPER_JAR } else {
 }
 $protocol = if ($env:MM_PROTOCOLLIB_JAR) { $env:MM_PROTOCOLLIB_JAR } else { Join-Path $here 'tools\ProtocolLib.jar' }
 
-# Prefer an explicitly supplied JDK, otherwise discover an installed Temurin/OpenJDK 21.
 if ($env:MM_JDK21) {
     $jdk21 = $env:MM_JDK21
 } else {
@@ -55,13 +58,17 @@ foreach ($map in $requiredMaps) {
     if (-not (Test-Path (Join-Path $mapPath 'level.dat'))) { throw "1.21 map world missing or invalid: $map" }
 }
 
-Write-Host "Building 1.21 MonsterMazeStandalone..."
-Push-Location $project
-try {
-    & mvn.cmd clean package -DskipTests
-    if ($LASTEXITCODE -ne 0) { throw "Maven build failed with exit code $LASTEXITCODE." }
-} finally { Pop-Location }
-if (-not (Test-Path $sourceJar)) { throw "Build succeeded but JAR was not produced." }
+if (-not $SkipBuild) {
+    Write-Host "Building 1.21 MonsterMazeStandalone..."
+    Push-Location $project
+    try {
+        & mvn.cmd clean package -DskipTests
+        if ($LASTEXITCODE -ne 0) { throw "Maven build failed with exit code $LASTEXITCODE." }
+    } finally { Pop-Location }
+} else {
+    Write-Host "Using existing tested 1.21 plugin build (--SkipBuild)."
+}
+if (-not (Test-Path $sourceJar)) { throw "Expected built plugin JAR was not found: $sourceJar" }
 
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 New-Item -ItemType Directory -Force -Path (Join-Path $dist 'server\plugins\MonsterMazeStandalone') | Out-Null
@@ -80,23 +87,18 @@ Copy-Item $protocol (Join-Path $dist 'server\plugins\ProtocolLib.jar')
 Copy-Item $jdk21 (Join-Path $dist 'runtime\jdk21') -Recurse -Force
 foreach ($map in $requiredMaps) { Copy-Item (Join-Path $maps $map) (Join-Path $dist "server\$map") -Recurse -Force }
 
-# Keep user data out of a clean release.
 Remove-Item (Join-Path $dist 'submitter\submitted') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $dist 'server\plugins\MonsterMazeStandalone\solo-runs') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $dist 'server\world') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $dist 'server\logs') -Recurse -Force -ErrorAction SilentlyContinue
 
-# Generate the updater manifest from exactly what will be shipped.
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $here 'make_manifest.ps1') -Version $releaseVersion -Note $releaseNote -Root $dist
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $here 'make_manifest.ps1') -Version $ReleaseVersion -Note $ReleaseNote -Root $dist -SourceBaseUrl $env:MM_RELEASE_SOURCE_BASE_URL -ReleaseAssetBaseUrl $env:MM_RELEASE_ASSET_BASE_URL
 if ($LASTEXITCODE -ne 0) { throw "Manifest generation failed." }
-# Keep the raw GitHub manifest synchronized too, so existing client updaters see this release.
 Copy-Item -Force (Join-Path $dist 'version.json') (Join-Path $here 'version.json')
-Set-Content (Join-Path $dist 'installed.version') -Value $releaseVersion -Encoding ascii
+Set-Content (Join-Path $dist 'installed.version') -Value $ReleaseVersion -Encoding ascii
 
 $zip = Join-Path $here 'solo-1.21-dist.zip'
 if (Test-Path $zip) { Remove-Item $zip -Force }
-
-# Build the ZIP explicitly so entry names are always forward-slash paths.
 Add-Type -AssemblyName System.IO.Compression
 $fs = [System.IO.File]::Open($zip, [System.IO.FileMode]::CreateNew)
 $archive = New-Object System.IO.Compression.ZipArchive($fs,[System.IO.Compression.ZipArchiveMode]::Create)
@@ -119,10 +121,7 @@ try {
     $entries = @($probe.Entries | ForEach-Object { $_.FullName })
     $bad = @($entries | Where-Object { $_ -match '\\' }).Count -gt 0
     $requiredRoots = @('server/','launcher/','submitter/','runtime/')
-    $missingRoots = @($requiredRoots | Where-Object {
-        $root = $_
-        -not (@($entries | Where-Object { $_.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) }).Count)
-    })
+    $missingRoots = @($requiredRoots | Where-Object { $root = $_; -not (@($entries | Where-Object { $_.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) }).Count) })
     $hasForbiddenWrapper = @($entries | Where-Object { $_ -like 'solo-dist/*' }).Count -gt 0
     $hasManifest = @($entries | Where-Object { $_ -eq 'version.json' }).Count -eq 1
     $hasMarker = @($entries | Where-Object { $_ -eq 'installed.version' }).Count -eq 1

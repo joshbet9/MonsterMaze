@@ -1,41 +1,48 @@
 # pack.ps1 - Builds the distributable "solo-dist" folder + zip that players unzip
 # and double-click to play.
+[CmdletBinding()]
+param(
+    [string]$ReleaseVersion = $(if ($env:MM_RELEASE_VERSION) { $env:MM_RELEASE_VERSION } else { "1.0.0" }),
+    [string]$ReleaseNote = $(if ($env:MM_RELEASE_NOTE) { $env:MM_RELEASE_NOTE } else { "Monster Maze Solo release." }),
+    [switch]$SkipBuild
+)
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $here
 $dist = Join-Path $here "solo-dist"
-$JDK8 = "C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium\jdk-8.0.502.7-hotspot"
-$SPIGOT = "C:\monstermaze_test\spigot-1.8.8.jar"
+$JDK8 = if ($env:MM_JDK8) { $env:MM_JDK8 } else { "C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium\jdk-8.0.502.7-hotspot" }
+$SPIGOT = if ($env:MM_SPIGOT_JAR) { $env:MM_SPIGOT_JAR } else { "C:\monstermaze_test\spigot-1.8.8.jar" }
 $maps = Join-Path $here "maps"
 $sourceProject = Join-Path $repoRoot "1.8\MonsterMazeStandalone"
 $sourceJar = Join-Path $sourceProject "target\MonsterMazeStandalone.jar"
 $soloJar = Join-Path $here "server\plugins\MonsterMazeStandalone.jar"
 $maven = "mvn.cmd"
-$releaseVersion = "1.0.6"
-$releaseNote = "Current Monster Maze Solo implementation: competitive backend, seasonal ratings, tournaments, challenge functionality, and release-package fixes."
 
-if (-not (Test-Path (Join-Path $JDK8 "bin\java.exe"))) { Write-Host "JDK8 not found at $JDK8"; exit 1 }
-if (-not (Test-Path $SPIGOT)) { Write-Host "spigot jar not found at $SPIGOT"; exit 1 }
-if (-not (Test-Path $maps)) { Write-Host "Canonical maps directory not found at $maps"; exit 1 }
-if (-not (Test-Path (Join-Path $sourceProject "pom.xml"))) { Write-Host "1.8 source project not found at $sourceProject"; exit 1 }
+if (-not (Test-Path (Join-Path $JDK8 "bin\java.exe"))) { throw "JDK8 not found at $JDK8" }
+if (-not (Test-Path $SPIGOT)) { throw "spigot jar not found at $SPIGOT" }
+if (-not (Test-Path $maps)) { throw "Canonical maps directory not found at $maps" }
+if (-not (Test-Path (Join-Path $sourceProject "pom.xml"))) { throw "1.8 source project not found at $sourceProject" }
 
 $requiredMaps = @("mm_colombia","mm_sandycoast","mm_siberian","mm_swampland","mm_tesorohundido","mm_void","mm_volcano")
 foreach ($map in $requiredMaps) {
     if (-not (Test-Path (Join-Path $maps $map))) { throw "Required map missing: $map" }
 }
 
-# Always build the plugin from the canonical 1.8 source before packaging.
-Write-Host "Building 1.8 MonsterMazeStandalone from $sourceProject ..."
-Push-Location $sourceProject
-try {
-    & $maven clean package -DskipTests
-    if ($LASTEXITCODE -ne 0) { throw "Maven build failed with exit code $LASTEXITCODE." }
-} finally { Pop-Location }
+if (-not $SkipBuild) {
+    Write-Host "Building 1.8 MonsterMazeStandalone from $sourceProject ..."
+    Push-Location $sourceProject
+    try {
+        & $maven clean package -DskipTests
+        if ($LASTEXITCODE -ne 0) { throw "Maven build failed with exit code $LASTEXITCODE." }
+    } finally { Pop-Location }
+} else {
+    Write-Host "Using existing tested 1.8 plugin build (--SkipBuild)."
+}
 
-if (-not (Test-Path $sourceJar)) { throw "Build succeeded but plugin JAR was not produced: $sourceJar" }
+if (-not (Test-Path $sourceJar)) { throw "Expected built plugin JAR was not found: $sourceJar" }
 New-Item -ItemType Directory -Force -Path (Split-Path $soloJar) | Out-Null
 Copy-Item -Force $sourceJar $soloJar
-Write-Host "Copied fresh plugin JAR to solo/server/plugins/MonsterMazeStandalone.jar"
+Write-Host "Copied canonical plugin JAR to solo/server/plugins/MonsterMazeStandalone.jar"
 
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 Copy-Item -Recurse -Force (Join-Path $here "launcher") (Join-Path $dist "launcher")
@@ -43,12 +50,10 @@ Copy-Item -Recurse -Force (Join-Path $here "submitter") (Join-Path $dist "submit
 Copy-Item -Recurse -Force (Join-Path $here "server") (Join-Path $dist "server")
 Copy-Item -Force (Join-Path $here "HOW_TO_PLAY.txt") (Join-Path $dist "HOW_TO_PLAY.txt")
 
-# Canonical tested arena worlds. These are application assets, not runtime worlds.
 foreach ($map in $requiredMaps) {
     Copy-Item -Recurse -Force (Join-Path $maps $map) (Join-Path $dist "server\$map")
 }
 
-# Strip generated/runtime state, but deliberately KEEP the canonical mm_* arena maps.
 $stripServer = @(
     "$dist\server\world", "$dist\server\world_nether", "$dist\server\world_the_end",
     "$dist\server\logs", "$dist\server\plugins\MonsterMazeStandalone\solo-runs"
@@ -61,19 +66,17 @@ foreach ($p in ($strip | Select-Object -Unique)) { if (Test-Path $p) { Remove-It
 Copy-Item -Recurse -Force $JDK8 (Join-Path $dist "runtime\jdk8")
 Copy-Item -Force $SPIGOT (Join-Path $dist "server\spigot-1.8.8.jar")
 
-# Regenerate the updater manifest from the final Solo files + canonical maps.
-# This guarantees the published JAR hash matches the JAR actually packaged.
 $manifestTool = Join-Path $here "updater_tools\make_manifest.ps1"
 $versionFile = Join-Path $here "version.json"
 if (-not (Test-Path $manifestTool)) { throw "Manifest tool not found: $manifestTool" }
 if (-not (Test-Path $versionFile)) { throw "version.json not found: $versionFile" }
-& powershell -NoProfile -ExecutionPolicy Bypass -File $manifestTool -Version $releaseVersion -Note $releaseNote
+& powershell -NoProfile -ExecutionPolicy Bypass -File $manifestTool -Version $ReleaseVersion -Note $ReleaseNote -SourceBaseUrl $env:MM_RELEASE_SOURCE_BASE_URL -ReleaseAssetBaseUrl $env:MM_RELEASE_ASSET_BASE_URL
 if ($LASTEXITCODE -ne 0) { throw "Manifest generation failed with exit code $LASTEXITCODE." }
 
 Copy-Item -Force $versionFile (Join-Path $dist "version.json")
 Copy-Item -Force (Join-Path $here "update.ps1") (Join-Path $dist "update.ps1")
 Copy-Item -Force (Join-Path $here "update.bat") (Join-Path $dist "update.bat")
-Set-Content -LiteralPath (Join-Path $dist "installed.version") -Value $releaseVersion -Encoding ascii
+Set-Content -LiteralPath (Join-Path $dist "installed.version") -Value $ReleaseVersion -Encoding ascii
 
 Write-Host "Staging complete at: $dist"
 

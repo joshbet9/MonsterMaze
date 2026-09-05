@@ -3,10 +3,7 @@ package me.monstermaze.game;
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.world.VoidWorldManager;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.Location;
-import org.bukkit.World;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -27,11 +24,20 @@ public class LobbyListener implements Listener {
         this.game = game;
         this.voids = voids;
         Bukkit.getPluginManager().registerEvents(this, plugin);
+        if (plugin.isSoloMode()) {
+            new SoloIntegrityListener(plugin);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onJoin(PlayerJoinEvent event) {
-        final Player player = event.getPlayer();
+        final org.bukkit.entity.Player player = event.getPlayer();
+        // Solo /mm commands do not require OP. Keeping the player non-op prevents
+        // vanilla/admin commands from compromising the PB environment.
+        if (plugin.isSoloMode() && player.isOp()) {
+            player.setOp(false);
+        }
+
         // Defer one tick so join completes cleanly
         Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override

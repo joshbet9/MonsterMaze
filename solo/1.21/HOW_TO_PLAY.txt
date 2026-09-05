@@ -1,61 +1,146 @@
-MONSTER MAZE SOLO — MINECRAFT 1.21
-====================================
+============================================
+  MONSTER MAZE - SOLO 1.21
+  How to play (read this first!)
+============================================
 
-This package runs Monster Maze locally on Paper 1.21.11.
-You do not need to install the Monster Maze plugin separately.
+You need: Minecraft Java Edition 1.21.11.
 
-REQUIREMENTS
-------------
-- Minecraft Java Edition 1.21.11
-- Windows 7/8/10/11
-- A valid Minecraft account
+This package includes the local Paper server and Java 21 runtime needed
+to run it. You normally do not need to install Java yourself.
 
-The release includes Java 21 for the local server. You do not normally need
-to install Java yourself.
 
-STARTING SOLO
--------------
-1. Extract the entire package to a folder.
-2. Double-click launcher\play.bat.
-3. Wait for the server window to say that it is ready.
-4. Open Minecraft 1.21.11.
-5. Multiplayer -> Add Server.
-6. Use `localhost` as the server address.
-7. Join the server.
-8. Run `/mm start`.
-9. Choose your kit and play.
+--------------------------------------------
+STEP 0 - Updates
+--------------------------------------------
+Your game checks for updates automatically when you start it with
+launcher\play.bat. If a newer version exists, it downloads the changes
+before the server starts.
 
-The shipped mm_* worlds are the canonical Monster Maze map assets. Do not
-rename or move those folders.
+No internet? No problem - the game can still start without updating.
+You can also run update.bat manually.
 
-ENDING A RUN
-------------
-Death ends the Solo run. The plugin records completed/new PB information in
-the local server/plugins/MonsterMazeStandalone/solo-runs folder.
 
-SUBMITTING A SCORE
-------------------
-1. Configure submitter\config.ps1 from config.ps1.example with the Discord
-   Solo-runs webhook.
-2. Double-click submitter\submit.bat.
-3. Successfully posted runs are moved into submitter\submitted.
+--------------------------------------------
+STEP 1 - Start your server
+--------------------------------------------
+  Double-click:     launcher\play.bat
 
-UPDATES
--------
-launcher\play.bat automatically checks for updates before starting the server.
-You can also double-click update.bat manually.
-If GitHub is unavailable, the server still starts; updates are optional.
-Your submitter config and server.properties are preserved by the updater.
+A black window will open. Leave it open while you play.
+Wait until the server says it is ready.
 
-STOPPING THE SERVER
--------------------
-Double-click launcher\stop.bat when you are finished.
 
+--------------------------------------------
+STEP 2 - Join the game
+--------------------------------------------
+  1. Open Minecraft (1.21.11)
+  2. Click Multiplayer
+  3. Click Add Server
+  4. Server name:  Solo Maze
+  5. Server address:  localhost
+  6. Click Done, then click the server to join.
+
+
+--------------------------------------------
+STEP 3 - Start a run
+--------------------------------------------
+  In the chat, type:    /mm start
+
+Choose your kit from the kit menu, then survive as long as you can.
+Reach the next Safe Pad before the timer expires.
+
+When you die, your run ends and your result is recorded automatically.
+
+
+--------------------------------------------
+MODES
+--------------------------------------------
+
+The 1.21 version has three modes:
+
+  Original
+    The original Monster Maze experience, recreated as faithfully as
+    possible. Uses the original pacing and monster spawning.
+
+  Modern
+    Faster stages, more monsters, and expanded kit abilities.
+
+  Classic
+    Modern gameplay without the speed boost, keeping standard player
+    movement speed.
+
+If you are playing for the main leaderboard, use the mode specified by
+whoever is running the competition.
+
+
+--------------------------------------------
+KITS
+--------------------------------------------
+
+  Jumper
+    5 charged jumps in Original; 3 in Modern and Classic. Safe Pads
+    restore your charges in the enhanced modes.
+
+  Slowballer
+    Throws snowballs that slow other players. Enhanced modes also give
+    you Cryo Blitz, which freezes nearby monsters.
+
+  Body Builder
+    Gain extra maximum health when you are first to a Safe Pad.
+    Enhanced modes also give you Body Rush to deflect monster hits.
+
+  Repulsor
+    Launch nearby monsters away from you. You have 3 charges.
+
+  Maverick
+    In enhanced modes, monster hits launch you toward the next Safe Pad.
+
+
+--------------------------------------------
+STEP 4 - Submit your score
+--------------------------------------------
+Your run is saved automatically in the server's solo-runs folder.
+
+If your copy is configured for Discord submissions, run:
+
+  submitter\submit.bat
+
+This posts every saved run that has not already been submitted. A run
+is only moved to the submitted folder after the post succeeds, so a
+network failure does not discard it.
+
+If no submission webhook is configured, your run remains safely stored
+locally and can be submitted later.
+
+
+--------------------------------------------
+STEP 5 - Stop
+--------------------------------------------
+  Double-click:     launcher\stop.bat
+
+You can also close the black server window when you are finished.
+
+
+--------------------------------------------
 TROUBLESHOOTING
----------------
-- If the launcher says Java 21 is missing, make sure runtime\jdk21 exists or
-  set JAVA_BIN in launcher\config.bat.
-- If localhost refuses the connection, wait for the server to finish starting.
-- If a map says it is not installed, make sure the corresponding mm_* folder
-  is directly inside the server folder.
-- Do not run the updater while the server is running.
+--------------------------------------------
+Q: "play.bat" does not start the server
+   Make sure the package's runtime\jdk21 folder is present. If it is
+   missing, ask whoever provided the package for help.
+
+Q: localhost refuses the connection
+   Wait for the server window to finish starting before joining.
+
+Q: A map is not installed
+   Make sure the shipped mm_* map folder is directly inside the server
+   folder and has not been renamed or moved.
+
+Q: My score was not posted to Discord
+   Make sure the submission webhook has been configured, then run
+   submitter\submit.bat again. If there is no webhook configured, the
+   run will remain in the local solo-runs folder.
+
+Q: The updater will not run
+   Stop the server first, then run update.bat again.
+
+That's it. Have fun!
+============================================

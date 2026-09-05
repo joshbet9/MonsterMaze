@@ -3,24 +3,24 @@
   How to play (read this first!)
 ============================================
 
-You need: Minecraft Java Edition, version 1.8.9.
+You need: Minecraft Java Edition 1.8.9.
 
-This is a single-player version of Monster Maze. You run your own
-little server on your computer, play until you die, and your score
-gets posted to the Discord leaderboard automatically.
+This is a single-player version of Monster Maze. You run the included
+local server on your computer and play until you die. Your completed
+runs are saved automatically.
 
 
 --------------------------------------------
-STEP 0 - Updates (automatic)
+STEP 0 - Updates
 --------------------------------------------
 Your game checks for updates automatically every time you start it
-(launcher\play.bat). If a newer version exists it downloads the changes
-before your server starts. It never touches your scores, worlds, or
-settings.
+with launcher\play.bat. If a newer version exists, it downloads the
+changes before your server starts.
 
-No internet? No problem - the game just starts anyway and you can play.
-You can also run the check manually any time by double-clicking
-update.bat.
+It does not replace your personal run records or local settings.
+
+No internet? No problem - the game can still start without updating.
+You can also run the update check manually with update.bat.
 
 
 --------------------------------------------
@@ -28,8 +28,8 @@ STEP 1 - Start your server
 --------------------------------------------
   Double-click:     launcher\play.bat
 
-A black window will open. Leave it open.
-Wait until you see the word  Done  in it.
+A black window will open. Leave it open while you play.
+Wait until the server says it is ready.
 
 
 --------------------------------------------
@@ -42,59 +42,112 @@ STEP 2 - Join the game
   5. Server address:  localhost
   6. Click Done, then click the server to join.
 
-If it says you need to accept the security check (EULA),
-that's already done for you. Just click Join.
-
 
 --------------------------------------------
-STEP 3 - Play
+STEP 3 - Start a run
 --------------------------------------------
   In the chat, type:    /mm start
 
-Then click one of the little villagers to pick a kit.
-The game puts you in Solo Mode: survive as long as you can!
-Try to reach a higher stage than everyone else.
+Choose your kit from the kit menu, then survive as long as you can.
+Reach the next Safe Pad before the timer expires.
 
-When you die, that's the end of your run.
-
-
---------------------------------------------
-STEP 4 - Share your score
---------------------------------------------
-  After your run, double-click:   submitter\submit.bat
-
-Your run is sent to the Discord leaderboard automatically.
-It should appear in the channel a moment later.
+When you die, your run ends and your result is recorded automatically.
 
 
 --------------------------------------------
-STEP 5 - Stop (when you're done)
+MODES
 --------------------------------------------
-  Double-click:   launcher\stop.bat
-  (or just close the black server window)
+
+The 1.8 version has four modes:
+
+  Original
+    The original Monster Maze experience, recreated as faithfully as
+    possible. Uses the original pacing and monster spawning.
+
+  Speed
+    Modern gameplay with the original timer and monster spawning.
+
+  Modern
+    Faster stages, more monsters, and expanded kit abilities.
+
+  Lagless
+    Uses a fixed monster pool instead of adding new monsters at each
+    stage, with monster speed increasing as the run progresses.
+
+If you are playing for the main leaderboard, use the mode specified by
+whoever is running the competition.
+
+
+--------------------------------------------
+KITS
+--------------------------------------------
+
+  Jumper
+    5 charged jumps in Original; 3 in the other modes. Safe Pads
+    restore your charges in the enhanced modes.
+
+  Slowballer
+    Throws snowballs that slow other players. Enhanced modes also give
+    you Cryo Blitz, which freezes nearby monsters.
+
+  Body Builder
+    Gain extra maximum health when you are first to a Safe Pad.
+    Enhanced modes also give you Body Rush to deflect monster hits.
+
+  Repulsor
+    Launch nearby monsters away from you. You have 3 charges.
+
+  Maverick
+    In enhanced modes, monster hits launch you toward the next Safe Pad.
+
+
+--------------------------------------------
+STEP 4 - Submit your score
+--------------------------------------------
+Your run is saved automatically in the server's solo-runs folder.
+
+If your copy is configured for Discord submissions, run:
+
+  submitter\submit.bat
+
+This posts every saved run that has not already been submitted. A run
+is only moved to the submitted folder after the post succeeds, so a
+network failure does not discard it.
+
+If no submission webhook is configured, your run remains safely stored
+locally and can be submitted later.
+
+
+--------------------------------------------
+STEP 5 - Stop
+--------------------------------------------
+  Double-click:     launcher\stop.bat
+
+You can also close the black server window when you are finished.
 
 
 --------------------------------------------
 TROUBLESHOOTING
 --------------------------------------------
 Q: "Double-clicking play.bat does nothing / it closes instantly"
-   You need Java 8. Either use the bundled runtime folder, or ask
-   whoever gave you this file for help installing Java 8.
+   Make sure the included Java runtime is present. If it is missing,
+   ask whoever provided the package for help.
 
-Q: The black window says something about "Done" not appearing
-   Give it a minute on the first start - it has to build the map.
+Q: The server is still starting
+   Give it a little time, especially on the first start while maps are
+   being prepared.
 
-Q: The score didn't post to Discord
-   Run submitter\submit.bat again. If it still doesn't post, the
-   webhook may not be set up yet - tell the group owner.
+Q: My score was not posted to Discord
+   Make sure the submission webhook has been configured, then run
+   submitter\submit.bat again. If there is no webhook configured, the
+   run will remain in the local solo-runs folder.
 
-Q: play.bat or update.bat says the server is running
-   Close the server first: double-click launcher\stop.bat, then start
-   it again.
+Q: play.bat or update.bat says the server is already running
+   Stop the server with launcher\stop.bat, then try again.
 
-Q: play.bat or update.bat says "could not reach the update server"
-   Check your internet. The game still starts and runs fine without
-   updating.
+Q: The updater cannot connect
+   Check your internet connection. Updates are optional and the game
+   can still start without them.
 
 That's it. Have fun!
 ============================================
