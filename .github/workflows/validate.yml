@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  BUILDTOOLS_URL: 'https://hub.spigotmc.org/jenkins/job/BuildTools/200/artifact/target/BuildTools.jar'
+
 jobs:
   build-1-8:
     name: Build Minecraft 1.8.8
@@ -23,7 +26,20 @@ jobs:
           java-version: '8'
           cache: maven
 
-      - name: Build
+      - name: Download pinned BuildTools
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL "$BUILDTOOLS_URL" -o "$RUNNER_TEMP/BuildTools.jar"
+
+      - name: Build Spigot 1.8.8 dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -jar "$RUNNER_TEMP/BuildTools.jar" --rev 1.8.8 --output-dir "$RUNNER_TEMP/spigot"
+          test -f "$RUNNER_TEMP/spigot/spigot-1.8.8.jar"
+
+      - name: Build and test
         working-directory: 1.8/MonsterMazeStandalone
         run: mvn -B clean package
 
@@ -41,7 +57,7 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Build
+      - name: Build and test
         working-directory: 1.21/MonsterMazeStandalone
         run: mvn -B clean package
 
