@@ -39,6 +39,12 @@ jobs:
           set -euo pipefail
           java -Xmx2G -jar "$RUNNER_TEMP/BuildTools.jar" --rev 1.8.8 --output-dir "$RUNNER_TEMP/spigot"
           test -f "$RUNNER_TEMP/spigot/spigot-1.8.8.jar"
+          mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
+            -Dfile="$RUNNER_TEMP/spigot/spigot-1.8.8.jar" \
+            -DgroupId=org.spigotmc \
+            -DartifactId=spigot \
+            -Dversion=1.8.8-R0.1-SNAPSHOT \
+            -Dpackaging=jar
 
       - name: Build and test
         working-directory: 1.8/MonsterMazeStandalone
@@ -124,7 +130,6 @@ jobs:
             grep -q 'GameMode.CREATIVE' "$base/SoloIntegrityListener.java"
             grep -q 'GameMode.ADVENTURE' "$base/SoloIntegrityListener.java"
             grep -q 'gamemode' "$base/SoloIntegrityListener.java"
-            grep -q 'minecraft:' "$base/SoloIntegrityListener.java" || true
             grep -q 'SoloIntegrityListener' "$base/LobbyListener.java"
             grep -q 'setOp(false)' "$base/LobbyListener.java"
           done
