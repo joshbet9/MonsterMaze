@@ -70,7 +70,7 @@ $manifestTool = Join-Path $here "updater_tools\make_manifest.ps1"
 $versionFile = Join-Path $here "version.json"
 if (-not (Test-Path $manifestTool)) { throw "Manifest tool not found: $manifestTool" }
 if (-not (Test-Path $versionFile)) { throw "version.json not found: $versionFile" }
-& powershell -NoProfile -ExecutionPolicy Bypass -File $manifestTool -Version $ReleaseVersion -Note $ReleaseNote -SourceBaseUrl $env:MM_RELEASE_SOURCE_BASE_URL
+& powershell -NoProfile -ExecutionPolicy Bypass -File $manifestTool -Version $ReleaseVersion -Note $ReleaseNote -SourceBaseUrl $env:MM_RELEASE_SOURCE_BASE_URL -ReleaseAssetBaseUrl $env:MM_RELEASE_ASSET_BASE_URL
 if ($LASTEXITCODE -ne 0) { throw "Manifest generation failed with exit code $LASTEXITCODE." }
 
 Copy-Item -Force $versionFile (Join-Path $dist "version.json")
