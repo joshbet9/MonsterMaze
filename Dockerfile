@@ -11,6 +11,8 @@ RUN apt-get update \
 
 COPY solo/solo-dist/server /opt/mm18-template
 COPY solo/1.21/solo-dist/server /opt/mm21-template
+COPY docker/deployments/fly/1.8/config.yml /opt/mm18-deployment-config.yml
+COPY docker/deployments/fly/1.21/config.yml /opt/mm21-deployment-config.yml
 COPY docker/entrypoint.sh /entrypoint.sh
 COPY docker/logrotate.conf /etc/logrotate.d/monstermaze
 
