@@ -24,6 +24,11 @@ for command in curl unzip rsync sha256sum systemctl; do
   command -v "$command" >/dev/null || { echo "Missing required command: $command" >&2; exit 1; }
 done
 
+sudo -n true 2>/dev/null || {
+  echo 'Passwordless sudo is required for automated Hyper-V deployment.' >&2
+  exit 1
+}
+
 log "Downloading immutable release checksums for $TAG"
 curl -fsSL "${BASE_URL}/SHA256SUMS.txt" -o "$TMP/SHA256SUMS.txt"
 for version in 1.8 1.21; do
@@ -36,15 +41,17 @@ grep -E "  MonsterMaze-Server-(1\.8|1\.21)\.zip$" SHA256SUMS.txt | sha256sum -c 
 for version in 1.8 1.21; do
   mkdir -p "$TMP/extracted/$version"
   unzip -q "$TMP/MonsterMaze-Server-${version}.zip" -d "$TMP/extracted/$version"
-  test -f "$TMP/extracted/$version/spigot-1.8.8.jar" -o -f "$TMP/extracted/$version/paper-1.21.11.jar"
+  if [ "$version" = "1.8" ]; then
+    test -f "$TMP/extracted/$version/spigot-1.8.8.jar"
+  else
+    test -f "$TMP/extracted/$version/paper-1.21.11.jar"
+  fi
   config="$TMP/extracted/$version/plugins/MonsterMazeStandalone/config.yml"
   grep -Eq '^solo-mode:[[:space:]]*false[[:space:]]*$' "$config"
 done
 
-# Ensure service ownership is explicit and repeatable. These units run the
-# same server directories used by the existing Hyper-V installation.
 install_service() {
-  local version="$1" jar="$2" java="$3" port="$4"
+  local version="$1" jar="$2" java="$3" heap="$4"
   local service="/etc/systemd/system/monstermaze-${version}.service"
   cat > "$TMP/monstermaze-${version}.service" <<EOF
 [Unit]
@@ -56,7 +63,7 @@ Wants=network-online.target
 Type=simple
 User=monstermaze
 WorkingDirectory=${ROOT}/${version}
-ExecStart=${java} -Xms2G -Xmx${version == "1.8" && "2G" || "4G"} -jar ${jar} nogui
+ExecStart=${java} -Xms2G -Xmx${heap} -jar ${jar} nogui
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
@@ -64,11 +71,11 @@ TimeoutStopSec=30
 [Install]
 WantedBy=multi-user.target
 EOF
-  install -m 0644 "$TMP/monstermaze-${version}.service" "$service"
+  sudo install -m 0644 "$TMP/monstermaze-${version}.service" "$service"
 }
 
-# Stop the managed services first. Also terminate the legacy manually-started
-# process if one is still present, so the new service cannot bind its port.
+# Stop the managed services first. Also terminate legacy manually-started
+# processes if one is still present, so the new services can bind their ports.
 sudo systemctl stop monstermaze-1.8.service monstermaze-1.21.service 2>/dev/null || true
 sudo pkill -f 'spigot-1\.8\.8\.jar' 2>/dev/null || true
 sudo pkill -f 'paper-1\.21\.11\.jar' 2>/dev/null || true
@@ -101,8 +108,8 @@ for version in 1.8 1.21; do
   sudo grep -Eq '^solo-mode:[[:space:]]*false[[:space:]]*$' "$config"
 done
 
-install_service 1.8 spigot-1.8.8.jar /usr/bin/java 25565
-install_service 1.21 paper-1.21.11.jar /usr/lib/jvm/java-21-openjdk-amd64/bin/java 25566
+install_service 1.8 spigot-1.8.8.jar /usr/bin/java 2G
+install_service 1.21 paper-1.21.11.jar /usr/lib/jvm/java-21-openjdk-amd64/bin/java 4G
 sudo systemctl daemon-reload
 sudo systemctl enable monstermaze-1.8.service monstermaze-1.21.service
 sudo systemctl start monstermaze-1.8.service
