@@ -3,7 +3,8 @@
 param(
     [string]$Version = "1.0.0",
     [string]$Note = "Initial release.",
-    [string]$SourceBaseUrl = ""
+    [string]$SourceBaseUrl = "",
+    [string]$ReleaseAssetBaseUrl = ""
 )
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -17,6 +18,10 @@ $UPDATEABLE = @(
     "HOW_TO_PLAY.txt", "README.md"
 )
 
+$RELEASE_ASSETS = @{
+    "server/plugins/MonsterMazeStandalone.jar" = "MonsterMaze-Solo-1.8-plugin.jar"
+}
+
 function Add-ManifestFile([System.Collections.IDictionary]$files, [string]$manifestPath, [string]$sourcePath, [string]$sourceRel = "") {
     if (-not (Test-Path -LiteralPath $sourcePath)) { throw "Updateable file missing: $sourcePath" }
     $norm = $manifestPath -replace "\\", "/"
@@ -24,7 +29,10 @@ function Add-ManifestFile([System.Collections.IDictionary]$files, [string]$manif
         sha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
         size = (Get-Item -LiteralPath $sourcePath).Length
     }
-    if ($SourceBaseUrl) {
+    if ($RELEASE_ASSETS.ContainsKey($norm)) {
+        if (-not $ReleaseAssetBaseUrl) { throw "ReleaseAssetBaseUrl is required for release asset: $norm" }
+        $entry.url = ($ReleaseAssetBaseUrl.TrimEnd('/') + '/' + $RELEASE_ASSETS[$norm])
+    } elseif ($SourceBaseUrl) {
         if (-not $sourceRel) { $sourceRel = $norm }
         $entry.url = ($SourceBaseUrl.TrimEnd('/') + '/' + ($sourceRel -replace "\\", "/"))
     }
