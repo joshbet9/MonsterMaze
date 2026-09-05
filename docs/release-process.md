@@ -69,9 +69,9 @@ vX.Y.Z release
 
 ### Fly production
 
-The release image is first built and published to GHCR. The deployment job then copies that exact image to `registry.fly.io/monstermaze:<tag>` and runs `fly image update` against the existing `monstermaze` app. This updates all existing Fly Machines while preserving their Machine-specific command/configuration, which is important because MM18 and MM21 use the same image with different entrypoint arguments. Fly's image update performs a rolling update and waits for configured health checks rather than rebuilding the image. citeturn4search3turn4search0
+The release image is first built and published to GHCR. The deployment job then copies that exact image to `registry.fly.io/monstermaze:<tag>` and runs `fly image update` against the existing `monstermaze` app. This updates all existing Fly Machines while preserving their Machine-specific command/configuration, which is important because MM18 and MM21 use the same image with different entrypoint arguments. The deployment is therefore a promotion of the already-tested image, not a second application build.
 
-The Fly deployment requires a repository/environment secret named `FLY_API_TOKEN`. It should be a deploy token scoped to the `monstermaze` app, not a full personal token. citeturn1search2turn1search7
+The Fly deployment requires a repository/environment secret named `FLY_API_TOKEN`. It should be a deploy token scoped to the `monstermaze` app, not a full personal token.
 
 ### Hyper-V integration
 
@@ -94,7 +94,7 @@ The Hyper-V deployment requires these repository/environment secrets:
 - `HYPERV_SSH_PRIVATE_KEY`
 - `HYPERV_SSH_KNOWN_HOSTS`
 
-The SSH account must have passwordless `sudo` for the deployment operations. SSH host-key verification is strict; the known host key is stored as a GitHub secret rather than using an insecure `StrictHostKeyChecking=no` bypass. GitHub recommends least-privilege credentials and encrypted Actions secrets for this kind of automation. citeturn2search0turn2search2
+The SSH account must have passwordless `sudo` for the deployment operations. SSH host-key verification is strict; the known host key is stored as a GitHub secret rather than using an insecure `StrictHostKeyChecking=no` bypass.
 
 ## Configuration ownership
 
@@ -110,9 +110,9 @@ There is one application build per Minecraft version, not a separate gameplay bu
 
 ## Solo distribution and updating
 
-The Solo packages are player-facing Windows distributions. Both launchers automatically run their bundled updater before starting the server. The 1.8 updater uses `releases/latest/download/solo-1.8-version.json`; the 1.21 updater uses the corresponding `solo-1.21-version.json`. The updater compares SHA-256 values and downloads only changed files. fileciteturn547file0 fileciteturn548file0
+The Solo packages are player-facing Windows distributions. Both launchers automatically run their bundled updater before starting the server. The 1.8 updater uses `releases/latest/download/solo-1.8-version.json`; the 1.21 updater uses the corresponding `solo-1.21-version.json`. The updater compares SHA-256 values and downloads only changed files.
 
-The Solo templates are explicitly validated as `solo-mode:true`. The updater protects player-owned configuration such as `server/plugins/MonsterMazeStandalone/config.yml` and `server/server.properties`, so a release update does not silently convert an existing Solo installation into a hosted configuration. fileciteturn553file0
+The Solo templates are explicitly validated as `solo-mode:true`. The updater protects player-owned configuration such as `server/plugins/MonsterMazeStandalone/config.yml` and `server/server.properties`, so a release update does not silently convert an existing Solo installation into a hosted configuration.
 
 The normal player flow is therefore:
 
@@ -142,7 +142,7 @@ GitHub Release
               updater checks latest release
 ```
 
-A fresh install is downloaded from the GitHub Release. Subsequent releases do not require players to manually download the full package: launching the game performs the update check first. citeturn0search7
+A fresh install is downloaded from the GitHub Release. Subsequent releases do not require players to manually download the full package: launching the game performs the update check first.
 
 ## Updater source integrity
 
