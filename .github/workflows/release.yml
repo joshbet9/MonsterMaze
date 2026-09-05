@@ -72,12 +72,13 @@ jobs:
           if (-not (Test-Path $spigot)) { throw "Spigot 1.8.8 JAR was not produced: $spigot" }
           "MM_SPIGOT_JAR=$spigot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Test 1.8
+      - name: Build and test 1.8
         shell: pwsh
         working-directory: ${{ github.workspace }}\1.8\MonsterMazeStandalone
         run: |
-          mvn.cmd clean test
-          if ($LASTEXITCODE -ne 0) { throw "1.8 tests failed with exit code $LASTEXITCODE." }
+          mvn.cmd clean package
+          if ($LASTEXITCODE -ne 0) { throw "1.8 build/tests failed with exit code $LASTEXITCODE." }
+          if (-not (Test-Path '.\target\MonsterMazeStandalone.jar')) { throw '1.8 tested plugin JAR was not produced.' }
 
       - name: Package Solo 1.8 from tested build
         shell: pwsh
@@ -131,12 +132,13 @@ jobs:
           if (-not (Test-Path $protocol)) { throw 'ProtocolLib download failed.' }
           "MM_PROTOCOLLIB_JAR=$protocol" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Test 1.21
+      - name: Build and test 1.21
         shell: pwsh
         working-directory: ${{ github.workspace }}\1.21\MonsterMazeStandalone
         run: |
-          mvn.cmd clean test
-          if ($LASTEXITCODE -ne 0) { throw "1.21 tests failed with exit code $LASTEXITCODE." }
+          mvn.cmd clean package
+          if ($LASTEXITCODE -ne 0) { throw "1.21 build/tests failed with exit code $LASTEXITCODE." }
+          if (-not (Test-Path '.\target\MonsterMazeStandalone.jar')) { throw '1.21 tested plugin JAR was not produced.' }
 
       - name: Package Solo 1.21 from tested build
         shell: pwsh
@@ -164,9 +166,13 @@ jobs:
           if ($solo21 -notmatch '(?m)^solo-mode:\s*true\s*$') { throw '1.21 Solo config is not solo-mode:true.' }
           if ($fly18 -notmatch '(?m)^solo-mode:\s*false\s*$') { throw 'Fly 1.8 overlay is not solo-mode:false.' }
           if ($fly21 -notmatch '(?m)^solo-mode:\s*false\s*$') { throw 'Fly 1.21 overlay is not solo-mode:false.' }
-          if ((Get-Content 'Dockerfile' -Raw) -notmatch 'mm18-deployment-config\.yml') { throw 'Dockerfile is missing the 1.8 deployment overlay.' }
-          if ((Get-Content 'Dockerfile' -Raw) -notmatch 'mm21-deployment-config\.yml') { throw 'Dockerfile is missing the 1.21 deployment overlay.' }
-          if ((Get-Content 'docker\entrypoint.sh' -Raw) -notmatch 'apply_deployment_config') { throw 'Entrypoint does not apply deployment configuration.' }
+          $docker = Get-Content 'Dockerfile' -Raw
+          $entrypoint = Get-Content 'docker\entrypoint.sh' -Raw
+          if ($docker -notmatch 'mm18-deployment-config\.yml') { throw 'Dockerfile is missing the 1.8 deployment overlay.' }
+          if ($docker -notmatch 'mm21-deployment-config\.yml') { throw 'Dockerfile is missing the 1.21 deployment overlay.' }
+          if ($entrypoint -notmatch 'apply_deployment_config') { throw 'Entrypoint does not apply deployment configuration.' }
+          if ($entrypoint -notmatch 'mm18-deployment-config\.yml') { throw 'Entrypoint is missing the 1.8 deployment overlay path.' }
+          if ($entrypoint -notmatch 'mm21-deployment-config\.yml') { throw 'Entrypoint is missing the 1.21 deployment overlay path.' }
           Write-Host 'Deployment mode contract validated.'
 
       - name: Create release checksums
