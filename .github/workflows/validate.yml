@@ -111,6 +111,10 @@ jobs:
           grep -q 'apply_deployment_config' docker/entrypoint.sh
           grep -q '/opt/mm18-deployment-config.yml' docker/entrypoint.sh
           grep -q '/opt/mm21-deployment-config.yml' docker/entrypoint.sh
+          grep -q 'eclipse-temurin:8-jre-jammy AS java8' Dockerfile
+          grep -q 'COPY --from=java8 /opt/java/openjdk /opt/java8' Dockerfile
+          grep -q 'JAVA_BIN=/opt/java8/bin/java' docker/entrypoint.sh
+          grep -q 'JAVA_BIN=/usr/bin/java' docker/entrypoint.sh
 
   solo-integrity:
     name: Validate Solo PB integrity contract
