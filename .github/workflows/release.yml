@@ -79,7 +79,7 @@ jobs:
           mvn.cmd clean test
           if ($LASTEXITCODE -ne 0) { throw "1.8 tests failed with exit code $LASTEXITCODE." }
 
-      - name: Package Solo 1.8
+      - name: Package Solo 1.8 from tested build
         shell: pwsh
         working-directory: ${{ github.workspace }}\solo
         env:
@@ -88,7 +88,7 @@ jobs:
           MM_RELEASE_SOURCE_BASE_URL: https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${{ env.RELEASE_TAG }}/solo
         run: |
           $version = $env:RELEASE_TAG -replace '^v', ''
-          .\pack.ps1 -ReleaseVersion $version -ReleaseNote $env:MM_RELEASE_NOTE
+          .\pack.ps1 -ReleaseVersion $version -ReleaseNote $env:MM_RELEASE_NOTE -SkipBuild
           if ($LASTEXITCODE -ne 0) { throw "1.8 Solo packaging failed with exit code $LASTEXITCODE." }
           Copy-Item -Force .\solo-dist.zip .\MonsterMaze-Solo.zip
           Copy-Item -Force .\version.json .\solo-1.8-version.json
@@ -138,7 +138,7 @@ jobs:
           mvn.cmd clean test
           if ($LASTEXITCODE -ne 0) { throw "1.21 tests failed with exit code $LASTEXITCODE." }
 
-      - name: Package Solo 1.21
+      - name: Package Solo 1.21 from tested build
         shell: pwsh
         working-directory: ${{ github.workspace }}\solo\1.21
         env:
@@ -147,10 +147,27 @@ jobs:
           MM_RELEASE_SOURCE_BASE_URL: https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${{ env.RELEASE_TAG }}/solo/1.21
         run: |
           $version = $env:RELEASE_TAG -replace '^v', ''
-          .\pack.ps1 -ReleaseVersion $version -ReleaseNote $env:MM_RELEASE_NOTE
+          .\pack.ps1 -ReleaseVersion $version -ReleaseNote $env:MM_RELEASE_NOTE -SkipBuild
           if ($LASTEXITCODE -ne 0) { throw "1.21 Solo packaging failed with exit code $LASTEXITCODE." }
           Copy-Item -Force .\solo-1.21-dist.zip .\1.21-MonsterMaze-Solo.zip
           Copy-Item -Force .\version.json .\solo-1.21-version.json
+
+      - name: Validate deployment overlays and Solo integrity contract
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $solo18 = Get-Content 'solo\server\plugins\MonsterMazeStandalone\config.yml' -Raw
+          $solo21 = Get-Content 'solo\1.21\server\plugins\MonsterMazeStandalone\config.yml' -Raw
+          $fly18 = Get-Content 'docker\deployments\fly\1.8\config.yml' -Raw
+          $fly21 = Get-Content 'docker\deployments\fly\1.21\config.yml' -Raw
+          if ($solo18 -notmatch '(?m)^solo-mode:\s*true\s*$') { throw '1.8 Solo config is not solo-mode:true.' }
+          if ($solo21 -notmatch '(?m)^solo-mode:\s*true\s*$') { throw '1.21 Solo config is not solo-mode:true.' }
+          if ($fly18 -notmatch '(?m)^solo-mode:\s*false\s*$') { throw 'Fly 1.8 overlay is not solo-mode:false.' }
+          if ($fly21 -notmatch '(?m)^solo-mode:\s*false\s*$') { throw 'Fly 1.21 overlay is not solo-mode:false.' }
+          if ((Get-Content 'Dockerfile' -Raw) -notmatch 'mm18-deployment-config\.yml') { throw 'Dockerfile is missing the 1.8 deployment overlay.' }
+          if ((Get-Content 'Dockerfile' -Raw) -notmatch 'mm21-deployment-config\.yml') { throw 'Dockerfile is missing the 1.21 deployment overlay.' }
+          if ((Get-Content 'docker\entrypoint.sh' -Raw) -notmatch 'apply_deployment_config') { throw 'Entrypoint does not apply deployment configuration.' }
+          Write-Host 'Deployment mode contract validated.'
 
       - name: Create release checksums
         shell: pwsh
@@ -192,8 +209,16 @@ jobs:
             foreach ($property in $manifest.files.PSObject.Properties) {
               if (-not $property.Value.sha256 -or $property.Value.sha256.Length -ne 64) { throw "Invalid SHA-256 for $($property.Name)" }
               if (-not $property.Value.url) { throw "Release manifest is missing immutable source URL for $($property.Name)" }
+              if ($property.Value.url -notmatch ('/refs/tags/' + [regex]::Escape($env:RELEASE_TAG) + '/')) { throw "Manifest URL for $($property.Name) is not pinned to the release tag." }
             }
           }
+
+      - name: Build Fly image as final packaging smoke test
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker build --pull -t monstermaze-release-smoke:${{ env.RELEASE_TAG }} .
+          if ($LASTEXITCODE -ne 0) { throw "Docker image build failed with exit code $LASTEXITCODE." }
 
       - name: Publish GitHub Release
         shell: pwsh
