@@ -2,7 +2,7 @@
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $marker = Join-Path $here "installed.version"
-$manifestUrl = if ($env:MM_UPDATE_MANIFEST_URL) { $env:MM_UPDATE_MANIFEST_URL } else { "https://raw.githubusercontent.com/joshbet9/MonsterMaze/main/solo/1.21/version.json" }
+$manifestUrl = if ($env:MM_UPDATE_MANIFEST_URL) { $env:MM_UPDATE_MANIFEST_URL } else { "https://github.com/joshbet9/MonsterMaze/releases/latest/download/solo-1.21-version.json" }
 function Step([string]$m) { Write-Host "[MM-Update] $m" }
 Step "Checking for updates..."
 try { $manifest = Invoke-RestMethod -Uri $manifestUrl -TimeoutSec 20 } catch { Write-Host "Update server unavailable; continuing without an update."; exit 0 }
@@ -15,7 +15,7 @@ $running = $false
 try { $running = @(Get-CimInstance Win32_Process -Filter "Name='java.exe'" -ErrorAction Stop | Where-Object { $_.CommandLine -like "*paper-1.21.11.jar*" }).Count -gt 0 } catch {}
 if ($running) { Write-Host "Server is running. Close it before updating."; exit 1 }
 
-$base = ($manifestUrl -replace "version\.json$", "")
+$base = ($manifestUrl -replace "[^/]+$", "")
 $tmpDir = Join-Path $here ".update-tmp"
 $backupDir = Join-Path $here ".update-backup"
 New-Item -ItemType Directory -Force $tmpDir | Out-Null
@@ -27,12 +27,15 @@ foreach ($key in $manifest.files.PSObject.Properties.Name) {
     if ($hash -eq $entry.sha256) { continue }
     $guard = $key.ToLowerInvariant()
     if (@('submitter/config.ps1','server/server.properties','server/plugins/monstermazestandalone/config.yml') -contains $guard) { Write-Host "Preserving $key"; continue }
-    $source = $key
-    if ($source -match '^server/(mm_[^/]+)(/.*)?$') { $source = 'maps/' + $Matches[1] + $Matches[2] }
+    $sourceUrl = if ($entry.url) { [string]$entry.url } else {
+        $source = $key
+        if ($source -match '^server/(mm_[^/]+)(/.*)?$') { $source = 'maps/' + $Matches[1] + $Matches[2] }
+        $base + $source
+    }
     $tmp = Join-Path $tmpDir (($key -replace '/', '\\') + '.tmp')
     New-Item -ItemType Directory -Force (Split-Path $tmp) | Out-Null
     try {
-        Invoke-WebRequest -Uri ($base + $source) -OutFile $tmp -TimeoutSec 120 -UseBasicParsing
+        Invoke-WebRequest -Uri $sourceUrl -OutFile $tmp -TimeoutSec 120 -UseBasicParsing
         $got = (Get-FileHash $tmp -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($got -ne $entry.sha256) { throw "Hash mismatch" }
         if (Test-Path $dest) {
