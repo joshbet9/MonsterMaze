@@ -68,16 +68,18 @@ jobs:
       - name: Download pinned BuildTools
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri $env:BUILDTOOLS_URL -OutFile "$env:RUNNER_TEMP\BuildTools.jar"
-          if (-not (Test-Path "$env:RUNNER_TEMP\BuildTools.jar")) { throw 'BuildTools download failed.' }
+          Invoke-WebRequest -Uri $env:BUILDTOOLS_URL -OutFile "$env:RUNNER_TEMP/BuildTools.jar"
+          if (-not (Test-Path "$env:RUNNER_TEMP/BuildTools.jar")) { throw 'BuildTools download failed.' }
 
       - name: Build Spigot 1.8.8 server
         shell: pwsh
         run: |
-          $java8 = Join-Path $env:MM_JDK8 'bin\java.exe'
-          & $java8 -Xmx2G -jar "$env:RUNNER_TEMP\BuildTools.jar" --rev 1.8.8 --output-dir "$env:RUNNER_TEMP\spigot"
+          $java8 = Join-Path $env:MM_JDK8 'bin/java'
+          $buildToolsJar = Join-Path $env:RUNNER_TEMP 'BuildTools.jar'
+          $spigotDir = Join-Path $env:RUNNER_TEMP 'spigot'
+          & $java8 -Xmx2G -jar $buildToolsJar --rev 1.8.8 --output-dir $spigotDir
           if ($LASTEXITCODE -ne 0) { throw "BuildTools failed with exit code $LASTEXITCODE." }
-          $spigot = Join-Path "$env:RUNNER_TEMP\spigot" 'spigot-1.8.8.jar'
+          $spigot = Join-Path $spigotDir 'spigot-1.8.8.jar'
           if (-not (Test-Path $spigot)) { throw 'Spigot 1.8.8 JAR was not produced.' }
           "MM_SPIGOT_JAR=$spigot" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
@@ -94,17 +96,17 @@ jobs:
 
       - name: Build and test 1.8
         shell: pwsh
-        working-directory: ${{ github.workspace }}\1.8\MonsterMazeStandalone
+        working-directory: ${{ github.workspace }}/1.8/MonsterMazeStandalone
         env:
           MAVEN_OPTS: '-Xmx2G'
         run: |
           mvn clean package
           if ($LASTEXITCODE -ne 0) { throw "1.8 build/tests failed with exit code $LASTEXITCODE." }
-          if (-not (Test-Path '.\target\MonsterMazeStandalone.jar')) { throw '1.8 tested plugin JAR was not produced.' }
+          if (-not (Test-Path './target/MonsterMazeStandalone.jar')) { throw '1.8 tested plugin JAR was not produced.' }
 
       - name: Package Solo 1.8 from tested build
         shell: pwsh
-        working-directory: ${{ github.workspace }}\solo
+        working-directory: ${{ github.workspace }}/solo
         env:
           MM_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
           MM_RELEASE_NOTE: ${{ env.RELEASE_NOTE }}
@@ -112,11 +114,11 @@ jobs:
           MM_RELEASE_ASSET_BASE_URL: https://github.com/joshbet9/MonsterMaze/releases/download/${{ env.RELEASE_TAG }}
         run: |
           $version = $env:RELEASE_TAG -replace '^v', ''
-          .\pack.ps1 -ReleaseVersion $version -ReleaseNote $env:MM_RELEASE_NOTE -SkipBuild
+          ./pack.ps1 -ReleaseVersion $version -ReleaseNote $env:MM_RELEASE_NOTE -SkipBuild
           if ($LASTEXITCODE -ne 0) { throw "1.8 Solo packaging failed with exit code $LASTEXITCODE." }
-          Copy-Item -Force .\solo-dist.zip .\MonsterMaze-Solo.zip
-          Copy-Item -Force .\version.json .\solo-1.8-version.json
-          Copy-Item -Force .\server\plugins\MonsterMazeStandalone.jar ..\MonsterMaze-Solo-1.8-plugin.jar
+          Copy-Item -Force ./solo-dist.zip ./MonsterMaze-Solo.zip
+          Copy-Item -Force ./version.json ./solo-1.8-version.json
+          Copy-Item -Force ./server/plugins/MonsterMazeStandalone.jar ../MonsterMaze-Solo-1.8-plugin.jar
 
       - name: Setup Java 21
         uses: actions/setup-java@v5
@@ -156,17 +158,17 @@ jobs:
 
       - name: Build and test 1.21
         shell: pwsh
-        working-directory: ${{ github.workspace }}\1.21\MonsterMazeStandalone
+        working-directory: ${{ github.workspace }}/1.21/MonsterMazeStandalone
         env:
           MAVEN_OPTS: '-Xmx2G'
         run: |
           mvn clean package
           if ($LASTEXITCODE -ne 0) { throw "1.21 build/tests failed with exit code $LASTEXITCODE." }
-          if (-not (Test-Path '.\target\MonsterMazeStandalone.jar')) { throw '1.21 tested plugin JAR was not produced.' }
+          if (-not (Test-Path './target/MonsterMazeStandalone.jar')) { throw '1.21 tested plugin JAR was not produced.' }
 
       - name: Package Solo 1.21 from tested build
         shell: pwsh
-        working-directory: ${{ github.workspace }}\solo\1.21
+        working-directory: ${{ github.workspace }}/solo/1.21
         env:
           MM_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
           MM_RELEASE_NOTE: ${{ env.RELEASE_NOTE }}
@@ -174,38 +176,38 @@ jobs:
           MM_RELEASE_ASSET_BASE_URL: https://github.com/joshbet9/MonsterMaze/releases/download/${{ env.RELEASE_TAG }}
         run: |
           $version = $env:RELEASE_TAG -replace '^v', ''
-          .\pack.ps1 -ReleaseVersion $version -ReleaseNote $env:MM_RELEASE_NOTE -SkipBuild
+          ./pack.ps1 -ReleaseVersion $version -ReleaseNote $env:MM_RELEASE_NOTE -SkipBuild
           if ($LASTEXITCODE -ne 0) { throw "1.21 Solo packaging failed with exit code $LASTEXITCODE." }
-          Copy-Item -Force .\solo-1.21-dist.zip .\1.21-MonsterMaze-Solo.zip
-          Copy-Item -Force .\version.json .\solo-1.21-version.json
-          Copy-Item -Force .\solo-dist\server\plugins\MonsterMazeStandalone.jar ..\..\MonsterMaze-Solo-1.21-plugin.jar
-          Copy-Item -Force .\solo-dist\server\plugins\ProtocolLib.jar ..\..\MonsterMaze-Solo-1.21-ProtocolLib.jar
-          Copy-Item -Force .\solo-dist\server\paper-1.21.11.jar ..\..\MonsterMaze-Solo-1.21-Paper.jar
+          Copy-Item -Force ./solo-1.21-dist.zip ./1.21-MonsterMaze-Solo.zip
+          Copy-Item -Force ./version.json ./solo-1.21-version.json
+          Copy-Item -Force ./solo-dist/server/plugins/MonsterMazeStandalone.jar ../../MonsterMaze-Solo-1.21-plugin.jar
+          Copy-Item -Force ./solo-dist/server/plugins/ProtocolLib.jar ../../MonsterMaze-Solo-1.21-ProtocolLib.jar
+          Copy-Item -Force ./solo-dist/server/paper-1.21.11.jar ../../MonsterMaze-Solo-1.21-Paper.jar
 
       - name: Prepare canonical hosted server artifacts
         shell: pwsh
         working-directory: ${{ github.workspace }}
         run: |
-          $root = Join-Path $env:GITHUB_WORKSPACE 'docker\build-context'
+          $root = Join-Path $env:GITHUB_WORKSPACE 'docker/build-context'
           if (Test-Path $root) { Remove-Item -Recurse -Force $root }
-          New-Item -ItemType Directory -Force -Path "$root\1.8", "$root\1.21" | Out-Null
-          Copy-Item -Recurse -Force 'solo\solo-dist\server' "$root\1.8\server"
-          Copy-Item -Recurse -Force 'solo\1.21\solo-dist\server' "$root\1.21\server"
-          Copy-Item -Force 'docker\deployments\fly\1.8\config.yml' "$root\1.8\server\plugins\MonsterMazeStandalone\config.yml"
-          Copy-Item -Force 'docker\deployments\fly\1.21\config.yml' "$root\1.21\server\plugins\MonsterMazeStandalone\config.yml"
+          New-Item -ItemType Directory -Force -Path "$root/1.8", "$root/1.21" | Out-Null
+          Copy-Item -Recurse -Force 'solo/solo-dist/server' "$root/1.8/server"
+          Copy-Item -Recurse -Force 'solo/1.21/solo-dist/server' "$root/1.21/server"
+          Copy-Item -Force 'docker/deployments/fly/1.8/config.yml' "$root/1.8/server/plugins/MonsterMazeStandalone/config.yml"
+          Copy-Item -Force 'docker/deployments/fly/1.21/config.yml' "$root/1.21/server/plugins/MonsterMazeStandalone/config.yml"
           foreach ($version in @('1.8','1.21')) {
-            $server = "$root\$version\server"
-            Remove-Item -Recurse -Force "$server\world", "$server\logs", "$server\plugins\MonsterMazeStandalone\solo-runs" -ErrorAction SilentlyContinue
-            $config = Get-Content "$server\plugins\MonsterMazeStandalone\config.yml" -Raw
+            $server = "$root/$version/server"
+            Remove-Item -Recurse -Force "$server/world", "$server/logs", "$server/plugins/MonsterMazeStandalone/solo-runs" -ErrorAction SilentlyContinue
+            $config = Get-Content "$server/plugins/MonsterMazeStandalone/config.yml" -Raw
             if ($config -notmatch '(?m)^solo-mode:\s*false\s*$') { throw "$version hosted artifact is not solo-mode:false." }
-            if (Test-Path "$server\.env") { throw "$version hosted artifact contains .env." }
+            if (Test-Path "$server/.env") { throw "$version hosted artifact contains .env." }
           }
 
       - name: Verify release artifacts contain no production credentials
         shell: pwsh
         working-directory: ${{ github.workspace }}
         run: |
-          $scanRoots = @('docker\build-context\1.8\server','docker\build-context\1.21\server')
+          $scanRoots = @('docker/build-context/1.8/server','docker/build-context/1.21/server')
           $patterns = '(?i)(MM_API_TOKEN\s*[:=]|authorization\s*[:=]|bearer\s+[A-Za-z0-9._-]{20,}|password\s*[:=]\s*[^\s#]+|secret\s*[:=]\s*[^\s#]+)'
           foreach ($root in $scanRoots) {
             $files = Get-ChildItem $root -Recurse -File | Where-Object { $_.Extension -in @('.yml','.yaml','.properties','.json','.txt','.conf','.env') }
@@ -218,8 +220,8 @@ jobs:
         shell: pwsh
         working-directory: ${{ github.workspace }}
         run: |
-          Compress-Archive -Path 'docker\build-context\1.8\server\*' -DestinationPath 'MonsterMaze-Server-1.8.zip' -CompressionLevel Optimal
-          Compress-Archive -Path 'docker\build-context\1.21\server\*' -DestinationPath 'MonsterMaze-Server-1.21.zip' -CompressionLevel Optimal
+          Compress-Archive -Path 'docker/build-context/1.8/server/*' -DestinationPath 'MonsterMaze-Server-1.8.zip' -CompressionLevel Optimal
+          Compress-Archive -Path 'docker/build-context/1.21/server/*' -DestinationPath 'MonsterMaze-Server-1.21.zip' -CompressionLevel Optimal
           if ((Get-Item 'MonsterMaze-Server-1.8.zip').Length -le 0) { throw '1.8 server artifact is empty.' }
           if ((Get-Item 'MonsterMaze-Server-1.21.zip').Length -le 0) { throw '1.21 server artifact is empty.' }
 
@@ -255,11 +257,11 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           $assets = @(
-            'solo\MonsterMaze-Solo.zip',
-            'solo\solo-1.8-version.json',
+            'solo/MonsterMaze-Solo.zip',
+            'solo/solo-1.8-version.json',
             'MonsterMaze-Solo-1.8-plugin.jar',
-            'solo\1.21\1.21-MonsterMaze-Solo.zip',
-            'solo\1.21\solo-1.21-version.json',
+            'solo/1.21/1.21-MonsterMaze-Solo.zip',
+            'solo/1.21/solo-1.21-version.json',
             'MonsterMaze-Solo-1.21-plugin.jar',
             'MonsterMaze-Solo-1.21-Paper.jar',
             'MonsterMaze-Solo-1.21-ProtocolLib.jar',
@@ -280,11 +282,11 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           $required = @(
-            'solo\MonsterMaze-Solo.zip',
-            'solo\solo-1.8-version.json',
+            'solo/MonsterMaze-Solo.zip',
+            'solo/solo-1.8-version.json',
             'MonsterMaze-Solo-1.8-plugin.jar',
-            'solo\1.21\1.21-MonsterMaze-Solo.zip',
-            'solo\1.21\solo-1.21-version.json',
+            'solo/1.21/1.21-MonsterMaze-Solo.zip',
+            'solo/1.21/solo-1.21-version.json',
             'MonsterMaze-Solo-1.21-plugin.jar',
             'MonsterMaze-Solo-1.21-Paper.jar',
             'MonsterMaze-Solo-1.21-ProtocolLib.jar',
@@ -295,8 +297,8 @@ jobs:
           )
           foreach ($path in $required) { if (-not (Test-Path $path)) { throw "Release asset missing: $path" } }
           $expectedVersion = $env:RELEASE_TAG -replace '^v', ''
-          $m18 = Get-Content 'solo\solo-1.8-version.json' -Raw | ConvertFrom-Json
-          $m21 = Get-Content 'solo\1.21\solo-1.21-version.json' -Raw | ConvertFrom-Json
+          $m18 = Get-Content 'solo/solo-1.8-version.json' -Raw | ConvertFrom-Json
+          $m21 = Get-Content 'solo/1.21/solo-1.21-version.json' -Raw | ConvertFrom-Json
           if ($m18.'install-version' -ne $expectedVersion) { throw '1.8 manifest version does not match tag.' }
           if ($m21.'install-version' -ne $expectedVersion) { throw '1.21 manifest version does not match tag.' }
           foreach ($manifest in @($m18, $m21)) {
@@ -322,11 +324,11 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           gh release create $env:RELEASE_TAG `
-            'solo\MonsterMaze-Solo.zip' `
-            'solo\solo-1.8-version.json' `
+            'solo/MonsterMaze-Solo.zip' `
+            'solo/solo-1.8-version.json' `
             'MonsterMaze-Solo-1.8-plugin.jar' `
-            'solo\1.21\1.21-MonsterMaze-Solo.zip' `
-            'solo\1.21\solo-1.21-version.json' `
+            'solo/1.21/1.21-MonsterMaze-Solo.zip' `
+            'solo/1.21/solo-1.21-version.json' `
             'MonsterMaze-Solo-1.21-plugin.jar' `
             'MonsterMaze-Solo-1.21-Paper.jar' `
             'MonsterMaze-Solo-1.21-ProtocolLib.jar' `
