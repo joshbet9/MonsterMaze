@@ -123,15 +123,7 @@ async def update_issue_from_thread(thread, issue_number):
         print(f"Failed to update GitHub Issue #{issue_number} from Discord thread {thread.id}: {exc}", flush=True)
 
 
-async def handle_message_edit(message_id, channel_id):
-    if message_id != channel_id:
-        return
-    try:
-        thread = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
-    except discord.HTTPException:
-        return
-    if not isinstance(thread, discord.Thread):
-        return
+async def sync_thread_to_issue(thread):
     if thread.guild is None or thread.guild.id != DISCORD_GUILD_ID:
         return
     if thread.parent_id not in {BUG_CHANNEL_ID, IDEA_CHANNEL_ID}:
@@ -141,6 +133,18 @@ async def handle_message_edit(message_id, channel_id):
         await update_issue_from_thread(thread, issue_number)
     else:
         await create_issue_from_thread(thread)
+
+
+async def handle_message_edit(message_id, channel_id):
+    if message_id != channel_id:
+        return
+    try:
+        thread = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+    except discord.HTTPException:
+        return
+    if not isinstance(thread, discord.Thread):
+        return
+    await sync_thread_to_issue(thread)
 
 
 async def sync_issue_to_discord(issue):
@@ -241,6 +245,13 @@ async def on_ready():
 @bot.event
 async def on_thread_create(thread):
     await create_issue_from_thread(thread)
+
+
+@bot.event
+async def on_thread_update(before, after):
+    if before.name == after.name:
+        return
+    await sync_thread_to_issue(after)
 
 
 @bot.event
