@@ -1,12 +1,15 @@
+FROM eclipse-temurin:8-jre-jammy AS java8
+
 FROM ubuntu:24.04
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates logrotate \
     && rm -rf /var/lib/apt/lists/*
 
-# Both public servers run from the same image, with Java 21 selected as the
-# common runtime. The release pipeline supplies the exact tested server
-# templates in docker/build-context/.
+# Hosted MM18 and MM21 require different Java generations. Keep both runtimes
+# in the same image so the canonical server image remains version-selectable.
+COPY --from=java8 /opt/java/openjdk /opt/java8
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openjdk-21-jre-headless \
     && rm -rf /var/lib/apt/lists/*
