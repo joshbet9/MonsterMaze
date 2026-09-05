@@ -13,12 +13,13 @@ $dist = Join-Path $here "solo-dist"
 $JDK8 = if ($env:MM_JDK8) { $env:MM_JDK8 } else { "C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium\jdk-8.0.502.7-hotspot" }
 $SPIGOT = if ($env:MM_SPIGOT_JAR) { $env:MM_SPIGOT_JAR } else { "C:\monstermaze_test\spigot-1.8.8.jar" }
 $maps = Join-Path $here "maps"
-$sourceProject = Join-Path $repoRoot "1.8\MonsterMazeStandalone"
-$sourceJar = Join-Path $sourceProject "target\MonsterMazeStandalone.jar"
-$soloJar = Join-Path $here "server\plugins\MonsterMazeStandalone.jar"
-$maven = "mvn.cmd"
+$sourceProject = Join-Path $repoRoot "1.8/MonsterMazeStandalone"
+$sourceJar = Join-Path $sourceProject "target/MonsterMazeStandalone.jar"
+$soloJar = Join-Path $here "server/plugins/MonsterMazeStandalone.jar"
+$maven = "mvn"
+$javaExe = if ($IsWindows) { "java.exe" } else { "java" }
 
-if (-not (Test-Path (Join-Path $JDK8 "bin\java.exe"))) { throw "JDK8 not found at $JDK8" }
+if (-not (Test-Path (Join-Path $JDK8 "bin/$javaExe"))) { throw "JDK8 not found at $JDK8" }
 if (-not (Test-Path $SPIGOT)) { throw "spigot jar not found at $SPIGOT" }
 if (-not (Test-Path $maps)) { throw "Canonical maps directory not found at $maps" }
 if (-not (Test-Path (Join-Path $sourceProject "pom.xml"))) { throw "1.8 source project not found at $sourceProject" }
@@ -51,26 +52,28 @@ Copy-Item -Recurse -Force (Join-Path $here "server") (Join-Path $dist "server")
 Copy-Item -Force (Join-Path $here "HOW_TO_PLAY.txt") (Join-Path $dist "HOW_TO_PLAY.txt")
 
 foreach ($map in $requiredMaps) {
-    Copy-Item -Recurse -Force (Join-Path $maps $map) (Join-Path $dist "server\$map")
+    Copy-Item -Recurse -Force (Join-Path $maps $map) (Join-Path $dist "server/$map")
 }
 
 $stripServer = @(
-    "$dist\server\world", "$dist\server\world_nether", "$dist\server\world_the_end",
-    "$dist\server\logs", "$dist\server\plugins\MonsterMazeStandalone\solo-runs"
+    (Join-Path $dist "server/world"), (Join-Path $dist "server/world_nether"), (Join-Path $dist "server/world_the_end"),
+    (Join-Path $dist "server/logs"), (Join-Path $dist "server/plugins/MonsterMazeStandalone/solo-runs")
 )
 $strip = @($stripServer + @(
-    "$dist\submitter\submitted", "$dist\.update-tmp", "$dist\.update-backup"
+    (Join-Path $dist "submitter/submitted"), (Join-Path $dist ".update-tmp"), (Join-Path $dist ".update-backup")
 ))
 foreach ($p in ($strip | Select-Object -Unique)) { if (Test-Path $p) { Remove-Item -Recurse -Force $p } }
 
-Copy-Item -Recurse -Force $JDK8 (Join-Path $dist "runtime\jdk8")
-Copy-Item -Force $SPIGOT (Join-Path $dist "server\spigot-1.8.8.jar")
+Copy-Item -Recurse -Force $JDK8 (Join-Path $dist "runtime/jdk8")
+Copy-Item -Force $SPIGOT (Join-Path $dist "server/spigot-1.8.8.jar")
 
-$manifestTool = Join-Path $here "updater_tools\make_manifest.ps1"
+$manifestTool = Join-Path $here "updater_tools/make_manifest.ps1"
 $versionFile = Join-Path $here "version.json"
 if (-not (Test-Path $manifestTool)) { throw "Manifest tool not found: $manifestTool" }
 if (-not (Test-Path $versionFile)) { throw "version.json not found: $versionFile" }
-& powershell -NoProfile -ExecutionPolicy Bypass -File $manifestTool -Version $ReleaseVersion -Note $ReleaseNote -SourceBaseUrl $env:MM_RELEASE_SOURCE_BASE_URL -ReleaseAssetBaseUrl $env:MM_RELEASE_ASSET_BASE_URL
+$pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+if (-not $pwsh) { $pwsh = (Get-Command powershell -ErrorAction Stop).Source }
+& $pwsh -NoProfile -ExecutionPolicy Bypass -File $manifestTool -Version $ReleaseVersion -Note $ReleaseNote -SourceBaseUrl $env:MM_RELEASE_SOURCE_BASE_URL -ReleaseAssetBaseUrl $env:MM_RELEASE_ASSET_BASE_URL
 if ($LASTEXITCODE -ne 0) { throw "Manifest generation failed with exit code $LASTEXITCODE." }
 
 Copy-Item -Force $versionFile (Join-Path $dist "version.json")
@@ -89,8 +92,8 @@ $archive = New-Object System.IO.Compression.ZipArchive($fs,[System.IO.Compressio
 try {
     $fileCount = 0
     Get-ChildItem -LiteralPath $dist -Recurse -File | ForEach-Object {
-        $relative = $_.FullName.Substring($dist.Length).TrimStart('\','/')
-        $entryName = $relative.Replace('\','/')
+        $relative = $_.FullName.Substring($dist.Length).TrimStart('\\','/')
+        $entryName = $relative.Replace('\\','/')
         $entry = $archive.CreateEntry($entryName,[System.IO.Compression.CompressionLevel]::Optimal)
         $in = $_.OpenRead()
         try { $out = $entry.Open(); try { $in.CopyTo($out) } finally { $out.Dispose() } } finally { $in.Dispose() }
@@ -103,7 +106,7 @@ $size = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 $probe = [System.IO.Compression.ZipFile]::OpenRead($zip)
 try {
     $entries = @($probe.Entries | ForEach-Object { $_.FullName })
-    $bad = @($entries | Where-Object { $_ -match '\\' }).Count -gt 0
+    $bad = @($entries | Where-Object { $_ -match '\\\\' }).Count -gt 0
     $requiredRoots = @('server/','launcher/','submitter/','runtime/')
     $missingRoots = @($requiredRoots | Where-Object {
         $root = $_
