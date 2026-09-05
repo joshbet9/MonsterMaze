@@ -27,11 +27,14 @@ if ($env:MM_SOLO_JDK21_WINDOWS) {
     $jdkUrl = 'https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_windows_hotspot_21.0.12.1_1.zip'
     $jdkZip = Join-Path ([System.IO.Path]::GetTempPath()) 'MonsterMaze-Temurin21-Windows.zip'
     $jdkExtract = Join-Path ([System.IO.Path]::GetTempPath()) 'MonsterMaze-Temurin21-Windows'
+    $headers = @{ 'User-Agent' = 'MonsterMaze-Release/1.0 (https://github.com/joshbet9/MonsterMaze)' }
     if (Test-Path $jdkZip) { Remove-Item -Force $jdkZip }
     if (Test-Path $jdkExtract) { Remove-Item -Recurse -Force $jdkExtract }
-    Invoke-WebRequest -Uri $jdkUrl -OutFile $jdkZip
-    $checksumText = (Invoke-WebRequest -Uri ($jdkUrl + '.sha256.txt')).Content
-    $expectedChecksum = (($checksumText -split '\s+')[0]).ToLowerInvariant()
+    Invoke-WebRequest -Uri $jdkUrl -Headers $headers -OutFile $jdkZip
+    $checksumText = (Invoke-WebRequest -Uri ($jdkUrl + '.sha256.txt') -Headers $headers).Content
+    $checksumMatch = [regex]::Match($checksumText, '(?i)\b[0-9a-f]{64}\b')
+    if (-not $checksumMatch.Success) { throw 'Could not parse Windows JDK 21 SHA-256 checksum.' }
+    $expectedChecksum = $checksumMatch.Value.ToLowerInvariant()
     $actualChecksum = (Get-FileHash $jdkZip -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualChecksum -ne $expectedChecksum) { throw "Windows JDK 21 SHA-256 mismatch." }
     Expand-Archive -LiteralPath $jdkZip -DestinationPath $jdkExtract -Force
