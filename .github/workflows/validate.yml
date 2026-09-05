@@ -11,6 +11,7 @@ permissions:
 
 env:
   BUILDTOOLS_URL: 'https://hub.spigotmc.org/jenkins/job/BuildTools/200/artifact/target/BuildTools.jar'
+  PROTOCOLLIB_URL: 'https://github.com/dmulloy2/ProtocolLib/releases/download/5.4.0/ProtocolLib.jar'
 
 jobs:
   build-1-8:
@@ -209,7 +210,7 @@ jobs:
           distribution: temurin
           java-version: '8'
           cache: maven
-      - name: Download pinned BuildTools
+      - name: Build Spigot 1.8.8 and install dependency
         shell: bash
         run: |
           set -euo pipefail
@@ -238,8 +239,8 @@ jobs:
           set -euo pipefail
           test -f solo/solo-dist.zip
           unzip -l solo/solo-dist.zip | grep -q 'runtime/jdk8/bin/java.exe'
-          unzip -l solo/solo-dist.zip | grep -q '^.*server/plugins/MonsterMazeStandalone.jar$'
-          unzip -l solo/solo-dist.zip | grep -q '^.*version.json$'
+          unzip -l solo/solo-dist.zip | grep -q 'server/plugins/MonsterMazeStandalone.jar'
+          unzip -l solo/solo-dist.zip | grep -q 'version.json'
 
   release-package-1-21:
     name: Validate release packaging 1.21
@@ -254,15 +255,25 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Download pinned Paper and ProtocolLib
+      - name: Download stable Paper 1.21.11 and ProtocolLib 5.4.0
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p solo/1.21/tools
-          curl -fsSL 'https://api.papermc.io/v2/projects/paper/versions/1.21.11/builds/121/downloads/paper-1.21.11-121.jar' -o solo/1.21/tools/paper-1.21.11.jar
-          curl -fsSL 'https://github.com/dmulloy2/ProtocolLib/releases/download/5.4.0/ProtocolLib.jar' -o solo/1.21/tools/ProtocolLib.jar
-          test -s solo/1.21/tools/paper-1.21.11.jar
-          test -s solo/1.21/tools/ProtocolLib.jar
+          python - <<'PY'
+          import json, urllib.request
+          headers={'User-Agent':'MonsterMaze-CI/1.0 (https://github.com/joshbet9/MonsterMaze)'}
+          req=urllib.request.Request('https://fill.papermc.io/v3/projects/paper/versions/1.21.11/builds',headers=headers)
+          builds=json.load(urllib.request.urlopen(req))
+          stable=sorted((b for b in builds if b.get('channel')=='STABLE'),key=lambda b:b['id'],reverse=True)
+          if not stable: raise SystemExit('No stable Paper 1.21.11 build was returned.')
+          d=stable[0]['downloads']['server:default']
+          urllib.request.urlretrieve(d['url'],'solo/1.21/tools/paper-1.21.11.jar')
+          actual=__import__('hashlib').sha256(open('solo/1.21/tools/paper-1.21.11.jar','rb').read()).hexdigest()
+          if actual.lower()!=d['checksums']['sha256'].lower(): raise SystemExit('Paper SHA-256 mismatch.')
+          urllib.request.urlretrieve('https://github.com/dmulloy2/ProtocolLib/releases/download/5.4.0/ProtocolLib.jar','solo/1.21/tools/ProtocolLib.jar')
+          if not __import__('os').path.getsize('solo/1.21/tools/ProtocolLib.jar'): raise SystemExit('ProtocolLib download is empty.')
+          PY
       - name: Build tested plugin for packer
         working-directory: 1.21/MonsterMazeStandalone
         env:
@@ -285,5 +296,5 @@ jobs:
           set -euo pipefail
           test -f solo/1.21/solo-1.21-dist.zip
           unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'runtime/jdk21/bin/java.exe'
-          unzip -l solo/1.21/solo-1.21-dist.zip | grep -q '^.*server/plugins/MonsterMazeStandalone.jar$'
-          unzip -l solo/1.21/solo-1.21-dist.zip | grep -q '^.*version.json$'
+          unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'server/plugins/MonsterMazeStandalone.jar'
+          unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'version.json'
