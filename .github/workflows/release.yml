@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 concurrency:
   group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -23,11 +24,12 @@ env:
   RELEASE_NOTE: 'Automated Monster Maze release: tested 1.8 and 1.21 builds with fresh-install Solo distributions.'
   BUILDTOOLS_URL: 'https://hub.spigotmc.org/jenkins/job/BuildTools/200/artifact/target/BuildTools.jar'
   PROTOCOLLIB_URL: 'https://github.com/dmulloy2/ProtocolLib/releases/download/5.4.0/ProtocolLib.jar'
+  IMAGE_NAME: 'ghcr.io/joshbet9/monstermaze'
 
 jobs:
   release:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout tagged source
         uses: actions/checkout@v5
@@ -35,12 +37,20 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
 
-      - name: Validate tag format
+      - name: Validate release ref
         shell: pwsh
         run: |
-          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
-            throw "Release tag must match vX.Y.Z; got '$env:RELEASE_TAG'."
-          }
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "Release tag must match vX.Y.Z; got '$env:RELEASE_TAG'." }
+          $commit = git rev-parse 'HEAD'
+          $tagCommit = git rev-list -n 1 "$env:RELEASE_TAG"
+          if ($commit -ne $tagCommit) { throw "Checkout is not exactly the requested tag commit." }
+          Write-Host "Building immutable source ref $env:RELEASE_TAG at $commit"
+
+      - name: Refuse injected production credentials
+        shell: pwsh
+        run: |
+          if ($env:MM_API_TOKEN) { throw 'MM_API_TOKEN must never be present in the release build environment.' }
+          if ($env:MM_API_URL) { throw 'MM_API_URL must never be injected into the release build environment.' }
 
       - name: Setup Java 8
         uses: actions/setup-java@v5
@@ -63,10 +73,8 @@ jobs:
 
       - name: Build Spigot 1.8.8 server
         shell: pwsh
-        working-directory: ${{ github.workspace }}
         run: |
           $java8 = Join-Path $env:MM_JDK8 'bin\java.exe'
-          $env:MAVEN_OPTS = '-Xmx2G'
           & $java8 -Xmx2G -jar "$env:RUNNER_TEMP\BuildTools.jar" --rev 1.8.8 --output-dir "$env:RUNNER_TEMP\spigot"
           if ($LASTEXITCODE -ne 0) { throw "BuildTools failed with exit code $LASTEXITCODE." }
           $spigot = Join-Path "$env:RUNNER_TEMP\spigot" 'spigot-1.8.8.jar'
@@ -125,7 +133,6 @@ jobs:
           if ($actual -ne $download.checksums.sha256.ToLowerInvariant()) { throw 'Paper SHA-256 mismatch.' }
           "MM_PAPER_JAR=$paperPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MM_PAPER_VERSION=$($download.name)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "Using $($download.name)"
 
       - name: Download ProtocolLib 5.4.0
         shell: pwsh
@@ -138,6 +145,8 @@ jobs:
       - name: Build and test 1.21
         shell: pwsh
         working-directory: ${{ github.workspace }}\1.21\MonsterMazeStandalone
+        env:
+          MAVEN_OPTS: '-Xmx2G'
         run: |
           mvn.cmd clean package
           if ($LASTEXITCODE -ne 0) { throw "1.21 build/tests failed with exit code $LASTEXITCODE." }
@@ -157,26 +166,67 @@ jobs:
           Copy-Item -Force .\solo-1.21-dist.zip .\1.21-MonsterMaze-Solo.zip
           Copy-Item -Force .\version.json .\solo-1.21-version.json
 
-      - name: Validate deployment overlays and Solo integrity contract
+      - name: Prepare canonical hosted server artifacts
         shell: pwsh
         working-directory: ${{ github.workspace }}
         run: |
-          $solo18 = Get-Content 'solo\server\plugins\MonsterMazeStandalone\config.yml' -Raw
-          $solo21 = Get-Content 'solo\1.21\server\plugins\MonsterMazeStandalone\config.yml' -Raw
-          $fly18 = Get-Content 'docker\deployments\fly\1.8\config.yml' -Raw
-          $fly21 = Get-Content 'docker\deployments\fly\1.21\config.yml' -Raw
-          if ($solo18 -notmatch '(?m)^solo-mode:\s*true\s*$') { throw '1.8 Solo config is not solo-mode:true.' }
-          if ($solo21 -notmatch '(?m)^solo-mode:\s*true\s*$') { throw '1.21 Solo config is not solo-mode:true.' }
-          if ($fly18 -notmatch '(?m)^solo-mode:\s*false\s*$') { throw 'Fly 1.8 overlay is not solo-mode:false.' }
-          if ($fly21 -notmatch '(?m)^solo-mode:\s*false\s*$') { throw 'Fly 1.21 overlay is not solo-mode:false.' }
-          $docker = Get-Content 'Dockerfile' -Raw
-          $entrypoint = Get-Content 'docker\entrypoint.sh' -Raw
-          if ($docker -notmatch 'mm18-deployment-config\.yml') { throw 'Dockerfile is missing the 1.8 deployment overlay.' }
-          if ($docker -notmatch 'mm21-deployment-config\.yml') { throw 'Dockerfile is missing the 1.21 deployment overlay.' }
-          if ($entrypoint -notmatch 'apply_deployment_config') { throw 'Entrypoint does not apply deployment configuration.' }
-          if ($entrypoint -notmatch 'mm18-deployment-config\.yml') { throw 'Entrypoint is missing the 1.8 deployment overlay path.' }
-          if ($entrypoint -notmatch 'mm21-deployment-config\.yml') { throw 'Entrypoint is missing the 1.21 deployment overlay path.' }
-          Write-Host 'Deployment mode contract validated.'
+          $root = Join-Path $env:GITHUB_WORKSPACE 'docker\build-context'
+          if (Test-Path $root) { Remove-Item -Recurse -Force $root }
+          New-Item -ItemType Directory -Force -Path "$root\1.8", "$root\1.21" | Out-Null
+          Copy-Item -Recurse -Force 'solo\solo-dist\server' "$root\1.8\server"
+          Copy-Item -Recurse -Force 'solo\1.21\solo-dist\server' "$root\1.21\server"
+          Copy-Item -Force 'docker\deployments\fly\1.8\config.yml' "$root\1.8\server\plugins\MonsterMazeStandalone\config.yml"
+          Copy-Item -Force 'docker\deployments\fly\1.21\config.yml' "$root\1.21\server\plugins\MonsterMazeStandalone\config.yml"
+          foreach ($version in @('1.8','1.21')) {
+            $server = "$root\$version\server"
+            Remove-Item -Recurse -Force "$server\world", "$server\logs", "$server\plugins\MonsterMazeStandalone\solo-runs" -ErrorAction SilentlyContinue
+            $config = Get-Content "$server\plugins\MonsterMazeStandalone\config.yml" -Raw
+            if ($config -notmatch '(?m)^solo-mode:\s*false\s*$') { throw "$version hosted artifact is not solo-mode:false." }
+            if (Test-Path "$server\.env") { throw "$version hosted artifact contains .env." }
+          }
+
+      - name: Verify release artifacts contain no production credentials
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $scanRoots = @('docker\build-context\1.8\server','docker\build-context\1.21\server')
+          $patterns = '(?i)(MM_API_TOKEN\s*[:=]|authorization\s*[:=]|bearer\s+[A-Za-z0-9._-]{20,}|password\s*[:=]\s*[^\s#]+|secret\s*[:=]\s*[^\s#]+)'
+          foreach ($root in $scanRoots) {
+            $files = Get-ChildItem $root -Recurse -File | Where-Object { $_.Extension -in @('.yml','.yaml','.properties','.json','.txt','.conf','.env') }
+            foreach ($file in $files) {
+              $hit = Select-String -Path $file.FullName -Pattern $patterns -AllMatches -ErrorAction SilentlyContinue
+              if ($hit) { throw "Potential production credential in artifact: $($file.FullName)" }
+            }
+          }
+
+      - name: Create canonical hosted server ZIPs
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          Compress-Archive -Path 'docker\build-context\1.8\server\*' -DestinationPath 'MonsterMaze-Server-1.8.zip' -CompressionLevel Optimal
+          Compress-Archive -Path 'docker\build-context\1.21\server\*' -DestinationPath 'MonsterMaze-Server-1.21.zip' -CompressionLevel Optimal
+          if ((Get-Item 'MonsterMaze-Server-1.8.zip').Length -le 0) { throw '1.8 server artifact is empty.' }
+          if ((Get-Item 'MonsterMaze-Server-1.21.zip').Length -le 0) { throw '1.21 server artifact is empty.' }
+
+      - name: Build and publish immutable Docker image
+        id: docker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ env.RELEASE_TAG }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.RELEASE_TAG }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Record Docker image digest
+        shell: pwsh
+        run: |
+          @(
+            "image=${env:IMAGE_NAME}:${env:RELEASE_TAG}",
+            "digest=${{ steps.docker.outputs.digest }}"
+          ) | Set-Content 'DOCKER-IMAGE.txt' -Encoding ascii
 
       - name: Create release checksums
         shell: pwsh
@@ -186,7 +236,10 @@ jobs:
             'solo\MonsterMaze-Solo.zip',
             'solo\solo-1.8-version.json',
             'solo\1.21\1.21-MonsterMaze-Solo.zip',
-            'solo\1.21\solo-1.21-version.json'
+            'solo\1.21\solo-1.21-version.json',
+            'MonsterMaze-Server-1.8.zip',
+            'MonsterMaze-Server-1.21.zip',
+            'DOCKER-IMAGE.txt'
           )
           $lines = foreach ($asset in $assets) {
             $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -195,7 +248,7 @@ jobs:
           $lines | Set-Content -Path "$env:GITHUB_WORKSPACE\SHA256SUMS.txt" -Encoding ascii
           Get-Content "$env:GITHUB_WORKSPACE\SHA256SUMS.txt"
 
-      - name: Validate release assets
+      - name: Validate release assets and manifests
         shell: pwsh
         working-directory: ${{ github.workspace }}
         run: |
@@ -204,11 +257,12 @@ jobs:
             'solo\solo-1.8-version.json',
             'solo\1.21\1.21-MonsterMaze-Solo.zip',
             'solo\1.21\solo-1.21-version.json',
+            'MonsterMaze-Server-1.8.zip',
+            'MonsterMaze-Server-1.21.zip',
+            'DOCKER-IMAGE.txt',
             'SHA256SUMS.txt'
           )
-          foreach ($path in $required) {
-            if (-not (Test-Path $path)) { throw "Release asset missing: $path" }
-          }
+          foreach ($path in $required) { if (-not (Test-Path $path)) { throw "Release asset missing: $path" } }
           $expectedVersion = $env:RELEASE_TAG -replace '^v', ''
           $m18 = Get-Content 'solo\solo-1.8-version.json' -Raw | ConvertFrom-Json
           $m21 = Get-Content 'solo\1.21\solo-1.21-version.json' -Raw | ConvertFrom-Json
@@ -233,6 +287,9 @@ jobs:
             'solo\solo-1.8-version.json' `
             'solo\1.21\1.21-MonsterMaze-Solo.zip' `
             'solo\1.21\solo-1.21-version.json' `
+            'MonsterMaze-Server-1.8.zip' `
+            'MonsterMaze-Server-1.21.zip' `
+            'DOCKER-IMAGE.txt' `
             'SHA256SUMS.txt' `
             --title "Monster Maze $env:RELEASE_TAG" `
             --generate-notes `
