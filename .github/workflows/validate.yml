@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -36,11 +37,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          java -jar "$RUNNER_TEMP/BuildTools.jar" --rev 1.8.8 --output-dir "$RUNNER_TEMP/spigot"
+          export MAVEN_OPTS='-Xmx2G'
+          java -Xmx2G -jar "$RUNNER_TEMP/BuildTools.jar" --rev 1.8.8 --output-dir "$RUNNER_TEMP/spigot"
           test -f "$RUNNER_TEMP/spigot/spigot-1.8.8.jar"
 
       - name: Build and test
         working-directory: 1.8/MonsterMazeStandalone
+        env:
+          MAVEN_OPTS: '-Xmx2G'
         run: mvn -B clean package
 
   build-1-21:
