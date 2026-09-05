@@ -45,6 +45,44 @@ jobs:
         working-directory: 1.21/MonsterMazeStandalone
         run: mvn -B clean package
 
+  deployment-config:
+    name: Validate deployment configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Solo and hosted-server modes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          assert_value() {
+            local file="$1"
+            local expected="$2"
+            local actual
+            actual=$(awk -F': *' '$1 == "solo-mode" { print $2; exit }' "$file")
+            if [ "$actual" != "$expected" ]; then
+              echo "Expected solo-mode: $expected in $file, found '$actual'"
+              exit 1
+            fi
+          }
+
+          assert_value solo/server/plugins/MonsterMazeStandalone/config.yml true
+          assert_value solo/1.21/server/plugins/MonsterMazeStandalone/config.yml true
+          assert_value docker/deployments/fly/1.8/config.yml false
+          assert_value docker/deployments/fly/1.21/config.yml false
+
+      - name: Check Fly entrypoint applies deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'apply_deployment_config' docker/entrypoint.sh
+          grep -q '/opt/mm18-deployment-config.yml' docker/entrypoint.sh
+          grep -q '/opt/mm21-deployment-config.yml' docker/entrypoint.sh
+          grep -q 'docker/deployments/fly/1.8/config.yml' Dockerfile
+          grep -q 'docker/deployments/fly/1.21/config.yml' Dockerfile
+
   repository-hygiene:
     name: Repository hygiene
     runs-on: ubuntu-latest
