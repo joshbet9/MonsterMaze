@@ -140,6 +140,7 @@ for version in 1.8 1.21; do
 
   sudo sed -i -E 's/^solo-mode:.*/solo-mode: false/' "$config"
   sudo grep -Eq '^solo-mode:[[:space:]]*false[[:space:]]*$' "$config"
+  sudo chown -R monstermaze:monstermaze "$target"
 done
 
 install_service 1.8 spigot-1.8.8.jar "$JAVA8" 2G
