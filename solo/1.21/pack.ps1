@@ -8,16 +8,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent (Split-Path -Parent $here)
-$project = Join-Path $repoRoot '1.21\MonsterMazeStandalone'
-$sourceJar = Join-Path $project 'target\MonsterMazeStandalone.jar'
+$project = Join-Path $repoRoot '1.21/MonsterMazeStandalone'
+$sourceJar = Join-Path $project 'target/MonsterMazeStandalone.jar'
 $dist = Join-Path $here 'solo-dist'
 $maps = Join-Path $here 'maps'
 $paper = if ($env:MM_PAPER_JAR) { $env:MM_PAPER_JAR } else {
-    $preferredPaper = Join-Path $here 'tools\paper-1.21.11.jar'
-    $genericPaper = Join-Path $here 'tools\paper.jar'
+    $preferredPaper = Join-Path $here 'tools/paper-1.21.11.jar'
+    $genericPaper = Join-Path $here 'tools/paper.jar'
     if (Test-Path $preferredPaper) { $preferredPaper } elseif (Test-Path $genericPaper) { $genericPaper } else { $preferredPaper }
 }
-$protocol = if ($env:MM_PROTOCOLLIB_JAR) { $env:MM_PROTOCOLLIB_JAR } else { Join-Path $here 'tools\ProtocolLib.jar' }
+$protocol = if ($env:MM_PROTOCOLLIB_JAR) { $env:MM_PROTOCOLLIB_JAR } else { Join-Path $here 'tools/ProtocolLib.jar' }
 
 if ($env:MM_JDK21) {
     $jdk21 = $env:MM_JDK21
@@ -37,10 +37,11 @@ if ($env:MM_JDK21) {
         }
     }
     if (-not $jdk21) {
-        $java = Get-Command java.exe -ErrorAction SilentlyContinue
+        $java = Get-Command (if ($IsWindows) { 'java.exe' } else { 'java' }) -ErrorAction SilentlyContinue
         if ($java) {
             $javaHome = Split-Path -Parent (Split-Path -Parent $java.Source)
-            if ((Test-Path (Join-Path $javaHome 'bin\java.exe')) -and ((& (Join-Path $javaHome 'bin\java.exe') -version 2>&1) -match 'version "21')) {
+            $javaExe = Join-Path $javaHome (if ($IsWindows) { 'bin/java.exe' } else { 'bin/java' })
+            if ((Test-Path $javaExe) -and ((& $javaExe -version 2>&1) -match 'version "21')) {
                 $jdk21 = $javaHome
             }
         }
@@ -62,7 +63,7 @@ if (-not $SkipBuild) {
     Write-Host "Building 1.21 MonsterMazeStandalone..."
     Push-Location $project
     try {
-        & mvn.cmd clean package -DskipTests
+        & mvn clean package -DskipTests
         if ($LASTEXITCODE -ne 0) { throw "Maven build failed with exit code $LASTEXITCODE." }
     } finally { Pop-Location }
 } else {
@@ -71,28 +72,30 @@ if (-not $SkipBuild) {
 if (-not (Test-Path $sourceJar)) { throw "Expected built plugin JAR was not found: $sourceJar" }
 
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
-New-Item -ItemType Directory -Force -Path (Join-Path $dist 'server\plugins\MonsterMazeStandalone') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $dist 'server/plugins/MonsterMazeStandalone') | Out-Null
 Copy-Item (Join-Path $here 'launcher') (Join-Path $dist 'launcher') -Recurse -Force
 Copy-Item (Join-Path $here 'submitter') (Join-Path $dist 'submitter') -Recurse -Force
 Copy-Item (Join-Path $here 'HOW_TO_PLAY.txt') (Join-Path $dist 'HOW_TO_PLAY.txt')
 Copy-Item (Join-Path $here 'update.ps1') (Join-Path $dist 'update.ps1')
 Copy-Item (Join-Path $here 'update.bat') (Join-Path $dist 'update.bat')
 Copy-Item (Join-Path $here 'README.md') (Join-Path $dist 'README.md')
-Copy-Item (Join-Path $here 'server\server.properties') (Join-Path $dist 'server\server.properties')
-Copy-Item (Join-Path $here 'server\eula.txt') (Join-Path $dist 'server\eula.txt')
-Copy-Item (Join-Path $here 'server\plugins\MonsterMazeStandalone\config.yml') (Join-Path $dist 'server\plugins\MonsterMazeStandalone\config.yml')
-Copy-Item $sourceJar (Join-Path $dist 'server\plugins\MonsterMazeStandalone.jar')
-Copy-Item $paper (Join-Path $dist 'server\paper-1.21.11.jar')
-Copy-Item $protocol (Join-Path $dist 'server\plugins\ProtocolLib.jar')
-Copy-Item $jdk21 (Join-Path $dist 'runtime\jdk21') -Recurse -Force
-foreach ($map in $requiredMaps) { Copy-Item (Join-Path $maps $map) (Join-Path $dist "server\$map") -Recurse -Force }
+Copy-Item (Join-Path $here 'server/server.properties') (Join-Path $dist 'server/server.properties')
+Copy-Item (Join-Path $here 'server/eula.txt') (Join-Path $dist 'server/eula.txt')
+Copy-Item (Join-Path $here 'server/plugins/MonsterMazeStandalone/config.yml') (Join-Path $dist 'server/plugins/MonsterMazeStandalone/config.yml')
+Copy-Item $sourceJar (Join-Path $dist 'server/plugins/MonsterMazeStandalone.jar')
+Copy-Item $paper (Join-Path $dist 'server/paper-1.21.11.jar')
+Copy-Item $protocol (Join-Path $dist 'server/plugins/ProtocolLib.jar')
+Copy-Item $jdk21 (Join-Path $dist 'runtime/jdk21') -Recurse -Force
+foreach ($map in $requiredMaps) { Copy-Item (Join-Path $maps $map) (Join-Path $dist "server/$map") -Recurse -Force }
 
-Remove-Item (Join-Path $dist 'submitter\submitted') -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item (Join-Path $dist 'server\plugins\MonsterMazeStandalone\solo-runs') -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item (Join-Path $dist 'server\world') -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item (Join-Path $dist 'server\logs') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $dist 'submitter/submitted') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $dist 'server/plugins/MonsterMazeStandalone/solo-runs') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $dist 'server/world') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $dist 'server/logs') -Recurse -Force -ErrorAction SilentlyContinue
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $here 'make_manifest.ps1') -Version $ReleaseVersion -Note $ReleaseNote -Root $dist -SourceBaseUrl $env:MM_RELEASE_SOURCE_BASE_URL -ReleaseAssetBaseUrl $env:MM_RELEASE_ASSET_BASE_URL
+$pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+if (-not $pwsh) { $pwsh = (Get-Command powershell -ErrorAction Stop).Source }
+& $pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $here 'make_manifest.ps1') -Version $ReleaseVersion -Note $ReleaseNote -Root $dist -SourceBaseUrl $env:MM_RELEASE_SOURCE_BASE_URL -ReleaseAssetBaseUrl $env:MM_RELEASE_ASSET_BASE_URL
 if ($LASTEXITCODE -ne 0) { throw "Manifest generation failed." }
 Copy-Item -Force (Join-Path $dist 'version.json') (Join-Path $here 'version.json')
 Set-Content (Join-Path $dist 'installed.version') -Value $ReleaseVersion -Encoding ascii
@@ -105,8 +108,8 @@ $archive = New-Object System.IO.Compression.ZipArchive($fs,[System.IO.Compressio
 try {
     $fileCount = 0
     Get-ChildItem -LiteralPath $dist -Recurse -File | ForEach-Object {
-        $relative = $_.FullName.Substring($dist.Length).TrimStart('\','/')
-        $entryName = $relative.Replace('\','/')
+        $relative = $_.FullName.Substring($dist.Length).TrimStart('\\','/')
+        $entryName = $relative.Replace('\\','/')
         $entry = $archive.CreateEntry($entryName,[System.IO.Compression.CompressionLevel]::Optimal)
         $in = $_.OpenRead()
         try { $out = $entry.Open(); try { $in.CopyTo($out) } finally { $out.Dispose() } } finally { $in.Dispose() }
@@ -119,7 +122,7 @@ $size = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 $probe = [System.IO.Compression.ZipFile]::OpenRead($zip)
 try {
     $entries = @($probe.Entries | ForEach-Object { $_.FullName })
-    $bad = @($entries | Where-Object { $_ -match '\\' }).Count -gt 0
+    $bad = @($entries | Where-Object { $_ -match '\\\\' }).Count -gt 0
     $requiredRoots = @('server/','launcher/','submitter/','runtime/')
     $missingRoots = @($requiredRoots | Where-Object { $root = $_; -not (@($entries | Where-Object { $_.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) }).Count) })
     $hasForbiddenWrapper = @($entries | Where-Object { $_ -like 'solo-dist/*' }).Count -gt 0
