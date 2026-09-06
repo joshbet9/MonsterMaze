@@ -1,0 +1,86 @@
+name: Implement issue fixes
+on:
+  push:
+    branches: [automation/issue-fixes-5-7-18-20-21]
+permissions:
+  contents: write
+jobs:
+  implement:
+    if: ${{ !startsWith(github.event.head_commit.message, 'fix: issues 5 7 18 20 21') }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply source changes
+        shell: python
+        run: |
+          from pathlib import Path
+          def edit(path, old, new):
+              p=Path(path); s=p.read_text()
+              if old not in s:
+                  raise SystemExit(f'MISSING expected text in {path}: {old!r}')
+              p.write_text(s.replace(old,new,1))
+
+          # #5: restore the Mineplex Original timeout boundary behaviour.
+          for p in ['1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java','1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java']:
+              edit(p,'boolean onPad = safePad != null && safePad.isOn(p);','boolean onPad = getMode() == MazeMode.ORIGINAL ? playersOnPad.contains(p) : safePad != null && safePad.isOn(p);')
+
+          # #5: Cryo Blitz is not part of Original UI.
+          for p in ['1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/kit/KitManager.java','1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/kit/KitManager.java']:
+              s=Path(p).read_text()
+              s=s.replace('lore.add(ChatColor.GRAY + "Q-drop: Cryo Blitz (freeze " + CRYO_RADIUS + " blocks).");','if (game.qolEnabled()) lore.add(ChatColor.GRAY + "Q-drop: Cryo Blitz (freeze " + CRYO_RADIUS + " blocks).");',1)
+              s=s.replace('lore.add(ChatColor.AQUA + "Cryo Blitz ready in " + (rem / 1000L) + "s");','if (game.qolEnabled()) lore.add(ChatColor.AQUA + "Cryo Blitz ready in " + (rem / 1000L) + "s");',1)
+              s=s.replace('lore.add(ChatColor.AQUA + "Cryo Blitz ready!");','if (game.qolEnabled()) lore.add(ChatColor.AQUA + "Cryo Blitz ready!");',1)
+              s=s.replace('Long last=cryoCooldown.get(id);','if (!game.qolEnabled()) continue;\n            Long last=cryoCooldown.get(id);',1)
+              Path(p).write_text(s)
+
+          # #18: 1.21 direct player-v-player damage is cancelled even in lobby.
+          edit('1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/ArenaListener.java','if (game.getState() == GameState.IDLE) return;\n        if (!(event.getEntity() instanceof Player)) return;','if (game.getState() == GameState.IDLE) { event.setCancelled(true); return; }\n        if (!(event.getEntity() instanceof Player)) return;')
+          # #18: forced stop clears game inventory before lobby.
+          edit('1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java','p.setExp(0); p.setLevel(0);\n            kitManager.resetPlayerState(p);','p.setExp(0); p.setLevel(0);\n            p.getInventory().clear();\n            p.getInventory().setArmorContents(null);\n            kitManager.resetPlayerState(p);')
+
+          # #7: 1.21 player collision disabled in-game, restored on lobby return.
+          edit('1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java','private void preparePlayer(Player p) {\n        p.setGameMode(GameMode.SURVIVAL);','private void preparePlayer(Player p) {\n        p.setGameMode(GameMode.SURVIVAL);\n        p.setCollidable(false);')
+          edit('1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java','p.setGameMode(GameMode.SURVIVAL);\n            \n            // Restore visibility','p.setGameMode(GameMode.SURVIVAL);\n            p.setCollidable(true);\n            \n            // Restore visibility')
+          # Also restore collision through normal lobby send path.
+          edit('1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java','player.setGameMode(GameMode.SURVIVAL);\n            kitManager.resetPlayerState(player);','player.setGameMode(GameMode.SURVIVAL);\n            player.setCollidable(true);\n            kitManager.resetPlayerState(player);')
+
+          # #20: retain the latest known submission name when populating season rows.
+          edit('solo/bot/competitive.py','players=c.execute("SELECT DISTINCT uuid FROM submissions WHERE submitted_at>=? AND submitted_at<?",(start,end)).fetchall()\n    for (u,) in players:','players=c.execute("SELECT uuid,MAX(name) FROM submissions WHERE submitted_at>=? AND submitted_at<? GROUP BY uuid",(start,end)).fetchall()\n    for u,name in players:')
+          edit('solo/bot/competitive.py','ensure_player(c,sid,u); c.execute("UPDATE season_players SET weekly_points=? WHERE season_id=? AND uuid=?",(total,sid,u))','ensure_player(c,sid,u,name); c.execute("UPDATE season_players SET weekly_points=? WHERE season_id=? AND uuid=?",(total,sid,u))')
+
+          # #21: persist Discord-user -> Minecraft identity and use it for registration.
+          p='solo/bot/tournament_bot.py'; s=Path(p).read_text()
+          if 'import re\n' not in s: s=s.replace('import time\n','import time\nimport re\n',1)
+          if 'discord_minecraft_identity' not in s:
+              edit(p,'    c.commit()\n\n\ndef trow(c, tid):','    c.execute("CREATE TABLE IF NOT EXISTS discord_minecraft_identity (discord_user_id TEXT PRIMARY KEY, uuid TEXT NOT NULL UNIQUE, name TEXT, linked_at INTEGER NOT NULL)")\n    c.commit()\n\n\ndef trow(c, tid):')
+              s=Path(p).read_text()
+          old='''        if sub in ("help", "?"):\n            await message.channel.send("`!tournament` • `create <name> <registration-minutes> <start-minutes>` (staff) • `register <uuid> [name]` • `bracket` • `status [uuid]` • `results`"); return'''
+          new='''        if sub in ("help", "?"):\n            await message.channel.send("`!tournament` • `create <name> <registration-minutes> <start-minutes>` (staff) • `link <uuid> [minecraft-name]` • `unlink` • `register [uuid] [name]` • `bracket` • `status [uuid]` • `results`"); return'''
+          edit(p,old,new)
+          old='''        if sub == "register":\n            if len(args) < 2: await message.channel.send("Usage: `!tournament register <uuid> [minecraft-name]`"); return\n            uuid, name = args[1].lower().strip(), (" ".join(args[2:]).strip() or message.author.display_name); c = db()'''
+          new='''        if sub == "link":\n            if len(args) < 2: await message.channel.send("Usage: `!tournament link <uuid> [minecraft-name]`"); return\n            uuid=args[1].lower().strip(); name=" ".join(args[2:]).strip() or message.author.display_name\n            if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", uuid): await message.channel.send("❌ Please provide a valid Minecraft UUID."); return\n            c=db()\n            try:\n                schema(c); existing=c.execute("SELECT discord_user_id FROM discord_minecraft_identity WHERE uuid=?",(uuid,)).fetchone()\n                if existing and str(existing[0]) != str(message.author.id): await message.channel.send("❌ That Minecraft UUID is already linked to another Discord user."); return\n                c.execute("INSERT INTO discord_minecraft_identity(discord_user_id,uuid,name,linked_at) VALUES(?,?,?,?) ON CONFLICT(discord_user_id) DO UPDATE SET uuid=excluded.uuid,name=excluded.name,linked_at=excluded.linked_at",(str(message.author.id),uuid,name,int(time.time()*1000))); c.commit()\n            finally: c.close()\n            await message.channel.send(f"✅ Linked your Discord account to **{name}** (`{uuid}`)."); return\n        if sub == "unlink":\n            c=db()\n            try: schema(c); c.execute("DELETE FROM discord_minecraft_identity WHERE discord_user_id=?",(str(message.author.id),)); c.commit()\n            finally: c.close()\n            await message.channel.send("✅ Minecraft identity unlinked."); return\n        if sub == "register":\n            c=db()\n            try:\n                schema(c)\n                if len(args)>=2:\n                    uuid=args[1].lower().strip(); name=" ".join(args[2:]).strip() or message.author.display_name\n                else:\n                    linked=c.execute("SELECT uuid,name FROM discord_minecraft_identity WHERE discord_user_id=?",(str(message.author.id),)).fetchone()\n                    if not linked: await message.channel.send("❌ No Minecraft identity is linked. Use `!tournament link <uuid> [minecraft-name]` or provide a UUID."); return\n                    uuid,name=str(linked[0]).lower(),(linked[1] or message.author.display_name)\n            finally: c.close()\n            c=db()'''
+          edit(p,old,new)
+          Path(p).write_text(s)
+
+      - name: Verify and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile solo/bot/competitive.py solo/bot/tournament_bot.py
+          grep -R "playersOnPad.contains(p)" 1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java 1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java
+          grep -R "setCollidable(false)" 1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java
+          grep -R "discord_minecraft_identity" solo/bot/tournament_bot.py
+          (cd 1.8/MonsterMazeStandalone && mvn -q -DskipTests package)
+          (cd 1.21/MonsterMazeStandalone && mvn -q -DskipTests package)
+      - name: Commit fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add 1.8 1.21 solo
+          git diff --cached --check
+          git commit -m "fix: issues 5 7 18 20 21"
+          git push origin HEAD
