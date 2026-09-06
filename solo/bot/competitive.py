@@ -104,8 +104,23 @@ def record_match(c,match,players):
 def calculate_weekly(c,sid):
     row=c.execute("SELECT start_ts,end_ts FROM seasons WHERE id=?",(sid,)).fetchone()
     if not row:return
-    start=int(datetime.fromisoformat(row[0]).timestamp()*1000); end=int(datetime.fromisoformat(row[1]).timestamp()*1000)
-    comps=c.execute("SELECT platform,mode,pattern,kit,start_ts,end_ts FROM competitions WHERE start_ts>=? AND end_ts<=?",(row[0],row[1])).fetchall()
+    season_start=datetime.fromisoformat(row[0])
+    season_end=datetime.fromisoformat(row[1])
+    start=int(season_start.timestamp()*1000); end=int(season_end.timestamp()*1000)
+
+    # Season timestamps are stored in the competition timezone, while
+    # competitions are stored as UTC ISO-8601 timestamps. Comparing those
+    # strings directly can exclude a competition that starts on the same local
+    # Monday (for example 2026-08-30T14:00Z vs 2026-08-31T00:00+10:00).
+    # Compare parsed instants instead so weekly points survive the UTC/local
+    # date boundary correctly.
+    comps=[]
+    for comp in c.execute("SELECT platform,mode,pattern,kit,start_ts,end_ts FROM competitions").fetchall():
+        comp_start=datetime.fromisoformat(comp[4])
+        comp_end=datetime.fromisoformat(comp[5])
+        if comp_start >= season_start and comp_end <= season_end:
+            comps.append(comp)
+
     players=c.execute("SELECT uuid,MAX(name) FROM submissions WHERE submitted_at>=? AND submitted_at<? GROUP BY uuid",(start,end)).fetchall()
     for u,name in players:
         total=0
@@ -244,25 +259,17 @@ def season_leaderboard(c, sid, kind="mmcl", limit=25):
     if not col:raise ValueError("invalid season leaderboard kind")
     if int(limit)<1 or int(limit)>100:raise ValueError("invalid season leaderboard limit")
     rows=c.execute(f"SELECT uuid,name,{col} FROM season_players WHERE season_id=? ORDER BY {col} DESC,uuid ASC LIMIT ?",(int(sid),int(limit))).fetchall()
-    return [{"rank":i+1,"uuid":u,"name":n,"score":round(float(v),3)} for i,(u,n,v) in enumerate(rows)]
+    return [{"rank":i,"uuid":u,"name":n,"score":round(float(v),3)} for i,(u,n,v) in enumerate(rows,1)]
 
 
-def season_tournaments(c, sid):
-    """Return completed and historical tournament metadata for a season."""
-    rows=c.execute("""SELECT id,number,name,registration_start,registration_end,start_ts,status,bracket_size
-        FROM tournaments WHERE season_id=? ORDER BY number ASC""",(int(sid),)).fetchall()
-    result=[]
-    for tid,num,name,rs,re,st,status,size in rows:
-        players=c.execute("SELECT uuid,name,placement,points FROM tournament_players WHERE tournament_id=? AND placement IS NOT NULL ORDER BY placement ASC,uuid ASC LIMIT 4",(int(tid),)).fetchall()
-        result.append({"id":int(tid),"number":int(num),"name":name,"registrationStart":rs,"registrationEnd":re,"start":st,"status":status,"bracketSize":size,"top4":[{"uuid":u,"name":n,"placement":int(p),"points":int(pt)} for u,n,p,pt in players]})
-    return result
+def season_tournaments(c,sid):
+    rows=c.execute("SELECT id,number,name,status,registration_start,registration_end,start_ts,bracket_size FROM tournaments WHERE season_id=? ORDER BY number ASC",(int(sid),)).fetchall()
+    return [{"id":int(i),"number":int(n),"name":name,"status":status,"registrationStart":rs,"registrationEnd":re,"start":st,"bracketSize":bs} for i,n,name,status,rs,re,st,bs in rows]
 
 
-def player_season_history(c, uuid, limit=25):
-    """Return a player's archived/current seasonal competitive history."""
-    if int(limit)<1 or int(limit)>100:raise ValueError("invalid season history limit")
+def player_season_history(c,uuid,limit=100):
     rows=c.execute("""SELECT s.id,s.season_number,s.start_ts,s.end_ts,s.status,s.finalized_at,
-        p.name,p.elo,p.weekly_points,p.tournament_points,p.elo_component,p.weekly_component,p.tournament_component,p.mmcl
-        FROM season_players p JOIN seasons s ON s.id=p.season_id
-        WHERE lower(p.uuid)=? ORDER BY s.season_number DESC LIMIT ?""",(uuid.lower(),int(limit))).fetchall()
-    return [{"seasonId":int(sid),"season":int(num),"start":start,"end":end,"status":status,"finalizedAt":finalized,"name":name,"elo":round(float(elo),3),"weeklyPoints":int(w),"tournamentPoints":int(tp),"eloComponent":round(float(ec),3),"weeklyComponent":round(float(wc),3),"tournamentComponent":round(float(tc),3),"mmcl":round(float(mmcl),3)} for sid,num,start,end,status,finalized,name,elo,w,tp,ec,wc,tc,mmcl in rows]
+        sp.name,sp.elo,sp.weekly_points,sp.tournament_points,sp.elo_component,sp.weekly_component,sp.tournament_component,sp.mmcl
+        FROM seasons s JOIN season_players sp ON sp.season_id=s.id
+        WHERE lower(sp.uuid)=? ORDER BY s.season_number DESC LIMIT ?""",(str(uuid).lower(),int(limit))).fetchall()
+    return [{"seasonId":int(sid),"season":int(num),"start":start,"end":end,"status":status,"finalizedAt":finalized,"name":name,"elo":round(float(elo),3),"weeklyPoints":int(w),"tournamentPoints":int(t),"eloComponent":round(float(ec),3),"weeklyComponent":round(float(wc),3),"tournamentComponent":round(float(tc),3),"mmcl":round(float(m),3)} for sid,num,start,end,status,finalized,name,elo,w,t,ec,wc,tc,m in rows]
