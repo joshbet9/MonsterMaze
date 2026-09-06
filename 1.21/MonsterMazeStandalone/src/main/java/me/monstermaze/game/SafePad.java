@@ -33,12 +33,8 @@ public class SafePad implements Listener {
         this.center = pathLocation.clone();
         this.surfaceY = pathLocation.getBlockY() - 1;
         this.qol = qol;
-
         MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
-        if (plugin != null && plugin.getMapThemeApplier() != null) {
-            plugin.getMapThemeApplier().refresh();
-        }
-
+        if (plugin != null && plugin.getMapThemeApplier() != null) plugin.getMapThemeApplier().refresh();
         captureAndBuild();
         ensureBeacon();
     }
@@ -62,7 +58,6 @@ public class SafePad implements Listener {
         setBlock(world.getBlockAt(cx, cy, cz), Material.BEACON);
         for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++)
             setBlock(world.getBlockAt(cx + x, cy - 1, cz + z), Material.IRON_BLOCK);
-
         for (int x = -1; x <= 1; x++) {
             setBlock(world.getBlockAt(cx + x, cy - 1, cz + 2), stairs(Material.QUARTZ_STAIRS, BlockFace.NORTH));
             setBlock(world.getBlockAt(cx + x, cy - 1, cz - 2), stairs(Material.QUARTZ_STAIRS, BlockFace.SOUTH));
@@ -73,7 +68,6 @@ public class SafePad implements Listener {
         setBlock(world.getBlockAt(cx - 2, cy - 1, cz + 2), Material.CHISELED_QUARTZ_BLOCK);
         setBlock(world.getBlockAt(cx + 2, cy - 1, cz - 2), Material.CHISELED_QUARTZ_BLOCK);
         setBlock(world.getBlockAt(cx - 2, cy - 1, cz - 2), Material.CHISELED_QUARTZ_BLOCK);
-
         for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) for (int y = 1; y <= 3; y++) {
             Block air = world.getBlockAt(cx + x, cy + y, cz + z);
             if (air.getType() != Material.AIR) setBlock(air, Material.AIR);
@@ -105,13 +99,11 @@ public class SafePad implements Listener {
     public boolean isOn(Entity entity) {
         Location loc = entity.getLocation();
         int by = surfaceY;
-        if (qol) {
-            double dx = loc.getX() - center.getX(), dz = loc.getZ() - center.getZ();
-            return dx > -2.5 && dx < 2.5 && dz > -2.5 && dz < 2.5 && loc.getY() > by && loc.getY() < by + 5;
-        }
-        int bx = center.getBlockX(), bz = center.getBlockZ();
-        return loc.getX() > bx - 2 && loc.getX() < bx + 2.999 && loc.getY() > by && loc.getY() < by + 5
-                && loc.getZ() > bz - 2.999 && loc.getZ() < bz + 2;
+
+        // Off-centre pad fix: use the same symmetric 5x5 box as the visible pad in every mode.
+        double dx = loc.getX() - center.getX(), dz = loc.getZ() - center.getZ();
+        return dx > -2.5 && dx < 2.5 && dz > -2.5 && dz < 2.5
+                && loc.getY() > by && loc.getY() < by + 5;
     }
 
     public boolean decay() {
