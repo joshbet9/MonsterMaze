@@ -4,12 +4,14 @@ from __future__ import annotations
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
+from fractions import Fraction
 from zoneinfo import ZoneInfo
 import tournament
 
 TZ=ZoneInfo("Australia/Brisbane")
 K_FACTOR=32.0
 SEASON_WEEKS=13
+WEEKLY_POOL_BASE=100
 TOURNAMENT_POINTS={1:100,2:75,3:50,4:30}
 PARTICIPATION_POINTS=10
 
@@ -101,6 +103,38 @@ def record_match(c,match,players):
     recalculate_components(c,sid); calculate_mmr(c); c.commit(); return True
 
 
+def _linear_pool_points(results):
+    """Return integer linear placement points whose sum is exactly N*base.
+
+    Results are (uuid, best_stage, name) sorted by best stage descending. Ties
+    share the average of the linear weights for the occupied placements. Any
+    integer remainder is assigned by largest remainder, then deterministic
+    rank order.
+    """
+    n=len(results)
+    if not n:return {}
+    pool=n*WEEKLY_POOL_BASE
+    weight_sum=n*(n+1)//2
+    raw=[]
+    pos=1
+    while pos<=n:
+        end=pos
+        while end<n and int(results[end][1])==int(results[pos-1][1]):
+            end+=1
+        average_weight=Fraction((n-pos+1)+(n-end+1),2)
+        for idx in range(pos-1,end):
+            exact=Fraction(pool)*average_weight/Fraction(weight_sum)
+            raw.append((results[idx][0],exact,idx))
+        pos=end+1
+    points={u:int(exact) for u,exact,_ in raw}
+    remainder=pool-sum(points.values())
+    if remainder:
+        ranked=sorted(raw,key=lambda item:(-(item[1]-int(item[1])),item[2]))
+        for u,_,_ in ranked[:remainder]:
+            points[u]+=1
+    return points
+
+
 def calculate_weekly(c,sid):
     row=c.execute("SELECT start_ts,end_ts FROM seasons WHERE id=?",(sid,)).fetchone()
     if not row:return
@@ -109,11 +143,8 @@ def calculate_weekly(c,sid):
     start=int(season_start.timestamp()*1000); end=int(season_end.timestamp()*1000)
 
     # Season timestamps are stored in the competition timezone, while
-    # competitions are stored as UTC ISO-8601 timestamps. Comparing those
-    # strings directly can exclude a competition that starts on the same local
-    # Monday (for example 2026-08-30T14:00Z vs 2026-08-31T00:00+10:00).
-    # Compare parsed instants instead so weekly points survive the UTC/local
-    # date boundary correctly.
+    # competitions are stored as UTC ISO-8601 timestamps. Compare parsed
+    # instants so the local Monday/UTC Sunday boundary is handled correctly.
     comps=[]
     for comp in c.execute("SELECT platform,mode,pattern,kit,start_ts,end_ts FROM competitions").fetchall():
         comp_start=datetime.fromisoformat(comp[4])
@@ -121,14 +152,27 @@ def calculate_weekly(c,sid):
         if comp_start >= season_start and comp_end <= season_end:
             comps.append(comp)
 
-    players=c.execute("SELECT uuid,MAX(name) FROM submissions WHERE submitted_at>=? AND submitted_at<? GROUP BY uuid",(start,end)).fetchall()
-    for u,name in players:
-        total=0
-        for platform,mode,pattern,kit,cs,ce in comps:
-            a=int(datetime.fromisoformat(cs).timestamp()*1000); b=int(datetime.fromisoformat(ce).timestamp()*1000)
-            best=c.execute("SELECT MAX(stage) FROM submissions WHERE uuid=? AND platform=? AND mode=? AND pattern=? AND kit=? AND submitted_at>=? AND submitted_at<?",(u,platform,mode,pattern,kit,a,b)).fetchone()[0]
-            if best is not None:total+=int(best)
-        ensure_player(c,sid,u,name); c.execute("UPDATE season_players SET weekly_points=? WHERE season_id=? AND uuid=?",(total,sid,u))
+    # Recalculate from scratch so this function is idempotent and cannot
+    # double-award weekly points when called repeatedly.
+    c.execute("UPDATE season_players SET weekly_points=0 WHERE season_id=?",(sid,))
+
+    for platform,mode,pattern,kit,cs,ce in comps:
+        a=int(datetime.fromisoformat(cs).timestamp()*1000)
+        b=int(datetime.fromisoformat(ce).timestamp()*1000)
+        rows=c.execute("""
+            SELECT uuid,MAX(stage),MAX(name)
+            FROM submissions
+            WHERE platform=? AND mode=? AND pattern=? AND kit=?
+              AND submitted_at>=? AND submitted_at<?
+            GROUP BY uuid
+            ORDER BY MAX(stage) DESC, lower(uuid) ASC
+        """,(platform,mode,pattern,kit,a,b)).fetchall()
+        if not rows:continue
+        points=_linear_pool_points(rows)
+        for u,_,name in rows:
+            ensure_player(c,sid,u,name)
+        for u,pts in points.items():
+            c.execute("UPDATE season_players SET weekly_points=weekly_points+? WHERE season_id=? AND uuid=?",(pts,sid,u))
 
 
 def recalculate_components(c,sid):
@@ -160,6 +204,7 @@ def calculate_mmr(c):
         c.execute("INSERT INTO permanent_ratings(uuid,name,mmr,updated_at) VALUES(?,?,?,?) ON CONFLICT(uuid) DO UPDATE SET name=COALESCE(excluded.name,permanent_ratings.name),mmr=excluded.mmr,updated_at=excluded.updated_at",(uuid.lower(),name,mmr,now))
     c.commit()
 
+
 def get_mmr_target(c, uuid, platform):
     """Return the player's weakest eligible MMR configuration for a platform.
 
@@ -167,60 +212,30 @@ def get_mmr_target(c, uuid, platform):
     are eligible. Selection is based on the lowest PB/world-best percentage.
     """
     ensure_schema(c)
-
     platform = str(platform)
     uuid = str(uuid).lower()
-
     boards = c.execute("""
         SELECT platform, mode, pattern, kit, MAX(stage)
         FROM runs
         WHERE platform=?
         GROUP BY platform, mode, pattern, kit
     """, (platform,)).fetchall()
-
-    candidates = []
-
-    for board_platform, mode, pattern, kit, best in boards:
-        best = int(best or 0)
-        if best <= 0:
-            continue
-
-        pb_row = c.execute("""
+    candidates=[]
+    for board_platform,mode,pattern,kit,best in boards:
+        best=int(best or 0)
+        if best<=0:continue
+        pb_row=c.execute("""
             SELECT MAX(stage)
             FROM runs
             WHERE platform=? AND mode=? AND pattern=? AND kit=? AND uuid=?
-        """, (board_platform, mode, pattern, kit, uuid)).fetchone()
-
-        pb = int(pb_row[0] or 0)
-        percentage = (float(pb) / float(best)) * 100.0
-
-        candidates.append((
-            percentage,
-            str(mode),
-            int(pattern),
-            str(kit),
-            pb,
-            best
-        ))
-
-    if not candidates:
-        return None
-
-    # Lowest percentage first. Remaining fields make ties deterministic.
-    candidates.sort(key=lambda x: (x[0], x[1], x[2], x[3]))
-
-    percentage, mode, pattern, kit, pb, best = candidates[0]
-
-    return {
-        "platform": platform,
-        "mode": mode,
-        "pattern": pattern,
-        "kit": kit,
-        "pb": pb,
-        "worldBest": best,
-        "percentage": round(percentage, 3),
-        "gap": round(100.0 - percentage, 3)
-    }
+        """,(board_platform,mode,pattern,kit,uuid)).fetchone()
+        pb=int(pb_row[0] or 0)
+        percentage=(float(pb)/float(best))*100.0
+        candidates.append((percentage,str(mode),int(pattern),str(kit),pb,best))
+    if not candidates:return None
+    candidates.sort(key=lambda x:(x[0],x[1],x[2],x[3]))
+    percentage,mode,pattern,kit,pb,best=candidates[0]
+    return {"platform":platform,"mode":mode,"pattern":pattern,"kit":kit,"pb":pb,"worldBest":best,"percentage":round(percentage,3),"gap":round(100.0-percentage,3)}
 
 
 def award_tournament_points(c,tournament_id,placements):
