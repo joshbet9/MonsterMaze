@@ -382,4 +382,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG" release-assets/* --verify-tag --title "Monster Maze $RELEASE_TAG" --generate-notes
+          gh release create "$RELEASE_TAG" --repo joshbet9/MonsterMaze release-assets/* --verify-tag --title "Monster Maze $RELEASE_TAG" --generate-notes
