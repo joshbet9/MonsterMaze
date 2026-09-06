@@ -6,17 +6,20 @@ import me.monstermaze.game.GameManager;
 import me.monstermaze.game.GameState;
 import me.monstermaze.game.MazeMode;
 import me.monstermaze.kit.KitType;
+import me.monstermaze.stats.ChallengeManager;
 import me.monstermaze.stats.CompetitiveUI;
 import me.monstermaze.stats.LeaderboardManager;
 import me.monstermaze.stats.RunRecorder;
 import me.monstermaze.stats.TournamentManager;
 import org.bukkit.ChatColor;
+import org.bukkit.Location;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.metadata.FixedMetadataValue;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class MMCommand implements CommandExecutor {
@@ -131,13 +134,27 @@ public class MMCommand implements CommandExecutor {
             case "map": case "arena":
                 if (args.length < 2) { sender.sendMessage(ChatColor.RED + "Usage: /mm map <name>"); sender.sendMessage(ChatColor.GRAY + "Available: " + String.join(", ", plugin.getMapManager().knownMaps())); return true; }
                 if (gm.isRunning()) { sender.sendMessage(ChatColor.RED + "Change the map when no game is running."); return true; }
+                List<Player> lobbyPlayers = gm.getState() == GameState.IDLE ? findLobbyPlayers(gm.getLobbySpawn()) : new ArrayList<Player>();
                 String want = args[1].toLowerCase(); if (!plugin.getMapManager().setActiveMap(want)) { sender.sendMessage(ChatColor.RED + "Unknown map '" + args[1] + "'. Try: " + String.join(", ", plugin.getMapManager().knownMaps())); return true; }
-                plugin.getMapManager().ensureActiveWorld(); gm.applyMap(); sender.sendMessage(ChatColor.GREEN + "Map set to " + ChatColor.WHITE + want + ChatColor.GREEN + ". Lobby moved; run /mm start."); break;
+                plugin.getMapManager().ensureActiveWorld(); gm.applyMap();
+                for (Player p : lobbyPlayers) gm.sendToLobby(p);
+                sender.sendMessage(ChatColor.GREEN + "Map set to " + ChatColor.WHITE + want + ChatColor.GREEN + ". Lobby moved; run /mm start."); break;
             case "status":
                 sender.sendMessage(ChatColor.AQUA + "State: " + ChatColor.WHITE + gm.getState()); sender.sendMessage(ChatColor.AQUA + "Stage: " + ChatColor.WHITE + gm.getStage()); sender.sendMessage(ChatColor.AQUA + "Alive: " + ChatColor.WHITE + gm.getAlivePlayers().size()); sender.sendMessage(ChatColor.AQUA + "Map: " + ChatColor.WHITE + plugin.getMapManager().getActiveMap()); sender.sendMessage(ChatColor.AQUA + "Next pattern: " + ChatColor.WHITE + formatPattern(gm.getMazeGenerator().getForcedPattern())); break;
             default: sender.sendMessage(ChatColor.RED + "Unknown subcommand. Try /mm"); break;
         }
         return true;
+    }
+
+    private List<Player> findLobbyPlayers(Location lobby) {
+        List<Player> players = new ArrayList<Player>();
+        if (lobby == null || lobby.getWorld() == null) return players;
+        for (Player p : org.bukkit.Bukkit.getOnlinePlayers()) {
+            if (p.getGameMode() == org.bukkit.GameMode.SPECTATOR) continue;
+            if (p.getWorld() != lobby.getWorld()) continue;
+            if (p.getLocation().distanceSquared(lobby) <= 64 * 64) players.add(p);
+        }
+        return players;
     }
 
     private void showKits(Player p, GameManager gm) { p.sendMessage(ChatColor.GOLD + "Kits:"); boolean qol = plugin.getMode() != MazeMode.ORIGINAL; for (KitType k : KitType.available(qol)) p.sendMessage(ChatColor.GRAY + " - " + k.display + ChatColor.DARK_GRAY + " (/mm kit " + k.name().toLowerCase() + ")"); }
