@@ -1,6 +1,7 @@
 """Discord tournament management and competitive ranking boards for Monster Maze."""
 import asyncio
 import time
+import re
 from datetime import datetime, timezone
 
 import discord
