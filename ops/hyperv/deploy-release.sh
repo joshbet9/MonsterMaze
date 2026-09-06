@@ -23,8 +23,8 @@ cleanup() {
   local status=$?
   if [ "$status" -ne 0 ]; then
     log "Deployment failed; attempting to restart both Hyper-V services so the integration servers are not left offline."
-    sudo systemctl start monstermaze-1.8.service 2>/dev/null || true
-    sudo systemctl start monstermaze-1.21.service 2>/dev/null || true
+    sudo systemctl start monstermaze-18.service 2>/dev/null || true
+    sudo systemctl start monstermaze-21.service 2>/dev/null || true
   fi
   rm -rf "$TMP"
   exit "$status"
@@ -122,7 +122,7 @@ EOF
 
 # Stop the managed services first. Also terminate legacy manually-started
 # processes if one is still present, so the new services can bind their ports.
-sudo systemctl stop monstermaze-1.8.service monstermaze-1.21.service 2>/dev/null || true
+sudo systemctl stop monstermaze-18.service monstermaze-21.service 2>/dev/null || true
 sudo pkill -f 'spigot-1\.8\.8\.jar' 2>/dev/null || true
 sudo pkill -f 'paper-1\.21\.11\.jar' 2>/dev/null || true
 sleep 2
@@ -157,12 +157,12 @@ done
 install_service 1.8 spigot-1.8.8.jar "$JAVA8" 2G
 install_service 1.21 paper-1.21.11.jar "$JAVA21" 4G
 sudo systemctl daemon-reload
-sudo systemctl enable monstermaze-1.8.service monstermaze-1.21.service
-sudo systemctl start monstermaze-1.8.service
-sudo systemctl start monstermaze-1.21.service
+sudo systemctl enable monstermaze-18.service monstermaze-21.service
+sudo systemctl start monstermaze-18.service
+sudo systemctl start monstermaze-21.service
 
 sleep 3
-sudo systemctl is-active --quiet monstermaze-1.8.service
-sudo systemctl is-active --quiet monstermaze-1.21.service
+sudo systemctl is-active --quiet monstermaze-18.service
+sudo systemctl is-active --quiet monstermaze-21.service
 
 log "Hyper-V is now running release $TAG with solo-mode:false on MM18/MM21."
