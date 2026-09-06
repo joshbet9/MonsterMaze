@@ -14,14 +14,18 @@ $files = [ordered]@{}
 $RELEASE_ASSETS = @{
     'server/plugins/MonsterMazeStandalone.jar' = 'MonsterMaze-Solo-1.21-plugin.jar'
     'server/plugins/ProtocolLib.jar' = 'MonsterMaze-Solo-1.21-ProtocolLib.jar'
-    'server/plugins/ViaVersion.jar' = 'MonsterMaze-Solo-1.21-ViaVersion.jar'
     'server/paper-1.21.11.jar' = 'MonsterMaze-Solo-1.21-Paper.jar'
+}
+$EXTERNAL_ASSETS = @{
+    'server/plugins/ViaVersion.jar' = 'https://github.com/ViaVersion/ViaVersion/releases/download/5.11.0/ViaVersion-5.11.0.jar'
 }
 function Add-File([string]$rel,[string]$src,[string]$sourceRel='') {
     if (-not (Test-Path $src)) { throw "Missing manifest file: $src" }
     $norm = $rel.Replace('\','/')
     $entry = [ordered]@{sha256=(Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant();size=(Get-Item $src).Length}
-    if ($RELEASE_ASSETS.ContainsKey($norm) -and $ReleaseAssetBaseUrl) {
+    if ($EXTERNAL_ASSETS.ContainsKey($norm)) {
+        $entry.url = $EXTERNAL_ASSETS[$norm]
+    } elseif ($RELEASE_ASSETS.ContainsKey($norm) -and $ReleaseAssetBaseUrl) {
         $entry.url = $ReleaseAssetBaseUrl.TrimEnd('/') + '/' + $RELEASE_ASSETS[$norm]
     } elseif ($SourceBaseUrl) {
         if (-not $sourceRel) { $sourceRel = $norm }
