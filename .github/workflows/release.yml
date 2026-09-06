@@ -293,6 +293,10 @@ jobs:
     runs-on: ubuntu-22.04
     environment: hyperv
     steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: release-assets
+          path: release-assets
       - uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
@@ -304,10 +308,23 @@ jobs:
           KEY: ${{ secrets.HYPERV_SSH_PRIVATE_KEY }}
           KNOWN: ${{ secrets.HYPERV_SSH_KNOWN_HOSTS }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/hyperv
           printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/hyperv ~/.ssh/known_hosts
+      - name: Transfer validated server artifacts
+        env:
+          HOST: ${{ secrets.HYPERV_SSH_HOST }}
+          USER: ${{ secrets.HYPERV_SSH_USER }}
+          PORT: ${{ secrets.HYPERV_SSH_PORT }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          port="${PORT:-22}"
+          remote_dir="/tmp/monstermaze-release-${RELEASE_TAG}"
+          ssh -p "$port" -i ~/.ssh/hyperv -o BatchMode=yes "$USER@$HOST" "rm -rf '$remote_dir' && mkdir -p '$remote_dir'"
+          scp -P "$port" -i ~/.ssh/hyperv -o BatchMode=yes release-assets/MonsterMaze-Server-1.8.zip release-assets/MonsterMaze-Server-1.21.zip release-assets/SHA256SUMS.txt "$USER@$HOST:$remote_dir/"
       - name: Deploy immutable release
         env:
           HOST: ${{ secrets.HYPERV_SSH_HOST }}
@@ -317,7 +334,8 @@ jobs:
         run: |
           set -euo pipefail
           port="${PORT:-22}"
-          ssh -p "$port" -i ~/.ssh/hyperv -o BatchMode=yes "$USER@$HOST" "curl -fsSL https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${RELEASE_TAG}/ops/hyperv/deploy-release.sh | bash -s -- ${RELEASE_TAG}"
+          remote_dir="/tmp/monstermaze-release-${RELEASE_TAG}"
+          ssh -p "$port" -i ~/.ssh/hyperv -o BatchMode=yes "$USER@$HOST" "curl -fsSL https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${RELEASE_TAG}/ops/hyperv/deploy-release.sh | bash -s -- ${RELEASE_TAG} '$remote_dir'"
 
   deploy-oracle:
     name: Deploy release to Oracle bot/API
