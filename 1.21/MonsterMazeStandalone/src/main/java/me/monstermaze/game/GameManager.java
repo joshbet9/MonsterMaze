@@ -520,7 +520,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
                 // Survival requires being ON the pad right now. (See note: the older
                 // playersOnPad "ever touched" check wrongly let players who stepped on the
                 // pad then walked off it survive the round end.)
-                boolean onPad = getMode() == MazeMode.ORIGINAL ? playersOnPad.contains(p) : safePad != null && safePad.isOn(p);
+                boolean onPad = safePad != null && safePad.isOn(p);
 
                 if (onPad) {
                     TextUtil.title(p, "", ChatColor.YELLOW + "" + ChatColor.BOLD + "Get to the Next Safe Pad!", 5, 40, 5);
