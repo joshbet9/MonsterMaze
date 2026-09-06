@@ -18,6 +18,7 @@ $paper = if ($env:MM_PAPER_JAR) { $env:MM_PAPER_JAR } else {
     if (Test-Path $preferredPaper) { $preferredPaper } elseif (Test-Path $genericPaper) { $genericPaper } else { $preferredPaper }
 }
 $protocol = if ($env:MM_PROTOCOLLIB_JAR) { $env:MM_PROTOCOLLIB_JAR } else { Join-Path $here 'tools/ProtocolLib.jar' }
+$viaversion = if ($env:MM_VIAVERSION_JAR) { $env:MM_VIAVERSION_JAR } else { Join-Path $here 'tools/ViaVersion.jar' }
 
 if ($env:MM_SOLO_JDK21_WINDOWS) {
     $jdk21 = $env:MM_SOLO_JDK21_WINDOWS
@@ -66,6 +67,7 @@ $requiredMaps = @('mm_colombia','mm_sandycoast','mm_siberian','mm_swampland','mm
 if (-not (Test-Path (Join-Path $project 'pom.xml'))) { throw "1.21 source project not found: $project" }
 if (-not (Test-Path $paper)) { throw "Paper 1.21.11 jar not found: $paper" }
 if (-not (Test-Path $protocol)) { throw "ProtocolLib.jar not found: $protocol" }
+if (-not (Test-Path $viaversion)) { throw "ViaVersion.jar not found: $viaversion" }
 if (-not $jdk21 -or -not (Test-Path $jdk21)) { throw "JDK 21 directory not found. Set MM_JDK21 or install a JDK 21." }
 if (-not (Test-Path (Join-Path $jdk21 'bin/java.exe'))) { throw "Windows JDK 21 runtime is missing bin/java.exe: $jdk21" }
 foreach ($map in $requiredMaps) {
@@ -99,13 +101,13 @@ Copy-Item (Join-Path $here 'server/plugins/MonsterMazeStandalone/config.yml') (J
 Copy-Item $sourceJar (Join-Path $dist 'server/plugins/MonsterMazeStandalone.jar')
 Copy-Item $paper (Join-Path $dist 'server/paper-1.21.11.jar')
 Copy-Item $protocol (Join-Path $dist 'server/plugins/ProtocolLib.jar')
+Copy-Item $viaversion (Join-Path $dist 'server/plugins/ViaVersion.jar')
 Copy-Item $jdk21 (Join-Path $dist 'runtime/jdk21') -Recurse -Force
 foreach ($map in $requiredMaps) { Copy-Item (Join-Path $maps $map) (Join-Path $dist "server/$map") -Recurse -Force }
 
 Remove-Item (Join-Path $dist 'submitter/submitted') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $dist 'server/plugins/MonsterMazeStandalone/solo-runs') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $dist 'server/world') -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item (Join-Path $dist 'server/logs') -Recurse -Force -ErrorAction SilentlyContinue
 
 $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
 if (-not $pwsh) { $pwsh = (Get-Command powershell -ErrorAction Stop).Source }
