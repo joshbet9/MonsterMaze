@@ -102,7 +102,7 @@ public class ArenaListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPlayerHitPlayer(EntityDamageByEntityEvent event) {
-        if (game.getState() == GameState.IDLE) return;
+        if (game.getState() == GameState.IDLE) { event.setCancelled(true); return; }
         if (!(event.getEntity() instanceof Player)) return;
         if (event.getDamager() instanceof Player) {
             event.setCancelled(true);

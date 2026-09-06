@@ -23,6 +23,7 @@ def schema(c):
     c.execute(f"""CREATE TABLE IF NOT EXISTS {ARCHIVE_TABLE}(
         season_id INTEGER PRIMARY KEY, channel_id TEXT NOT NULL, message_id TEXT NOT NULL,
         published_at INTEGER NOT NULL)""")
+    c.execute("CREATE TABLE IF NOT EXISTS discord_minecraft_identity (discord_user_id TEXT PRIMARY KEY, uuid TEXT NOT NULL UNIQUE, name TEXT, linked_at INTEGER NOT NULL)")
     c.commit()
 
 

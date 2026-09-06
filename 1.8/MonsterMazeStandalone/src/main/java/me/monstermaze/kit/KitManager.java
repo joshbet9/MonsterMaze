@@ -719,6 +719,7 @@ public class KitManager implements Listener {
                 continue;
             }
             cryoFrozenUntil.remove(id);
+            if (!game.qolEnabled()) continue;
             Long last=cryoCooldown.get(id);
             if(last==null) TextUtil.actionBar(p,ChatColor.AQUA+ChatColor.BOLD.toString()+"CRYO BLITZ READY");
             else {
@@ -797,11 +798,11 @@ public class KitManager implements Listener {
             rem = (t.longValue() + CRYO_COOLDOWN_MS) - now;
         }
         java.util.List<String> lore = new java.util.ArrayList<String>();
-        lore.add(ChatColor.GRAY + "Q-drop: Cryo Blitz (freeze " + CRYO_RADIUS + " blocks).");
+        if (game.qolEnabled()) lore.add(ChatColor.GRAY + "Q-drop: Cryo Blitz (freeze " + CRYO_RADIUS + " blocks).");
         if (rem >= 0) {
-            lore.add(ChatColor.AQUA + "Cryo Blitz ready in " + (rem / 1000L) + "s");
+            if (game.qolEnabled()) lore.add(ChatColor.AQUA + "Cryo Blitz ready in " + (rem / 1000L) + "s");
         } else {
-            lore.add(ChatColor.AQUA + "Cryo Blitz ready!");
+            if (game.qolEnabled()) lore.add(ChatColor.AQUA + "Cryo Blitz ready!");
         }
         return lore;
     }
