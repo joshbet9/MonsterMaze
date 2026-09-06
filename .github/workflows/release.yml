@@ -184,6 +184,8 @@ jobs:
           MM_RELEASE_NOTE: Automated Monster Maze release.
           MM_RELEASE_SOURCE_BASE_URL: https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${{ env.RELEASE_TAG }}/solo/1.21
           MM_RELEASE_ASSET_BASE_URL: https://github.com/joshbet9/MonsterMaze/releases/download/${{ env.RELEASE_TAG }}
+          MM_PAPER_JAR: ${{ runner.temp }}/paper-1.21.11.jar
+          MM_PROTOCOLLIB_JAR: ${{ runner.temp }}/ProtocolLib.jar
         run: |
           $v = $env:RELEASE_TAG -replace '^v',''
           ./pack.ps1 -ReleaseVersion $v -ReleaseNote $env:MM_RELEASE_NOTE -SkipBuild
