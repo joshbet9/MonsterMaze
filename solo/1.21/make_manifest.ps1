@@ -14,6 +14,7 @@ $files = [ordered]@{}
 $RELEASE_ASSETS = @{
     'server/plugins/MonsterMazeStandalone.jar' = 'MonsterMaze-Solo-1.21-plugin.jar'
     'server/plugins/ProtocolLib.jar' = 'MonsterMaze-Solo-1.21-ProtocolLib.jar'
+    'server/plugins/ViaVersion.jar' = 'MonsterMaze-Solo-1.21-ViaVersion.jar'
     'server/paper-1.21.11.jar' = 'MonsterMaze-Solo-1.21-Paper.jar'
 }
 function Add-File([string]$rel,[string]$src,[string]$sourceRel='') {
@@ -31,7 +32,7 @@ function Add-File([string]$rel,[string]$src,[string]$sourceRel='') {
 $updateable = @(
  'launcher/play.bat','launcher/stop.bat','launcher/config.bat',
  'submitter/submit.bat','submitter/submit.ps1',
- 'server/plugins/MonsterMazeStandalone.jar','server/plugins/ProtocolLib.jar',
+ 'server/plugins/MonsterMazeStandalone.jar','server/plugins/ProtocolLib.jar','server/plugins/ViaVersion.jar',
  'server/paper-1.21.11.jar','server/eula.txt','server/server.properties',
  'HOW_TO_PLAY.txt','README.md'
 )
