@@ -87,7 +87,7 @@ jobs:
           test -n "$HYPERV_SSH_USER" || { echo 'HYPERV_SSH_USER is not configured.' >&2; exit 1; }
           port="${HYPERV_SSH_PORT:-22}"
           ssh -p "$port" -i "$HOME/.ssh/monstermaze_hyperv" -o BatchMode=yes \
-            "${HYPERV_SSH_USER}@${HYPERV_SSH_HOST}" 'set -euo pipefail; sudo -n true; command -v curl; command -v unzip; command -v rsync; command -v sha256sum; command -v systemctl; test -x /usr/lib/jvm/java-8-openjdk-amd64/bin/java || test -x /usr/lib/jvm/temurin-8-jdk-amd64/bin/java || /usr/bin/java -version 2>&1 | grep -q '\''version "1.8.'\''; test -x /usr/lib/jvm/java-21-openjdk-amd64/bin/java || test -x /usr/lib/jvm/temurin-21-jdk-amd64/bin/java; systemctl list-unit-files monstermaze-1.8.service monstermaze-1.21.service >/dev/null'
+            "${HYPERV_SSH_USER}@${HYPERV_SSH_HOST}" 'set -euo pipefail; sudo -n true; command -v curl; command -v unzip; command -v rsync; command -v sha256sum; command -v systemctl; test -x /usr/lib/jvm/java-8-openjdk-amd64/bin/java || test -x /usr/lib/jvm/temurin-8-jdk-amd64/bin/java || /usr/bin/java -version 2>&1 | grep -q '\''version "1.8.'\''; test -x /usr/lib/jvm/java-21-openjdk-amd64/bin/java || test -x /usr/lib/jvm/temurin-21-jdk-amd64/bin/java; systemctl list-unit-files monstermaze-18.service monstermaze-21.service >/dev/null'
 
   release:
     needs: [preflight-fly, preflight-hyperv]
