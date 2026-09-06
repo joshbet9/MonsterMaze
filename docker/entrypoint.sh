@@ -32,6 +32,13 @@ init_server() {
     touch "$ROOT/.monstermaze-initialized"
   fi
 
+  # Keep immutable server/plugin artifacts in the persistent volume aligned with
+  # the tested image template. Runtime state, worlds, and plugin configuration
+  # remain in the volume and are not replaced here.
+  mkdir -p "$ROOT/plugins"
+  cp -f "$TEMPLATE/plugins/MonsterMazeStandalone.jar" "$ROOT/plugins/MonsterMazeStandalone.jar"
+  cp -f "$TEMPLATE/plugins/ProtocolLib.jar" "$ROOT/plugins/ProtocolLib.jar"
+
   # The public Fly TCP service is responsible for the external port. Keep the
   # Minecraft server listening on all interfaces inside the Machine.
   sed -i "s/^server-port=.*/server-port=$PORT/" "$ROOT/server.properties"
