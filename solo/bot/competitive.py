@@ -145,6 +145,68 @@ def calculate_mmr(c):
         c.execute("INSERT INTO permanent_ratings(uuid,name,mmr,updated_at) VALUES(?,?,?,?) ON CONFLICT(uuid) DO UPDATE SET name=COALESCE(excluded.name,permanent_ratings.name),mmr=excluded.mmr,updated_at=excluded.updated_at",(uuid.lower(),name,mmr,now))
     c.commit()
 
+def get_mmr_target(c, uuid, platform):
+    """Return the player's weakest eligible MMR configuration for a platform.
+
+    Missing PBs count as zero. Only configurations with an existing world-best
+    are eligible. Selection is based on the lowest PB/world-best percentage.
+    """
+    ensure_schema(c)
+
+    platform = str(platform)
+    uuid = str(uuid).lower()
+
+    boards = c.execute("""
+        SELECT platform, mode, pattern, kit, MAX(stage)
+        FROM runs
+        WHERE platform=?
+        GROUP BY platform, mode, pattern, kit
+    """, (platform,)).fetchall()
+
+    candidates = []
+
+    for board_platform, mode, pattern, kit, best in boards:
+        best = int(best or 0)
+        if best <= 0:
+            continue
+
+        pb_row = c.execute("""
+            SELECT MAX(stage)
+            FROM runs
+            WHERE platform=? AND mode=? AND pattern=? AND kit=? AND uuid=?
+        """, (board_platform, mode, pattern, kit, uuid)).fetchone()
+
+        pb = int(pb_row[0] or 0)
+        percentage = (float(pb) / float(best)) * 100.0
+
+        candidates.append((
+            percentage,
+            str(mode),
+            int(pattern),
+            str(kit),
+            pb,
+            best
+        ))
+
+    if not candidates:
+        return None
+
+    # Lowest percentage first. Remaining fields make ties deterministic.
+    candidates.sort(key=lambda x: (x[0], x[1], x[2], x[3]))
+
+    percentage, mode, pattern, kit, pb, best = candidates[0]
+
+    return {
+        "platform": platform,
+        "mode": mode,
+        "pattern": pattern,
+        "kit": kit,
+        "pb": pb,
+        "worldBest": best,
+        "percentage": round(percentage, 3),
+        "gap": round(100.0 - percentage, 3)
+    }
+
 
 def award_tournament_points(c,tournament_id,placements):
     t=c.execute("SELECT season_id FROM tournaments WHERE id=?",(tournament_id,)).fetchone()
