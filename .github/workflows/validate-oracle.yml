@@ -1,0 +1,48 @@
+name: Validate Oracle bot/API
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Oracle SSH and service preflight
+    runs-on: ubuntu-22.04
+    environment: oracle
+    timeout-minutes: 10
+    steps:
+      - name: Prepare SSH credentials
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY" || { echo 'ORACLE_SSH_PRIVATE_KEY is not configured.' >&2; exit 1; }
+          test -n "$SSH_KNOWN_HOSTS" || { echo 'ORACLE_SSH_KNOWN_HOSTS is not configured.' >&2; exit 1; }
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/monstermaze_oracle"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/oracle_known_hosts"
+          chmod 600 "$HOME/.ssh/monstermaze_oracle" "$HOME/.ssh/oracle_known_hosts"
+
+      - name: Verify Oracle SSH and deployment prerequisites
+        shell: bash
+        env:
+          ORACLE_SSH_HOST: ${{ secrets.ORACLE_SSH_HOST }}
+          ORACLE_SSH_USER: ${{ secrets.ORACLE_SSH_USER }}
+          ORACLE_SSH_PORT: ${{ secrets.ORACLE_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORACLE_SSH_HOST" || { echo 'ORACLE_SSH_HOST is not configured.' >&2; exit 1; }
+          test -n "$ORACLE_SSH_USER" || { echo 'ORACLE_SSH_USER is not configured.' >&2; exit 1; }
+          port="${ORACLE_SSH_PORT:-22}"
+          awk -v host="$ORACLE_SSH_HOST" 'NF >= 3 && $2 ~ /^ssh-/ { print host " " $2 " " $3 }' "$HOME/.ssh/oracle_known_hosts" > "$HOME/.ssh/known_hosts"
+          test -s "$HOME/.ssh/known_hosts"
+          ssh -p "$port" -i "$HOME/.ssh/monstermaze_oracle" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "${ORACLE_SSH_USER}@${ORACLE_SSH_HOST}" \
+            'set -euo pipefail; sudo -n true; command -v git; command -v curl; command -v systemctl; test -f /etc/monstermaze-api.env; systemctl is-active --quiet monster-bot.service'
