@@ -16,9 +16,20 @@ REPO="joshbet9/MonsterMaze"
 BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 ROOT="/home/monstermaze/servers"
 TMP="$(mktemp -d /tmp/monstermaze-deploy.XXXXXX)"
-trap 'rm -rf "$TMP"' EXIT
 
 log() { printf '[Hyper-V deploy] %s\n' "$*"; }
+
+cleanup() {
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    log "Deployment failed; attempting to restart both Hyper-V services so the integration servers are not left offline."
+    sudo systemctl start monstermaze-1.8.service 2>/dev/null || true
+    sudo systemctl start monstermaze-1.21.service 2>/dev/null || true
+  fi
+  rm -rf "$TMP"
+  exit "$status"
+}
+trap cleanup EXIT
 
 for command in curl unzip rsync sha256sum systemctl; do
   command -v "$command" >/dev/null || { echo "Missing required command: $command" >&2; exit 1; }
