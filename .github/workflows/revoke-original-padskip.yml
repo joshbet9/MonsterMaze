@@ -1,0 +1,46 @@
+name: Revoke Original pad-skip behavior
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  revoke:
+    if: ${{ github.actor == 'github-actions[bot]' || github.actor == 'joshbet9' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Revoke Original pad-skip
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          paths = [
+              Path('1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java'),
+              Path('1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java'),
+          ]
+          old = 'boolean onPad = getMode() == MazeMode.ORIGINAL ? playersOnPad.contains(p) : safePad != null && safePad.isOn(p);'
+          new = 'boolean onPad = safePad != null && safePad.isOn(p);'
+          for path in paths:
+              text = path.read_text()
+              if old not in text:
+                  raise SystemExit(f'Expected pad-skip line not found in {path}')
+              path.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+      - name: Commit and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add 1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java 1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java .github/workflows/revoke-original-padskip.yml
+          git rm .github/workflows/revoke-original-padskip.yml
+          git commit -m 'fix: revoke Original pad-skip survival behavior'
+          git push origin HEAD:main
