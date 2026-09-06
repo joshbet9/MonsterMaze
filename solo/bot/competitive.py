@@ -106,14 +106,14 @@ def calculate_weekly(c,sid):
     if not row:return
     start=int(datetime.fromisoformat(row[0]).timestamp()*1000); end=int(datetime.fromisoformat(row[1]).timestamp()*1000)
     comps=c.execute("SELECT platform,mode,pattern,kit,start_ts,end_ts FROM competitions WHERE start_ts>=? AND end_ts<=?",(row[0],row[1])).fetchall()
-    players=c.execute("SELECT DISTINCT uuid FROM submissions WHERE submitted_at>=? AND submitted_at<?",(start,end)).fetchall()
-    for (u,) in players:
+    players=c.execute("SELECT uuid,MAX(name) FROM submissions WHERE submitted_at>=? AND submitted_at<? GROUP BY uuid",(start,end)).fetchall()
+    for u,name in players:
         total=0
         for platform,mode,pattern,kit,cs,ce in comps:
             a=int(datetime.fromisoformat(cs).timestamp()*1000); b=int(datetime.fromisoformat(ce).timestamp()*1000)
             best=c.execute("SELECT MAX(stage) FROM submissions WHERE uuid=? AND platform=? AND mode=? AND pattern=? AND kit=? AND submitted_at>=? AND submitted_at<?",(u,platform,mode,pattern,kit,a,b)).fetchone()[0]
             if best is not None:total+=int(best)
-        ensure_player(c,sid,u); c.execute("UPDATE season_players SET weekly_points=? WHERE season_id=? AND uuid=?",(total,sid,u))
+        ensure_player(c,sid,u,name); c.execute("UPDATE season_players SET weekly_points=? WHERE season_id=? AND uuid=?",(total,sid,u))
 
 
 def recalculate_components(c,sid):
