@@ -28,6 +28,9 @@ cleanup() {
     sudo systemctl start monstermaze-21.service 2>/dev/null || true
   fi
   rm -rf "$TMP"
+  if [ -n "$ASSET_DIR" ]; then
+    rm -rf "$ASSET_DIR"
+  fi
   exit "$status"
 }
 trap cleanup EXIT
