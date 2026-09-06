@@ -1,4 +1,0 @@
-name: temporary placeholder removed
-on:
-  workflow_dispatch:
-jobs: {}
