@@ -35,14 +35,17 @@ START_MESSAGE = os.getenv("MM_START_MESSAGE", "Monster Maze is starting this ser
 @dataclass(frozen=True)
 class Target:
     name: str
-    protocol: int
+    protocols: tuple[int, ...]
     backend_port: int
     machine_id: str
     version_name: str
 
+def parse_protocols(value: str) -> tuple[int, ...]:
+    return tuple(int(item.strip()) for item in value.split(",") if item.strip())
+
 TARGETS = {
-    "1.8": Target("1.8", 47, 25565, os.getenv("MM18_MACHINE_ID", "84503ef24605e8"), "1.8.9"),
-    "1.21": Target("1.21", int(os.getenv("MM21_PROTOCOL", "774")), 25566, os.getenv("MM21_MACHINE_ID", "85d3e1b44dd7e8"), "1.21.11"),
+    "1.8": Target("1.8", (47,), 25565, os.getenv("MM18_MACHINE_ID", "84503ef24605e8"), "1.8.9"),
+    "1.21": Target("1.21", parse_protocols(os.getenv("MM21_PROTOCOLS", "774,775,776")), 25566, os.getenv("MM21_MACHINE_ID", "85d3e1b44dd7e8"), "1.21.11"),
 }
 START_LOCKS = {key: asyncio.Lock() for key in TARGETS}
 
@@ -122,10 +125,9 @@ def parse_handshake(payload: bytes) -> tuple[int, str, int, int]:
     return protocol, host, port, next_state
 
 def target_for_protocol(protocol: int) -> Optional[Target]:
-    if protocol == TARGETS["1.8"].protocol:
-        return TARGETS["1.8"]
-    if protocol == TARGETS["1.21"].protocol:
-        return TARGETS["1.21"]
+    for target in TARGETS.values():
+        if protocol in target.protocols:
+            return target
     return None
 
 def json_string_packet(packet_id: int, text: str) -> bytes:
@@ -139,7 +141,7 @@ def start_disconnect(message: str) -> bytes:
 
 def static_status(target: Target) -> bytes:
     payload = {
-        "version": {"name": target.version_name, "protocol": target.protocol},
+        "version": {"name": target.version_name, "protocol": target.protocols[0]},
         "players": {"max": 20, "online": 0, "sample": []},
         "description": {"text": "Monster Maze — login here to wake the server"},
     }
@@ -257,7 +259,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         target = target_for_protocol(protocol)
         LOG.info("Connection from %s: protocol=%s host=%s port=%s state=%s target=%s", peer, protocol, host, port, next_state, target.name if target else "unknown")
         if target is None:
-            writer.write(start_disconnect("Unsupported Minecraft version. Please use Minecraft 1.8.9 or 1.21.11."))
+            writer.write(start_disconnect("Unsupported Minecraft version. Please use Minecraft 1.8.9, 1.21.11, 26.1.x, or 26.2."))
             await writer.drain()
             return
         if next_state == 1:
@@ -282,7 +284,7 @@ async def main() -> None:
     server = await asyncio.start_server(handle_client, LISTEN_HOST, LISTEN_PORT)
     addresses = ", ".join(str(sock.getsockname()) for sock in (server.sockets or []))
     LOG.info("Monster Maze wake gateway listening on %s", addresses)
-    LOG.info("Wake targets: 1.8 -> %s:%s; 1.21 -> %s:%s", FLY_BACKEND_HOST, TARGETS["1.8"].backend_port, FLY_BACKEND_HOST, TARGETS["1.21"].backend_port)
+    LOG.info("Wake targets: 1.8 protocols=%s -> %s:%s; 1.21 protocols=%s -> %s:%s", TARGETS["1.8"].protocols, FLY_BACKEND_HOST, TARGETS["1.8"].backend_port, TARGETS["1.21"].protocols, FLY_BACKEND_HOST, TARGETS["1.21"].backend_port)
     async with server:
         await server.serve_forever()
 
