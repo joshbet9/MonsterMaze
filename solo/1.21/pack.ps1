@@ -19,6 +19,14 @@ $paper = if ($env:MM_PAPER_JAR) { $env:MM_PAPER_JAR } else {
 }
 $protocol = if ($env:MM_PROTOCOLLIB_JAR) { $env:MM_PROTOCOLLIB_JAR } else { Join-Path $here 'tools/ProtocolLib.jar' }
 $viaversion = if ($env:MM_VIAVERSION_JAR) { $env:MM_VIAVERSION_JAR } else { Join-Path $here 'tools/ViaVersion.jar' }
+$viaversionUrl = 'https://github.com/ViaVersion/ViaVersion/releases/download/5.11.0/ViaVersion-5.11.0.jar'
+
+if (-not (Test-Path $viaversion)) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $viaversion) | Out-Null
+    $headers = @{ 'User-Agent' = 'MonsterMaze-Release/1.0 (https://github.com/joshbet9/MonsterMaze)' }
+    Write-Host "Downloading pinned ViaVersion 5.11.0..."
+    Invoke-WebRequest -Uri $viaversionUrl -Headers $headers -OutFile $viaversion
+}
 
 if ($env:MM_SOLO_JDK21_WINDOWS) {
     $jdk21 = $env:MM_SOLO_JDK21_WINDOWS
