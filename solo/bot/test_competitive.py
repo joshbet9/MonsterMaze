@@ -81,6 +81,37 @@ class CompetitiveTests(unittest.TestCase):
         self.assertGreater(rows["a"], 1000.0)
         self.assertAlmostEqual(rows["b"], rows["c"], places=6)
 
+    def test_weekly_points_include_competition_across_local_utc_boundary(self):
+        # The season starts at Monday 00:00 Brisbane, which is Sunday 14:00Z.
+        # Competitions are stored in UTC, so a valid first-week competition can
+        # have a UTC calendar date before the season's local calendar date.
+        season_start = datetime.fromisoformat(self.season[2])
+        season_end = datetime.fromisoformat(self.season[3])
+        competition_start = season_start.astimezone(timezone.utc)
+        competition_end = competition_start + timedelta(days=7)
+        self.db.execute(
+            "INSERT INTO competitions VALUES(?,?,?,?,?,?)",
+            ("1.21", "modern", 1, "Jumper", competition_start.isoformat(), competition_end.isoformat()),
+        )
+
+        submitted_at = int((competition_start + timedelta(days=1)).timestamp() * 1000)
+        self.db.execute(
+            "INSERT INTO submissions VALUES(?,?,?,?,?,?,?)",
+            ("alice", "1.21", "modern", 1, "Jumper", submitted_at, 3),
+        )
+        self.db.execute(
+            "INSERT INTO submissions VALUES(?,?,?,?,?,?,?)",
+            ("bob", "1.21", "modern", 1, "Jumper", submitted_at, 2),
+        )
+        self.db.commit()
+
+        competitive.calculate_weekly(self.db, self.sid)
+        rows = dict(self.db.execute(
+            "SELECT uuid,weekly_points FROM season_players WHERE season_id=?", (self.sid,)
+        ).fetchall())
+        self.assertEqual(rows["alice"], 3)
+        self.assertEqual(rows["bob"], 2)
+
     def test_mmr_recalculates_against_current_kit_best(self):
         self.db.execute("INSERT INTO runs VALUES('1.8','modern',0,'Jumper','a','A',10,1000)")
         self.db.execute("INSERT INTO runs VALUES('1.8','modern',0,'Jumper','b','B',8,1000)")
