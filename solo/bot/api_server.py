@@ -51,6 +51,13 @@ def competitive_get(parts):
         if parts==["mmr","leaderboard"]:
             competitive.calculate_mmr(c);rows=c.execute("SELECT uuid,name,mmr FROM permanent_ratings ORDER BY mmr DESC,uuid ASC LIMIT 25").fetchall()
             return {"ok":True,"kind":"mmr","rows":[{"uuid":u,"name":n,"score":round(float(v),3)} for u,n,v in rows]}
+        if len(parts)==5 and parts[0]=="mmr" and parts[1]=="player" and parts[3]=="next":
+            uuid=parts[2].lower()
+            platform=parts[4]
+            if platform not in ("1.8","1.21"):
+                raise ValueError("unsupported platform")
+            target=competitive.get_mmr_target(c,uuid,platform)
+            return {"ok":True,"target":target}
         if len(parts)==3 and parts[0] in ("mmcl","season","mmr") and parts[1]=="player":
             uuid=parts[2].lower()
             if parts[0]=="mmr":
