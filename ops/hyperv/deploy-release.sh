@@ -2,13 +2,14 @@
 set -euo pipefail
 
 # Release promotion target for the local Hyper-V integration server.
-# Runs on the Hyper-V Linux VM. It consumes the immutable GitHub Release
-# server artifacts, preserves environment-owned state, and guarantees
+# Runs on the Hyper-V Linux VM. It consumes validated build artifacts supplied
+# by the release workflow, preserves environment-owned state, and guarantees
 # solo-mode:false for both hosted instances.
 
 TAG="${1:-}"
+ASSET_DIR="${2:-}"
 [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-  echo "Usage: $0 vX.Y.Z" >&2
+  echo "Usage: $0 vX.Y.Z [validated-asset-dir]" >&2
   exit 2
 }
 
@@ -75,11 +76,23 @@ find_java21() {
 JAVA8="$(find_java8)" || { echo 'Java 8 runtime not found on Hyper-V host.' >&2; exit 1; }
 JAVA21="$(find_java21)" || { echo 'Java 21 runtime not found on Hyper-V host.' >&2; exit 1; }
 
-log "Downloading immutable release checksums for $TAG"
-curl -fsSL "${BASE_URL}/SHA256SUMS.txt" -o "$TMP/SHA256SUMS.txt"
-for version in 1.8 1.21; do
-  curl -fsSL "${BASE_URL}/MonsterMaze-Server-${version}.zip" -o "$TMP/MonsterMaze-Server-${version}.zip"
-done
+if [ -n "$ASSET_DIR" ]; then
+  log "Using validated build artifacts from $ASSET_DIR for $TAG"
+  test -f "$ASSET_DIR/SHA256SUMS.txt"
+  for version in 1.8 1.21; do
+    test -f "$ASSET_DIR/MonsterMaze-Server-${version}.zip"
+  done
+  cp "$ASSET_DIR/SHA256SUMS.txt" "$TMP/SHA256SUMS.txt"
+  for version in 1.8 1.21; do
+    cp "$ASSET_DIR/MonsterMaze-Server-${version}.zip" "$TMP/MonsterMaze-Server-${version}.zip"
+  done
+else
+  log "Downloading immutable release assets for $TAG"
+  curl -fsSL "${BASE_URL}/SHA256SUMS.txt" -o "$TMP/SHA256SUMS.txt"
+  for version in 1.8 1.21; do
+    curl -fsSL "${BASE_URL}/MonsterMaze-Server-${version}.zip" -o "$TMP/MonsterMaze-Server-${version}.zip"
+  done
+fi
 
 cd "$TMP"
 grep -E "  MonsterMaze-Server-(1\.8|1\.21)\.zip$" SHA256SUMS.txt | sha256sum -c -
