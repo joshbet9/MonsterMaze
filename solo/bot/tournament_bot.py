@@ -1,6 +1,7 @@
 """Discord tournament management and competitive ranking boards for Monster Maze."""
 import asyncio
 import time
+import re
 from datetime import datetime, timezone
 
 import discord
@@ -23,6 +24,7 @@ def schema(c):
     c.execute(f"""CREATE TABLE IF NOT EXISTS {ARCHIVE_TABLE}(
         season_id INTEGER PRIMARY KEY, channel_id TEXT NOT NULL, message_id TEXT NOT NULL,
         published_at INTEGER NOT NULL)""")
+    c.execute("CREATE TABLE IF NOT EXISTS discord_minecraft_identity (discord_user_id TEXT PRIMARY KEY, uuid TEXT NOT NULL UNIQUE, name TEXT, linked_at INTEGER NOT NULL)")
     c.commit()
 
 
@@ -388,7 +390,7 @@ class TournamentBot(MonsterBot):
             return
         sub = args[0].lower()
         if sub in ("help", "?"):
-            await message.channel.send("`!tournament` • `create <name> <registration-minutes> <start-minutes>` (staff) • `register <uuid> [name]` • `bracket` • `status [uuid]` • `results`"); return
+            await message.channel.send("`!tournament` • `create <name> <registration-minutes> <start-minutes>` (staff) • `link <uuid> [minecraft-name]` • `unlink` • `register [uuid] [name]` • `bracket` • `status [uuid]` • `results`"); return
         if sub == "create":
             if not self.staff(message): await message.channel.send("❌ Manage Server permission required."); return
             if len(args) < 4: await message.channel.send("Usage: `!tournament create <name> <registration-minutes> <start-minutes>`"); return
@@ -401,9 +403,34 @@ class TournamentBot(MonsterBot):
                 competitive.ensure_schema(c); sid = int(competitive.ensure_current_season(c)[0]); number = int(c.execute("SELECT COALESCE(MAX(number),0)+1 FROM tournaments WHERE season_id=?", (sid,)).fetchone()[0]); now = int(time.time()*1000); tid = tournament.create_tournament(c, sid, number, name, now, now+reg*60000, now+start*60000)
             finally: c.close()
             await message.channel.send(f"🏆 Created **Tournament #{number:03d} — {name}**. Registration closes {dt(now+reg*60000,'R')}."); await self.announce(tid); return
+        if sub == "link":
+            if len(args) < 2: await message.channel.send("Usage: `!tournament link <uuid> [minecraft-name]`"); return
+            uuid=args[1].lower().strip(); name=" ".join(args[2:]).strip() or message.author.display_name
+            if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", uuid): await message.channel.send("❌ Please provide a valid Minecraft UUID."); return
+            c=db()
+            try:
+                schema(c); existing=c.execute("SELECT discord_user_id FROM discord_minecraft_identity WHERE uuid=?",(uuid,)).fetchone()
+                if existing and str(existing[0]) != str(message.author.id): await message.channel.send("❌ That Minecraft UUID is already linked to another Discord user."); return
+                c.execute("INSERT INTO discord_minecraft_identity(discord_user_id,uuid,name,linked_at) VALUES(?,?,?,?) ON CONFLICT(discord_user_id) DO UPDATE SET uuid=excluded.uuid,name=excluded.name,linked_at=excluded.linked_at",(str(message.author.id),uuid,name,int(time.time()*1000))); c.commit()
+            finally: c.close()
+            await message.channel.send(f"✅ Linked your Discord account to **{name}** (`{uuid}`)."); return
+        if sub == "unlink":
+            c=db()
+            try: schema(c); c.execute("DELETE FROM discord_minecraft_identity WHERE discord_user_id=?",(str(message.author.id),)); c.commit()
+            finally: c.close()
+            await message.channel.send("✅ Minecraft identity unlinked."); return
         if sub == "register":
-            if len(args) < 2: await message.channel.send("Usage: `!tournament register <uuid> [minecraft-name]`"); return
-            uuid, name = args[1].lower().strip(), (" ".join(args[2:]).strip() or message.author.display_name); c = db()
+            c=db()
+            try:
+                schema(c)
+                if len(args)>=2:
+                    uuid=args[1].lower().strip(); name=" ".join(args[2:]).strip() or message.author.display_name
+                else:
+                    linked=c.execute("SELECT uuid,name FROM discord_minecraft_identity WHERE discord_user_id=?",(str(message.author.id),)).fetchone()
+                    if not linked: await message.channel.send("❌ No Minecraft identity is linked. Use `!tournament link <uuid> [minecraft-name]` or provide a UUID."); return
+                    uuid,name=str(linked[0]).lower(),(linked[1] or message.author.display_name)
+            finally: c.close()
+            c=db()
             try:
                 competitive.ensure_schema(c); sid = int(competitive.ensure_current_season(c)[0]); x = c.execute("SELECT id FROM tournaments WHERE season_id=? AND status='registration' ORDER BY number DESC LIMIT 1", (sid,)).fetchone()
                 if not x: raise ValueError("there is no tournament open for registration")
