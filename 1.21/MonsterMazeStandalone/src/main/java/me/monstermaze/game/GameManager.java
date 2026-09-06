@@ -137,6 +137,7 @@ public class GameManager implements Listener {
         if (state == GameState.IDLE || state == GameState.ENDING) {
             player.teleport(getLobbySpawn());
             player.setGameMode(GameMode.SURVIVAL);
+            player.setCollidable(true);
             kitManager.resetPlayerState(player);
             player.getInventory().clear();
             // Ensure NPCs exist
@@ -390,8 +391,11 @@ public void startGame(Location preferCenter, int requestedPattern) {
 
         for (Player p : Bukkit.getOnlinePlayers()) {
             p.setExp(0); p.setLevel(0);
+            p.getInventory().clear();
+            p.getInventory().setArmorContents(null);
             kitManager.resetPlayerState(p);
             p.setGameMode(GameMode.SURVIVAL);
+            p.setCollidable(true);
             
             // Restore visibility for all players in lobby
             for (Player target : Bukkit.getOnlinePlayers()) {
@@ -516,7 +520,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
                 // Survival requires being ON the pad right now. (See note: the older
                 // playersOnPad "ever touched" check wrongly let players who stepped on the
                 // pad then walked off it survive the round end.)
-                boolean onPad = safePad != null && safePad.isOn(p);
+                boolean onPad = getMode() == MazeMode.ORIGINAL ? playersOnPad.contains(p) : safePad != null && safePad.isOn(p);
 
                 if (onPad) {
                     TextUtil.title(p, "", ChatColor.YELLOW + "" + ChatColor.BOLD + "Get to the Next Safe Pad!", 5, 40, 5);
@@ -655,6 +659,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
 
     private void preparePlayer(Player p) {
         p.setGameMode(GameMode.SURVIVAL);
+        p.setCollidable(false);
         kitManager.resetPlayerState(p);
         p.setHealth(p.getMaxHealth());
         p.setFoodLevel(20);
