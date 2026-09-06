@@ -170,6 +170,7 @@ jobs:
           $d = $stable[0].downloads.'server:default'
           Invoke-WebRequest -Uri $d.url -Headers $headers -OutFile "$env:RUNNER_TEMP/$($d.name)"
           if ((Get-FileHash "$env:RUNNER_TEMP/$($d.name)" -Algorithm SHA256).Hash.ToLower() -ne $d.checksums.sha256.ToLower()) { throw 'Paper checksum mismatch.' }
+          "MM_PAPER_JAR=$env:RUNNER_TEMP/$($d.name)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
       - name: Download ProtocolLib
         shell: bash
         run: curl -fsSL "$PROTOCOLLIB_URL" -o "$RUNNER_TEMP/ProtocolLib.jar"
@@ -184,7 +185,6 @@ jobs:
           MM_RELEASE_NOTE: Automated Monster Maze release.
           MM_RELEASE_SOURCE_BASE_URL: https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${{ env.RELEASE_TAG }}/solo/1.21
           MM_RELEASE_ASSET_BASE_URL: https://github.com/joshbet9/MonsterMaze/releases/download/${{ env.RELEASE_TAG }}
-          MM_PAPER_JAR: ${{ runner.temp }}/paper-1.21.11.jar
           MM_PROTOCOLLIB_JAR: ${{ runner.temp }}/ProtocolLib.jar
         run: |
           $v = $env:RELEASE_TAG -replace '^v',''
