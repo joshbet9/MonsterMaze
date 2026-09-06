@@ -6,7 +6,7 @@ permissions:
   contents: write
 jobs:
   implement:
-    if: ${{ !startsWith(github.event.head_commit.message, 'fix: issues 5 7 18 20 21') }}
+    if: "${{ !startsWith(github.event.head_commit.message, 'fix: issues 5 7 18 20 21') }}"
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +43,6 @@ jobs:
           # #7: 1.21 player collision disabled in-game, restored on lobby return.
           edit('1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java','private void preparePlayer(Player p) {\n        p.setGameMode(GameMode.SURVIVAL);','private void preparePlayer(Player p) {\n        p.setGameMode(GameMode.SURVIVAL);\n        p.setCollidable(false);')
           edit('1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java','p.setGameMode(GameMode.SURVIVAL);\n            \n            // Restore visibility','p.setGameMode(GameMode.SURVIVAL);\n            p.setCollidable(true);\n            \n            // Restore visibility')
-          # Also restore collision through normal lobby send path.
           edit('1.21/MonsterMazeStandalone/src/main/java/me/monstermaze/game/GameManager.java','player.setGameMode(GameMode.SURVIVAL);\n            kitManager.resetPlayerState(player);','player.setGameMode(GameMode.SURVIVAL);\n            player.setCollidable(true);\n            kitManager.resetPlayerState(player);')
 
           # #20: retain the latest known submission name when populating season rows.
