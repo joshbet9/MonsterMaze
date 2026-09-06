@@ -16,9 +16,12 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MMCommand implements CommandExecutor {
     private final MonsterMazePlugin plugin;
@@ -59,7 +62,7 @@ public class MMCommand implements CommandExecutor {
         if(gm.getState()!=GameState.IDLE&&gm.getState()!=GameState.ENDING){sender.sendMessage(ChatColor.RED+"Game already running ("+gm.getState()+").");return true;}
         if(args.length>=2&&(args[1].equalsIgnoreCase("challenge")||args[1].equalsIgnoreCase("mmr"))){
             if(!(sender instanceof Player)){sender.sendMessage(ChatColor.RED+"Players only.");return true;}
-            Player p=(Player)sender;
+            final Player p=(Player)sender;
             if(args[1].equalsIgnoreCase("challenge")){
                 ChallengeManager.Challenge c=plugin.getChallengeManager().getChallenge();
                 if(c==null){sender.sendMessage(ChatColor.YELLOW+"Weekly challenge is still loading...");plugin.getChallengeManager().refresh();return true;}
@@ -67,16 +70,57 @@ public class MMCommand implements CommandExecutor {
                 if(mode==null||kit==null){sender.sendMessage(ChatColor.RED+"The hosted challenge configuration is invalid.");return true;}
                 plugin.setMode(mode);setForcedPattern(c.pattern);gm.getKitManager().setKit(p,kit);gm.startGame(p.getLocation(),c.pattern);sender.sendMessage(ChatColor.GREEN+"Starting Weekly Challenge #"+c.number+"...");return true;
             }
-            sender.sendMessage(ChatColor.YELLOW+"/mm start mmr is reserved until the backend exposes the player's per-config MMR targets.");return true;
+            startMMR(p,gm);
+            return true;
         }
         Integer requested=null;if(args.length>=2)try{int p=Integer.parseInt(args[1]);if(p<1||p>MazeLayouts.ALL_MAZES.length)throw new NumberFormatException();requested=p-1;}catch(NumberFormatException e){sender.sendMessage(ChatColor.RED+"Invalid maze pattern. Use 1, 2, 3, challenge, or mmr.");return true;}
         int pattern=requested==null?forcedPattern():requested;if(sender instanceof Player){if(pattern>=0)gm.startGame(((Player)sender).getLocation(),pattern);else gm.startGame(((Player)sender).getLocation());}else{if(pattern>=0)gm.startGame(pattern);else gm.startGame();}sender.sendMessage(ChatColor.GREEN+"Starting Monster Maze"+(pattern>=0?" with Maze "+(pattern+1):" with a random maze")+"...");return true;
     }
 
+    private void startMMR(final Player player, final GameManager gm){
+        if(!plugin.getBackendClient().isEnabled()){player.sendMessage(ChatColor.RED+"MMR start is unavailable because the competitive backend is not configured.");return;}
+        player.sendMessage(ChatColor.GRAY+"Finding your weakest MMR configuration...");
+        new BukkitRunnable(){
+            @Override public void run(){
+                try{
+                    String json=plugin.getBackendClient().get("/api/v1/mmr/player/"+player.getUniqueId()+"/next/1.21");
+                    final MMRTarget target=parseMMRTarget(json);
+                    new BukkitRunnable(){
+                        @Override public void run(){
+                            if(target==null){player.sendMessage(ChatColor.YELLOW+"No eligible MMR configuration was found.");return;}
+                            if(gm.getState()!=GameState.IDLE&&gm.getState()!=GameState.ENDING){player.sendMessage(ChatColor.RED+"The game started before your MMR target was loaded.");return;}
+                            MazeMode mode=MazeMode.byName(target.mode);KitType kit=KitType.byName(target.kit);
+                            if(mode==null||kit==null){player.sendMessage(ChatColor.RED+"The backend returned an invalid MMR configuration.");return;}
+                            plugin.setMode(mode);
+                            setForcedPattern(target.pattern);
+                            gm.getKitManager().setKit(player,kit);
+                            gm.startGame(player.getLocation(),target.pattern);
+                            player.sendMessage(ChatColor.GREEN+"Starting your weakest MMR configuration: "+mode.id+" / Maze "+(target.pattern+1)+" / "+kit.display+ChatColor.GRAY+" ("+formatPercent(target.percentage)+" complete)");
+                        }
+                    }.runTask(plugin);
+                }catch(Exception e){new BukkitRunnable(){@Override public void run(){player.sendMessage(ChatColor.RED+"Could not load your MMR target right now. Please try again.");}}.runTask(plugin);}
+            }
+        }.runTaskAsynchronously(plugin);
+    }
+
+    private String formatPercent(double percentage){return String.format(java.util.Locale.US,"%.1f%%",percentage);}
+    private MMRTarget parseMMRTarget(String json){
+        if(json==null||json.length()==0||json.indexOf("\"target\"")<0)return null;
+        String mode=parseJsonString(json,"mode");String kit=parseJsonString(json,"kit");Integer pattern=parseJsonInt(json,"pattern");Double percentage=parseJsonDouble(json,"percentage");
+        if(mode==null||kit==null||pattern==null||percentage==null)return null;
+        return new MMRTarget(mode,kit,pattern,percentage);
+    }
+    private String parseJsonString(String json,String key){Matcher m=Pattern.compile("\\\""+Pattern.quote(key)+"\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(json);return m.find()?m.group(1):null;}
+    private Integer parseJsonInt(String json,String key){Matcher m=Pattern.compile("\\\""+Pattern.quote(key)+"\\\"\\s*:\\s*(-?\\d+)").matcher(json);return m.find()?Integer.valueOf(m.group(1)):null;}
+    private Double parseJsonDouble(String json,String key){Matcher m=Pattern.compile("\\\""+Pattern.quote(key)+"\\\"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)").matcher(json);return m.find()?Double.valueOf(m.group(1)):null;}
+    private static class MMRTarget{final String mode;final String kit;final int pattern;final double percentage;MMRTarget(String mode,String kit,int pattern,double percentage){this.mode=mode;this.kit=kit;this.pattern=pattern;this.percentage=percentage;}}
+
     private void showHelp(CommandSender sender){
         sender.sendMessage(ChatColor.GOLD+"=== Monster Maze ===");
         sender.sendMessage(ChatColor.YELLOW+"Player Commands");
         sender.sendMessage(ChatColor.WHITE+"/mm start [1|2|3]"+ChatColor.GRAY+" - start a run");
+        sender.sendMessage(ChatColor.WHITE+"/mm start challenge"+ChatColor.GRAY+" - play this week's challenge");
+        sender.sendMessage(ChatColor.WHITE+"/mm start mmr"+ChatColor.GRAY+" - start your weakest MMR configuration");
         sender.sendMessage(ChatColor.WHITE+"/mm map <name>"+ChatColor.GRAY+" - choose the map");
         sender.sendMessage(ChatColor.WHITE+"/mm pattern <1|2|3|random>"+ChatColor.GRAY+" - choose the maze");
         sender.sendMessage(ChatColor.WHITE+"/mm mode <original|modern|classic>"+ChatColor.GRAY+" - choose the mode");
@@ -89,7 +133,6 @@ public class MMCommand implements CommandExecutor {
         sender.sendMessage(ChatColor.WHITE+"/mm stats"+ChatColor.GRAY+" - competitive stats");
         sender.sendMessage(ChatColor.WHITE+"/mm clb [mmcl|mmr|elo|weekly|tournament]"+ChatColor.GRAY+" - competitive leaderboard");
         sender.sendMessage(ChatColor.WHITE+"/mm challenge [lb]"+ChatColor.GRAY+" - weekly challenge");
-        sender.sendMessage(ChatColor.WHITE+"/mm start challenge"+ChatColor.GRAY+" - play this week's challenge");
         sender.sendMessage(ChatColor.WHITE+"/mm tournament [match|lb]"+ChatColor.GRAY+" - tournament info");
         if(sender.hasPermission("monstermaze.admin")){
             sender.sendMessage(ChatColor.RED+"Admin Commands");
