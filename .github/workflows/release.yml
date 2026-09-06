@@ -118,7 +118,6 @@ jobs:
           set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$RELEASE_TAG")"
-
       - name: Setup Java 8
         uses: actions/setup-java@v5
         with:
@@ -153,7 +152,6 @@ jobs:
           Copy-Item ./solo-dist.zip ./MonsterMaze-Solo.zip -Force
           Copy-Item ./version.json ./solo-1.8-version.json -Force
           Copy-Item ./server/plugins/MonsterMazeStandalone.jar ../MonsterMaze-Solo-1.8-plugin.jar -Force
-
       - name: Setup Java 21
         uses: actions/setup-java@v5
         with:
@@ -194,8 +192,7 @@ jobs:
           Copy-Item ./solo-dist/server/plugins/MonsterMazeStandalone.jar ../../MonsterMaze-Solo-1.21-plugin.jar -Force
           Copy-Item ./solo-dist/server/plugins/ProtocolLib.jar ../../MonsterMaze-Solo-1.21-ProtocolLib.jar -Force
           Copy-Item ./solo-dist/server/paper-1.21.11.jar ../../MonsterMaze-Solo-1.21-Paper.jar -Force
-
-      - name: Prepare Docker context
+      - name: Prepare canonical hosted server artifacts
         shell: pwsh
         run: |
           $root = Join-Path $env:GITHUB_WORKSPACE 'docker/build-context'
@@ -210,6 +207,24 @@ jobs:
             if ((Get-Content "$root/$v/server/plugins/MonsterMazeStandalone/config.yml" -Raw) -notmatch '(?m)^solo-mode:\s*false\s*$') { throw "$v hosted artifact is not solo-mode:false" }
             if (Test-Path "$root/$v/server/.env") { throw "$v artifact contains .env" }
           }
+      - name: Verify hosted artifacts contain no production credentials
+        shell: pwsh
+        run: |
+          $scanRoots = @('docker/build-context/1.8/server','docker/build-context/1.21/server')
+          $patterns = '(?i)(MM_API_TOKEN\s*[:=]|authorization\s*[:=]|bearer\s+[A-Za-z0-9._-]{20,}|password\s*[:=]\s*[^\s#]+|secret\s*[:=]\s*[^\s#]+)'
+          foreach ($root in $scanRoots) {
+            $files = Get-ChildItem $root -Recurse -File | Where-Object { $_.Extension -in @('.yml','.yaml','.properties','.json','.txt','.conf','.env') }
+            foreach ($file in $files) {
+              if (Select-String -Path $file.FullName -Pattern $patterns -AllMatches -ErrorAction SilentlyContinue) { throw "Potential production credential in artifact: $($file.FullName)" }
+            }
+          }
+      - name: Create canonical hosted server ZIPs
+        shell: pwsh
+        run: |
+          Compress-Archive -Path 'docker/build-context/1.8/server/*' -DestinationPath 'MonsterMaze-Server-1.8.zip' -CompressionLevel Optimal
+          Compress-Archive -Path 'docker/build-context/1.21/server/*' -DestinationPath 'MonsterMaze-Server-1.21.zip' -CompressionLevel Optimal
+          if ((Get-Item 'MonsterMaze-Server-1.8.zip').Length -le 0) { throw '1.8 server artifact is empty.' }
+          if ((Get-Item 'MonsterMaze-Server-1.21.zip').Length -le 0) { throw '1.21 server artifact is empty.' }
       - name: Login GHCR
         uses: docker/login-action@v3
         with:
@@ -229,7 +244,7 @@ jobs:
       - name: Create checksums
         shell: pwsh
         run: |
-          $assets = @('solo/MonsterMaze-Solo.zip','solo/solo-1.8-version.json','MonsterMaze-Solo-1.8-plugin.jar','solo/1.21/1.21-MonsterMaze-Solo.zip','solo/1.21/solo-1.21-version.json','MonsterMaze-Solo-1.21-plugin.jar','MonsterMaze-Solo-1.21-Paper.jar','MonsterMaze-Solo-1.21-ProtocolLib.jar','DOCKER-IMAGE.txt')
+          $assets = @('MonsterMaze-Server-1.8.zip','MonsterMaze-Server-1.21.zip','solo/MonsterMaze-Solo.zip','solo/solo-1.8-version.json','MonsterMaze-Solo-1.8-plugin.jar','solo/1.21/1.21-MonsterMaze-Solo.zip','solo/1.21/solo-1.21-version.json','MonsterMaze-Solo-1.21-plugin.jar','MonsterMaze-Solo-1.21-Paper.jar','MonsterMaze-Solo-1.21-ProtocolLib.jar','DOCKER-IMAGE.txt')
           $assets | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_ -replace '\\','/')" } | Set-Content SHA256SUMS.txt -Encoding ascii
       - name: Upload validated release assets
         uses: actions/upload-artifact@v4
@@ -237,6 +252,8 @@ jobs:
           name: release-assets
           retention-days: 1
           path: |
+            MonsterMaze-Server-1.8.zip
+            MonsterMaze-Server-1.21.zip
             solo/MonsterMaze-Solo.zip
             solo/solo-1.8-version.json
             MonsterMaze-Solo-1.8-plugin.jar
