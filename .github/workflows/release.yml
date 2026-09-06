@@ -1,0 +1,358 @@
+name: Release Monster Maze
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vX.Y.Z tag to build and deploy
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  BUILDTOOLS_URL: https://hub.spigotmc.org/jenkins/job/BuildTools/200/artifact/target/BuildTools.jar
+  PROTOCOLLIB_URL: https://github.com/dmulloy2/ProtocolLib/releases/download/5.4.0/ProtocolLib.jar
+  IMAGE_NAME: ghcr.io/joshbet9/monstermaze
+  FLY_IMAGE_NAME: registry.fly.io/monstermaze
+
+jobs:
+  preflight-fly:
+    name: Preflight Fly production
+    runs-on: ubuntu-22.04
+    environment: production
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Verify Fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$FLY_API_TOKEN"
+          flyctl status -a monstermaze
+
+  preflight-hyperv:
+    name: Preflight Hyper-V
+    runs-on: ubuntu-22.04
+    environment: hyperv
+    steps:
+      - uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions
+          ping: 100.98.188.97
+      - name: Prepare SSH
+        env:
+          KEY: ${{ secrets.HYPERV_SSH_PRIVATE_KEY }}
+          KNOWN: ${{ secrets.HYPERV_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$KEY" && test -n "$KNOWN"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/hyperv
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/hyperv ~/.ssh/known_hosts
+      - name: Verify Hyper-V
+        env:
+          HOST: ${{ secrets.HYPERV_SSH_HOST }}
+          USER: ${{ secrets.HYPERV_SSH_USER }}
+          PORT: ${{ secrets.HYPERV_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          port="${PORT:-22}"
+          ssh -p "$port" -i ~/.ssh/hyperv -o BatchMode=yes "$USER@$HOST" 'set -euo pipefail; sudo -n true; command -v curl; command -v unzip; command -v rsync; command -v sha256sum; command -v systemctl; systemctl list-unit-files monstermaze-18.service monstermaze-21.service >/dev/null; systemctl is-active --quiet monstermaze-18.service; systemctl is-active --quiet monstermaze-21.service'
+
+  preflight-oracle:
+    name: Preflight Oracle bot/API
+    runs-on: ubuntu-22.04
+    environment: oracle
+    steps:
+      - name: Prepare SSH
+        env:
+          KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          KNOWN: ${{ secrets.ORACLE_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$KEY" && test -n "$KNOWN"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/oracle
+          printf '%s\n' "$KNOWN" > ~/.ssh/oracle_known_hosts
+          chmod 600 ~/.ssh/oracle ~/.ssh/oracle_known_hosts
+      - name: Verify Oracle
+        env:
+          HOST: ${{ secrets.ORACLE_SSH_HOST }}
+          USER: ${{ secrets.ORACLE_SSH_USER }}
+          PORT: ${{ secrets.ORACLE_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          port="${PORT:-22}"
+          awk -v host="$HOST" 'NF >= 3 && $2 ~ /^ssh-/ { print host " " $2 " " $3 }' ~/.ssh/oracle_known_hosts > ~/.ssh/known_hosts
+          test -s ~/.ssh/known_hosts
+          ssh -p "$port" -i ~/.ssh/oracle -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" 'set -euo pipefail; sudo -n true; command -v git; command -v curl; command -v systemctl; test -f /etc/monstermaze-api.env; systemctl is-active --quiet monster-bot.service'
+
+  build:
+    name: Build, test and package release
+    needs: [preflight-fly, preflight-hyperv, preflight-oracle]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact tag
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+      - name: Validate tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$RELEASE_TAG")"
+
+      - name: Setup Java 8
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+      - name: Build Spigot 1.8.8
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL "$BUILDTOOLS_URL" -o "$RUNNER_TEMP/BuildTools.jar"
+          java -Xmx2G -jar "$RUNNER_TEMP/BuildTools.jar" --rev 1.8.8 --output-dir "$RUNNER_TEMP/spigot"
+          test -f "$RUNNER_TEMP/spigot/spigot-1.8.8.jar"
+      - name: Install Spigot dependency
+        working-directory: 1.8/MonsterMazeStandalone
+        run: mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file -Dfile="$RUNNER_TEMP/spigot/spigot-1.8.8.jar" -DgroupId=org.spigotmc -DartifactId=spigot -Dversion=1.8.8-R0.1-SNAPSHOT -Dpackaging=jar
+      - name: Build and test 1.8
+        working-directory: 1.8/MonsterMazeStandalone
+        run: mvn -B clean package
+      - name: Package Solo 1.8
+        working-directory: solo
+        shell: pwsh
+        env:
+          MM_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
+          MM_RELEASE_NOTE: Automated Monster Maze release.
+          MM_RELEASE_SOURCE_BASE_URL: https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${{ env.RELEASE_TAG }}/solo
+          MM_RELEASE_ASSET_BASE_URL: https://github.com/joshbet9/MonsterMaze/releases/download/${{ env.RELEASE_TAG }}
+        run: |
+          $v = $env:RELEASE_TAG -replace '^v',''
+          ./pack.ps1 -ReleaseVersion $v -ReleaseNote $env:MM_RELEASE_NOTE -SkipBuild
+          Copy-Item ./solo-dist.zip ./MonsterMaze-Solo.zip -Force
+          Copy-Item ./version.json ./solo-1.8-version.json -Force
+          Copy-Item ./server/plugins/MonsterMazeStandalone.jar ../MonsterMaze-Solo-1.8-plugin.jar -Force
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Download stable Paper 1.21.11
+        shell: pwsh
+        run: |
+          $headers = @{ 'User-Agent' = 'MonsterMaze-Release/1.0' }
+          $builds = Invoke-RestMethod -Uri 'https://fill.papermc.io/v3/projects/paper/versions/1.21.11/builds' -Headers $headers
+          $stable = @($builds | Where-Object { $_.channel -eq 'STABLE' } | Sort-Object id -Descending | Select-Object -First 1)
+          if ($stable.Count -ne 1) { throw 'No stable Paper build found.' }
+          $d = $stable[0].downloads.'server:default'
+          Invoke-WebRequest -Uri $d.url -Headers $headers -OutFile "$env:RUNNER_TEMP/$($d.name)"
+          if ((Get-FileHash "$env:RUNNER_TEMP/$($d.name)" -Algorithm SHA256).Hash.ToLower() -ne $d.checksums.sha256.ToLower()) { throw 'Paper checksum mismatch.' }
+      - name: Download ProtocolLib
+        shell: bash
+        run: curl -fsSL "$PROTOCOLLIB_URL" -o "$RUNNER_TEMP/ProtocolLib.jar"
+      - name: Build and test 1.21
+        working-directory: 1.21/MonsterMazeStandalone
+        run: mvn -B clean package
+      - name: Package Solo 1.21
+        working-directory: solo/1.21
+        shell: pwsh
+        env:
+          MM_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
+          MM_RELEASE_NOTE: Automated Monster Maze release.
+          MM_RELEASE_SOURCE_BASE_URL: https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${{ env.RELEASE_TAG }}/solo/1.21
+          MM_RELEASE_ASSET_BASE_URL: https://github.com/joshbet9/MonsterMaze/releases/download/${{ env.RELEASE_TAG }}
+        run: |
+          $v = $env:RELEASE_TAG -replace '^v',''
+          ./pack.ps1 -ReleaseVersion $v -ReleaseNote $env:MM_RELEASE_NOTE -SkipBuild
+          Copy-Item ./solo-1.21-dist.zip ./1.21-MonsterMaze-Solo.zip -Force
+          Copy-Item ./version.json ./solo-1.21-version.json -Force
+          Copy-Item ./solo-dist/server/plugins/MonsterMazeStandalone.jar ../../MonsterMaze-Solo-1.21-plugin.jar -Force
+          Copy-Item ./solo-dist/server/plugins/ProtocolLib.jar ../../MonsterMaze-Solo-1.21-ProtocolLib.jar -Force
+          Copy-Item ./solo-dist/server/paper-1.21.11.jar ../../MonsterMaze-Solo-1.21-Paper.jar -Force
+
+      - name: Prepare Docker context
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:GITHUB_WORKSPACE 'docker/build-context'
+          if (Test-Path $root) { Remove-Item -Recurse -Force $root }
+          New-Item -ItemType Directory -Force -Path "$root/1.8", "$root/1.21" | Out-Null
+          Copy-Item -Recurse -Force 'solo/solo-dist/server' "$root/1.8/server"
+          Copy-Item -Recurse -Force 'solo/1.21/solo-dist/server' "$root/1.21/server"
+          Copy-Item -Force 'docker/deployments/fly/1.8/config.yml' "$root/1.8/server/plugins/MonsterMazeStandalone/config.yml"
+          Copy-Item -Force 'docker/deployments/fly/1.21/config.yml' "$root/1.21/server/plugins/MonsterMazeStandalone/config.yml"
+          foreach ($v in @('1.8','1.21')) {
+            Remove-Item -Recurse -Force "$root/$v/server/world", "$root/$v/server/logs", "$root/$v/server/plugins/MonsterMazeStandalone/solo-runs" -ErrorAction SilentlyContinue
+            if ((Get-Content "$root/$v/server/plugins/MonsterMazeStandalone/config.yml" -Raw) -notmatch '(?m)^solo-mode:\s*false\s*$') { throw "$v hosted artifact is not solo-mode:false" }
+            if (Test-Path "$root/$v/server/.env") { throw "$v artifact contains .env" }
+          }
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        id: docker
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ env.RELEASE_TAG }}
+      - name: Record image digest
+        shell: bash
+        run: printf 'image=%s:%s\ndigest=%s\n' "$IMAGE_NAME" "$RELEASE_TAG" '${{ steps.docker.outputs.digest }}' > DOCKER-IMAGE.txt
+      - name: Create checksums
+        shell: pwsh
+        run: |
+          $assets = @('solo/MonsterMaze-Solo.zip','solo/solo-1.8-version.json','MonsterMaze-Solo-1.8-plugin.jar','solo/1.21/1.21-MonsterMaze-Solo.zip','solo/1.21/solo-1.21-version.json','MonsterMaze-Solo-1.21-plugin.jar','MonsterMaze-Solo-1.21-Paper.jar','MonsterMaze-Solo-1.21-ProtocolLib.jar','DOCKER-IMAGE.txt')
+          $assets | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_ -replace '\\','/')" } | Set-Content SHA256SUMS.txt -Encoding ascii
+      - name: Upload validated release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          retention-days: 1
+          path: |
+            solo/MonsterMaze-Solo.zip
+            solo/solo-1.8-version.json
+            MonsterMaze-Solo-1.8-plugin.jar
+            solo/1.21/1.21-MonsterMaze-Solo.zip
+            solo/1.21/solo-1.21-version.json
+            MonsterMaze-Solo-1.21-plugin.jar
+            MonsterMaze-Solo-1.21-Paper.jar
+            MonsterMaze-Solo-1.21-ProtocolLib.jar
+            DOCKER-IMAGE.txt
+            SHA256SUMS.txt
+
+  deploy-fly:
+    name: Deploy release to Fly
+    needs: build
+    runs-on: ubuntu-22.04
+    environment: production
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Promote and deploy exact image
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "$IMAGE_NAME:$RELEASE_TAG"
+          flyctl auth docker
+          docker tag "$IMAGE_NAME:$RELEASE_TAG" "$FLY_IMAGE_NAME:$RELEASE_TAG"
+          docker push "$FLY_IMAGE_NAME:$RELEASE_TAG"
+          flyctl image update -a monstermaze --image "$FLY_IMAGE_NAME:$RELEASE_TAG" --yes
+          flyctl status -a monstermaze
+
+  deploy-hyperv:
+    name: Deploy release to Hyper-V
+    needs: build
+    runs-on: ubuntu-22.04
+    environment: hyperv
+    steps:
+      - uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions
+          ping: 100.98.188.97
+      - name: Prepare SSH
+        env:
+          KEY: ${{ secrets.HYPERV_SSH_PRIVATE_KEY }}
+          KNOWN: ${{ secrets.HYPERV_SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/hyperv
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/hyperv ~/.ssh/known_hosts
+      - name: Deploy immutable release
+        env:
+          HOST: ${{ secrets.HYPERV_SSH_HOST }}
+          USER: ${{ secrets.HYPERV_SSH_USER }}
+          PORT: ${{ secrets.HYPERV_SSH_PORT }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          port="${PORT:-22}"
+          ssh -p "$port" -i ~/.ssh/hyperv -o BatchMode=yes "$USER@$HOST" "curl -fsSL https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${RELEASE_TAG}/ops/hyperv/deploy-release.sh | bash -s -- ${RELEASE_TAG}"
+
+  deploy-oracle:
+    name: Deploy release to Oracle bot/API
+    needs: build
+    runs-on: ubuntu-22.04
+    environment: oracle
+    steps:
+      - name: Prepare SSH
+        env:
+          KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          KNOWN: ${{ secrets.ORACLE_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/oracle
+          printf '%s\n' "$KNOWN" > ~/.ssh/oracle_known_hosts
+          chmod 600 ~/.ssh/oracle ~/.ssh/oracle_known_hosts
+      - name: Deploy immutable release
+        env:
+          HOST: ${{ secrets.ORACLE_SSH_HOST }}
+          USER: ${{ secrets.ORACLE_SSH_USER }}
+          PORT: ${{ secrets.ORACLE_SSH_PORT }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          awk -v host="$HOST" 'NF >= 3 && $2 ~ /^ssh-/ { print host " " $2 " " $3 }' ~/.ssh/oracle_known_hosts > ~/.ssh/known_hosts
+          test -s ~/.ssh/known_hosts
+          port="${PORT:-22}"
+          ssh -p "$port" -i ~/.ssh/oracle -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" "curl -fsSL https://raw.githubusercontent.com/joshbet9/MonsterMaze/refs/tags/${RELEASE_TAG}/ops/oracle/deploy-release.sh | bash -s -- ${RELEASE_TAG}"
+
+  publish-release:
+    name: Publish GitHub Release after deployments
+    needs: [deploy-fly, deploy-hyperv, deploy-oracle]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: release-assets
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" \
+            solo/MonsterMaze-Solo.zip \
+            solo/solo-1.8-version.json \
+            MonsterMaze-Solo-1.8-plugin.jar \
+            solo/1.21/1.21-MonsterMaze-Solo.zip \
+            solo/1.21/solo-1.21-version.json \
+            MonsterMaze-Solo-1.21-plugin.jar \
+            MonsterMaze-Solo-1.21-Paper.jar \
+            MonsterMaze-Solo-1.21-ProtocolLib.jar \
+            DOCKER-IMAGE.txt \
+            SHA256SUMS.txt \
+            --title "Monster Maze $RELEASE_TAG" --generate-notes --verify-tag
