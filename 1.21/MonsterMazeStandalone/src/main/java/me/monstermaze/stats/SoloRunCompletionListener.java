@@ -51,32 +51,41 @@ public final class SoloRunCompletionListener implements Listener {
         }
         int pattern = plugin.getGameManager().getPatternIndex();
         if (pattern < 0) return;
+        int stage = plugin.getGameManager().getStage();
 
         for (Player player : plugin.getGameManager().getAlivePlayers()) {
-            if (runs.containsKey(player.getUniqueId())) continue;
+            UUID uuid = player.getUniqueId();
+            RunInfo info = runs.get(uuid);
+            if (info != null) {
+                // Keep a stage snapshot while the player is alive. If the timer
+                // advances before the elimination is observed, the RunInfo still
+                // contains the stage from the last tick in which the player was alive.
+                info.stage = stage;
+                continue;
+            }
             KitType kit = plugin.getGameManager().getKitManager().getKit(player);
             if (kit == null) continue;
-            runs.put(player.getUniqueId(), new RunInfo(pattern, kit.id));
+            runs.put(uuid, new RunInfo(pattern, kit.id, stage));
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onDeath(PlayerDeathEvent event) {
-        scheduleRecord(event.getEntity());
+        scheduleRecord(event.getEntity(), plugin.getGameManager().getStage());
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent event) {
-        scheduleRecord(event.getPlayer());
+        scheduleRecord(event.getPlayer(), plugin.getGameManager().getStage());
     }
 
-    private void scheduleRecord(final Player player) {
+    private void scheduleRecord(final Player player, final int stage) {
         if (!plugin.isRecordRuns()) return;
         Bukkit.getScheduler().runTask(plugin, new Runnable() {
             @Override public void run() {
                 RunInfo info = runs.remove(player.getUniqueId());
                 if (info == null) return;
-                record(player, info, plugin.getGameManager().getStage());
+                record(player, info, stage);
             }
         });
     }
@@ -92,7 +101,7 @@ public final class SoloRunCompletionListener implements Listener {
             if (player == null || !player.isOnline()) continue;
             if (!plugin.getGameManager().getAlivePlayers().contains(player)) {
                 RunInfo info = runs.remove(uuid);
-                if (info != null) record(player, info, plugin.getGameManager().getStage());
+                if (info != null) record(player, info, info.stage);
             }
         }
     }
@@ -125,9 +134,12 @@ public final class SoloRunCompletionListener implements Listener {
     private static final class RunInfo {
         final int pattern;
         final String kit;
-        RunInfo(int pattern, String kit) {
+        int stage;
+
+        RunInfo(int pattern, String kit, int stage) {
             this.pattern = pattern;
             this.kit = kit;
+            this.stage = stage;
         }
     }
 }
