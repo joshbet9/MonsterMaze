@@ -1,8 +1,4 @@
-name: Issue fix workflow disabled
+name: temporary placeholder removed
 on:
   workflow_dispatch:
-jobs:
-  disabled:
-    runs-on: ubuntu-22.04
-    steps:
-      - run: echo disabled
+jobs: {}
