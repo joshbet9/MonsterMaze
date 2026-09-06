@@ -111,7 +111,7 @@ public class LobbyGUI implements Listener {
     }
 
     private void openPatterns(Player p) {
-        Inventory inv=Bukkit.createInventory(null,27,PATTERN_TITLE); fill(inv); int selected=game.getMazeGenerator().getForcedPattern();
+        Inventory inv = Bukkit.createInventory(null,27,PATTERN_TITLE); fill(inv); int selected=game.getMazeGenerator().getForcedPattern();
         for(int i=0;i<3;i++){boolean active=selected==i;inv.setItem(10+i*2,item(Material.PAPER,(active?ChatColor.GREEN+"▶ ":"")+"Maze "+(i+1),Arrays.asList(active?ChatColor.GREEN+"SELECTED":ChatColor.YELLOW+"Click to select")));}
         inv.setItem(17,item(Material.NETHER_STAR,(selected<0?ChatColor.GREEN+"▶ ":"")+"Random Pattern",Arrays.asList(selected<0?ChatColor.GREEN+"SELECTED":ChatColor.YELLOW+"Click to select")));
         back(inv);p.openInventory(inv);
