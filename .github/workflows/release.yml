@@ -372,7 +372,8 @@ jobs:
               $url = [string]$property.Value.url
               $sourceOk = $url -match ('/refs/tags/' + [regex]::Escape($env:RELEASE_TAG) + '/')
               $assetOk = $url -match ('/releases/download/' + [regex]::Escape($env:RELEASE_TAG) + '/')
-              if (-not ($sourceOk -or $assetOk)) { throw "Manifest URL for $($property.Name) is not pinned to the release tag." }
+              $viaVersionOk = $property.Name -eq 'server/plugins/ViaVersion.jar' -and $url -eq 'https://github.com/ViaVersion/ViaVersion/releases/download/5.11.0/ViaVersion-5.11.0.jar'
+              if (-not ($sourceOk -or $assetOk -or $viaVersionOk)) { throw "Manifest URL for $($property.Name) is not pinned to the release tag or approved ViaVersion 5.11.0." }
             }
           }
           $expected18 = '/releases/download/' + [regex]::Escape($env:RELEASE_TAG) + '/MonsterMaze-Solo-1.8-plugin\.jar$'
