@@ -30,13 +30,7 @@ import java.util.Map.Entry;
 import java.util.Random;
 import java.util.UUID;
 
-/**
- * Monster movement/bump manager.
- *
- * Lagless is deliberately isolated here: only the 1.8 Lagless mode uses the
- * cached route controller. All other 1.8 modes retain the existing movement
- * implementation below, and the 1.21 source tree is untouched.
- */
+/** Monster movement/bump manager for the 1.8 implementation. */
 public class MonsterManager {
     private final MonsterMazePlugin plugin;
     private final GameManager game;
@@ -50,16 +44,13 @@ public class MonsterManager {
     private final Map<LivingEntity, Long> launched = new HashMap<LivingEntity, Long>();
     private final Map<LivingEntity, Long> frozen = new HashMap<LivingEntity, Long>();
     private float speedMultiplier = 1.0f;
-    private LaglessMobRouteCache laglessRoutes;
 
     public MonsterManager(MonsterMazePlugin plugin, GameManager game) {
         this.plugin = plugin;
         this.game = game;
     }
 
-    public void setSpeedMultiplier(float multiplier) {
-        this.speedMultiplier = multiplier;
-    }
+    public void setSpeedMultiplier(float multiplier) { this.speedMultiplier = multiplier; }
 
     public void setMobType(String type) {
         this.mobType = type != null && !type.isEmpty() ? type : "snowman";
@@ -72,16 +63,8 @@ public class MonsterManager {
     public void start(MazeGenerator maze) {
         clear();
         this.maze = maze;
-        if (game.getMode() == MazeMode.LAGLESS) {
-            laglessRoutes = new LaglessMobRouteCache(maze);
-            plugin.getLogger().info("[MonsterMaze] Lagless cached movement initialized for maze pattern "
-                    + (maze.getPatternIndex() + 1) + ".");
-        }
 
-        int starter = game.getMode() == MazeMode.MODERN ? 225
-                : game.getMode() == MazeMode.LAGLESS ? 500
-                : 150;
-
+        int starter = game.getMode() == MazeMode.MODERN ? 225 : 150;
         final int[] spawned = {0};
         spawnTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override
@@ -125,8 +108,6 @@ public class MonsterManager {
         launched.clear();
         frozen.clear();
         bumpCooldown.clear();
-        if (laglessRoutes != null) laglessRoutes.clear();
-        laglessRoutes = null;
         speedMultiplier = 1.0f;
     }
 
@@ -165,7 +146,6 @@ public class MonsterManager {
 
     public void spawnMore(int count) {
         if (maze == null) return;
-        if (game.getMode() == MazeMode.LAGLESS) return;
         List<Location> spawns = maze.getSpawnPoints();
         List<Location> pool = spawns.isEmpty() ? maze.getPathPoints() : spawns;
         if (pool.isEmpty()) return;
@@ -193,7 +173,6 @@ public class MonsterManager {
             if (en != null && en.isValid() && pad.isOn(en)) {
                 launched.remove(en);
                 frozen.remove(en);
-                if (laglessRoutes != null) laglessRoutes.forget(en);
                 en.remove();
                 it.remove();
             }
@@ -202,11 +181,6 @@ public class MonsterManager {
 
     private void move() {
         if (maze == null) return;
-        if (game.getMode() == MazeMode.LAGLESS) {
-            moveLagless();
-            return;
-        }
-
         Iterator<Entry<LivingEntity, MazeMobWaypoint>> it = ents.entrySet().iterator();
         while (it.hasNext()) {
             Entry<LivingEntity, MazeMobWaypoint> data = it.next();
@@ -251,22 +225,6 @@ public class MonsterManager {
                 else if (west != null && nextLoc.equals(west.getLocation())) wp.Direction = CardinalDirection.WEST;
             }
             UtilEnt.CreatureMoveFast(ent, wp.Target, 1.4f * speedMultiplier);
-        }
-    }
-
-    /** Cached topology/route movement. This is the only movement path for 1.8 Lagless. */
-    private void moveLagless() {
-        if (laglessRoutes == null) return;
-        Iterator<Entry<LivingEntity, MazeMobWaypoint>> it = ents.entrySet().iterator();
-        while (it.hasNext()) {
-            LivingEntity ent = it.next().getKey();
-            if (ent == null || !ent.isValid() || ent.isDead()) {
-                if (ent != null) laglessRoutes.forget(ent);
-                it.remove();
-                continue;
-            }
-            if (launched.containsKey(ent) || frozen.containsKey(ent)) continue;
-            laglessRoutes.move(ent, 1.4f * speedMultiplier);
         }
     }
 
@@ -388,9 +346,7 @@ public class MonsterManager {
         return last == null || System.currentTimeMillis() - last >= 1000L;
     }
 
-    private void markBump(Player player) {
-        bumpCooldown.put(player.getUniqueId(), System.currentTimeMillis());
-    }
+    private void markBump(Player player) { bumpCooldown.put(player.getUniqueId(), System.currentTimeMillis()); }
 
     public void launch(LivingEntity ent, Vector velocity) {
         if (!ents.containsKey(ent)) return;
@@ -429,7 +385,6 @@ public class MonsterManager {
                 it.remove();
                 frozen.remove(ent);
                 ents.remove(ent);
-                if (laglessRoutes != null) laglessRoutes.forget(ent);
                 continue;
             }
             boolean grounded = ent.isOnGround() && now - started > 500;
@@ -438,7 +393,6 @@ public class MonsterManager {
                 it.remove();
                 frozen.remove(ent);
                 ents.remove(ent);
-                if (laglessRoutes != null) laglessRoutes.forget(ent);
                 ent.remove();
             }
         }
