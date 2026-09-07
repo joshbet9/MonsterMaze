@@ -10,6 +10,9 @@ commands:
   mm:
     description: Monster Maze commands
     usage: /mm <start|stop|setcenter|status|kit|kits|pb|lb|challenge>
+  pause:
+    description: Pause or resume the current Monster Maze round
+    usage: /pause
 permissions:
   monstermaze.admin:
     description: Allows control of Monster Maze
