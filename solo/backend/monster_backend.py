@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Monster Maze SOLO - leaderboard backend.
+Monster Maze SOLO - legacy leaderboard backend.
 
 A tiny, dependency-free service (Python stdlib only) that:
   1. Receives PB run records from the solo submitter (POST /ingest).
@@ -11,37 +11,28 @@ A tiny, dependency-free service (Python stdlib only) that:
 Run it (on your always-on machine / VPS):
     python monster_backend.py [port]      (default port 8123)
 
-Config file: channels.json  (same folder)
-    {
-      "modern":   "https://discord.com/api/webhooks/...</id>/<token>",
-      "lagless":  "...",
-      "original": "..."
-    }
+Config file: channels.json (same folder), containing the active 1.8/1.21 modes.
 
 The submitter posts runs to  http://<this-host>:<port>/ingest
 """
 
 import json
 import os
-import re
 import sqlite3
 import sys
-import threading
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "leaderboard.db")
 CHANNELS = os.path.join(HERE, "channels.json")
-STATE = os.path.join(HERE, "state.json")   # mode -> last leaderboard message id
+STATE = os.path.join(HERE, "state.json")
 
 TOP_N = 10
 EMBED_COLOR = 0x33aa66
+ALLOWED_MODES = {"original", "modern", "speed", "classic"}
 
 
-# --------------------------------------------------------------------------
-# storage
-# --------------------------------------------------------------------------
 def db():
     conn = sqlite3.connect(DB)
     conn.execute(
@@ -49,12 +40,21 @@ def db():
         "mode TEXT, pattern INTEGER, kit TEXT, uuid TEXT, name TEXT, "
         "stage INTEGER, time_ms INTEGER, ts INTEGER, PRIMARY KEY (mode, pattern, kit, uuid))"
     )
+    conn.execute("DELETE FROM runs WHERE lower(mode)='lagless'")
+    conn.commit()
     return conn
+
+
+def validate_mode(mode):
+    normalized = str(mode or "").strip().lower()
+    if normalized not in ALLOWED_MODES:
+        raise ValueError("unsupported mode")
+    return normalized
 
 
 def upsert_run(run):
     """Insert/update a PB. Returns True if it changed (new PB) or False if no change."""
-    mode = str(run.get("mode", ""))
+    mode = validate_mode(run.get("mode", ""))
     pattern = int(run.get("pattern", 0))
     kit = str(run.get("kit", "") or "")
     uuid = str(run.get("uuid", ""))
@@ -84,7 +84,7 @@ def upsert_run(run):
 
 
 def board_for_mode(mode):
-    """Best stage per player across all pattern+kit for a mode, ranked desc."""
+    mode = validate_mode(mode)
     c = db()
     rows = c.execute(
         "SELECT name, MAX(stage) AS best FROM runs WHERE mode=? "
@@ -95,9 +95,6 @@ def board_for_mode(mode):
     return rows
 
 
-# --------------------------------------------------------------------------
-# discord posting
-# --------------------------------------------------------------------------
 def load_channels():
     try:
         with open(CHANNELS, "r", encoding="utf-8") as fh:
@@ -126,14 +123,10 @@ def _embed_payload(mode, rows):
     for i, (name, best) in enumerate(rows, 1):
         medal = {1: ":first_place:", 2: ":second_place:", 3: ":third_place:"}.get(i, f"{i}.")
         lines.append(f"{medal} **{name}** - stage {best}")
-    return {
-        "content": f"**{mode} - Monster Maze leaderboard**",
-        "embeds": [{"color": EMBED_COLOR, "description": "\n".join(lines)}],
-    }
+    return {"content": f"**{mode} - Monster Maze leaderboard**", "embeds": [{"color": EMBED_COLOR, "description": "\n".join(lines)}]}
 
 
 def _post_embed(mode, webhook_url, payload):
-    """Post (or edit our last) leaderboard message for a mode."""
     data = json.dumps(payload).encode("utf-8")
     state = load_state()
     mode = mode.lower()
@@ -141,19 +134,12 @@ def _post_embed(mode, webhook_url, payload):
     try:
         if msg_id:
             try:
-                urllib.request.urlopen(
-                    urllib.request.Request(
-                        f"{webhook_url}/messages/{msg_id}", data=data, method="PATCH"
-                    ),
-                    timeout=15,
-                )
+                urllib.request.urlopen(urllib.request.Request(f"{webhook_url}/messages/{msg_id}", data=data, method="PATCH"), timeout=15)
                 return True
             except urllib.error.HTTPError as e:
                 if e.code != 404:
                     print(f"edit failed for {mode} ({e.code}); will repost")
-        with urllib.request.urlopen(
-            urllib.request.Request(webhook_url, data=data, method="POST"), timeout=15
-        ) as resp:
+        with urllib.request.urlopen(urllib.request.Request(webhook_url, data=data, method="POST"), timeout=15) as resp:
             body = json.loads(resp.read().decode("utf-8"))
         state[mode] = body.get("id")
         save_state(state)
@@ -164,24 +150,24 @@ def _post_embed(mode, webhook_url, payload):
 
 
 def post_board(mode, rows):
-    """Post (or update) the leaderboard embed for a mode, returning success."""
-    webhook_url = load_channels().get(mode.lower())
+    mode = validate_mode(mode)
+    webhook_url = load_channels().get(mode)
     if not webhook_url:
         print(f"[{mode}] no webhook configured in channels.json; skipping Discord post")
         return
     return _post_embed(mode, webhook_url, _embed_payload(mode, rows))
 
 
-# --------------------------------------------------------------------------
-# http server
-# --------------------------------------------------------------------------
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/health"):
             self._send(200, "ok")
         elif self.path.startswith("/board"):
             mode = self.path.split("?", 1)[1].split("=")[1] if "=" in self.path else ""
-            self._send(200, json.dumps([list(r) for r in board_for_mode(mode)]))
+            try:
+                self._send(200, json.dumps([list(r) for r in board_for_mode(mode)]))
+            except ValueError as e:
+                self._send(400, json.dumps({"error": str(e)}))
         else:
             self._send(404, "not found")
 
@@ -192,15 +178,15 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length).decode("utf-8"))
+            mode = validate_mode(body.get("mode", ""))
+            body["mode"] = mode
+            changed = upsert_run(body)
+            ok = post_board(mode, board_for_mode(mode)) if changed else True
+            self._send(200, json.dumps({"ok": True, "mode": mode, "changed": changed}))
+        except ValueError as e:
+            self._send(400, json.dumps({"ok": False, "error": str(e)}))
         except Exception as e:
             self._send(400, "bad request: %s" % e)
-            return
-
-        mode = str(body.get("mode", ""))
-        changed = upsert_run(body)
-        # Always refresh the mode board if this was a PB change.
-        ok = post_board(mode, board_for_mode(mode)) if changed else True
-        self._send(200, json.dumps({"ok": True, "mode": mode, "changed": changed}))
 
     def _send(self, code, text):
         data = text.encode("utf-8") if isinstance(text, str) else text
