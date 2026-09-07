@@ -38,14 +38,17 @@ jobs:
           assert_mode docker/deployments/fly/1.8/config.yml false false
           assert_mode docker/deployments/fly/1.21/config.yml false false
 
-          # Hyper-V integration: competitive mode by default, debug commands available.
+          # Hyper-V is the persistent local integration/test environment:
+          # competitive mode by default, debug commands available.
           assert_mode docker/deployments/hyperv/1.8/config.yml false true
           assert_mode docker/deployments/hyperv/1.21/config.yml false true
 
-      - name: Validate production promotion cannot leave Hyper-V in debug mode
+      - name: Validate Hyper-V release deployment uses the debug overlay
         shell: bash
         run: |
           set -euo pipefail
-          grep -q "solo-mode:false and debug:false" ops/hyperv/deploy-release.sh
-          grep -q "debug: false" ops/hyperv/deploy-release.sh
-          grep -q "solo-mode:[[:space:]]*false" ops/hyperv/deploy-release.sh
+          grep -q 'Hyper-V-specific debug configuration' ops/hyperv/deploy-release.sh
+          grep -q 'docker/deployments/hyperv/${version}/config.yml' ops/hyperv/deploy-release.sh
+          grep -q 'debug:[[:space:]]*true' ops/hyperv/deploy-release.sh
+          grep -q 'solo-mode:[[:space:]]*false' ops/hyperv/deploy-release.sh
+          ! grep -q 'debug: false' ops/hyperv/deploy-release.sh
