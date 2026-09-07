@@ -16,22 +16,31 @@ import java.util.UUID;
 /**
  * Cached movement controller used exclusively by the 1.8 Lagless mode.
  *
- * The maze topology is built once for the active maze. Each mob then receives a
- * compact direction tape generated from that topology. Runtime movement does not
- * scan maze blocks or choose a random exit at intersections.
+ * The important speed invariant is that this controller still uses the original
+ * CreatureMoveFast speed input (1.4 * stage multiplier). The old controller's
+ * apparent average speed was lower because its target was the next turn/intersection
+ * and CreatureMoveFast deliberately capped the final approach when that target was
+ * within two blocks. The first cached implementation used a moving six-block
+ * lookahead, which prevented that approach phase from happening and was therefore
+ * genuinely faster even with the same 1.4 input.
  *
- * Direction selection deliberately works for any number of exits:
+ * This cache reproduces that target geometry without scanning maze blocks at runtime:
+ * each route cell stores the direction chosen from the cached topology, and the
+ * runtime target is the final cell before that direction changes. Thus straight
+ * corridors continue to the next turn, corners/dead ends become targets, and the
+ * existing near-target speed cap remains active exactly where it was before.
+ *
+ * Direction selection works for any number of exits:
  * - 1 exit: forced (including a dead-end U-turn)
- * - 2 exits: choose between the available exits, excluding reverse when possible
+ * - 2 exits: choose between available exits, excluding reverse when possible
  * - 3/4 exits: choose from all non-reverse exits
  *
- * Safe Pads are dynamic, so cached topology represents the permanent maze geometry
- * while route generation checks the live path state before selecting each cell.
+ * Safe Pads remain dynamic. Permanent topology is cached, while live path state is
+ * checked when a route is generated and on every movement tick for the mob's cell.
  */
 public final class LaglessMobRouteCache {
     private static final int ROUTE_LENGTH = 4096;
     private static final int MAX_CATCHUP_CELLS = 8;
-    private static final double LOOKAHEAD = 6.0D;
 
     private final MazeGenerator maze;
     private final Set<Long> topology = new HashSet<Long>();
@@ -101,20 +110,22 @@ public final class LaglessMobRouteCache {
             routes.put(entity.getUniqueId(), route);
         }
 
-        // A fast mob can cross more than one block between ticks. Advance the cached
-        // tape until its current route cell catches up with the mob's actual cell.
-        // If the mob was knocked or otherwise moved off its cached route, regenerate
-        // from its current cell instead of applying the wrong direction at a corner.
+        // A fast mob can cross more than one maze cell between ticks. Advance the
+        // cached route until its current cell catches the mob's actual cell. If the
+        // mob was knocked or otherwise moved off-route, regenerate from its actual
+        // cell instead of applying the wrong direction at a corner.
         if (route.cellX != cellX || route.cellZ != cellZ) {
             boolean caughtUp = false;
             int x = route.cellX;
             int z = route.cellZ;
             int index = route.index;
+
             for (int i = 0; i < MAX_CATCHUP_CELLS && index < route.directions.length; i++) {
                 int direction = route.directions[index];
                 x += dx(direction);
                 z += dz(direction);
                 index++;
+
                 if (x == cellX && z == cellZ) {
                     route.cellX = x;
                     route.cellZ = z;
@@ -123,6 +134,7 @@ public final class LaglessMobRouteCache {
                     break;
                 }
             }
+
             if (!caughtUp) {
                 route = createRoute(loc);
                 if (route == null) return false;
@@ -137,21 +149,26 @@ public final class LaglessMobRouteCache {
         }
 
         byte direction = route.directions[route.index];
-        Location target = loc.clone();
-        switch (direction) {
-            case 0: target.add(0, 0, -LOOKAHEAD); break; // north
-            case 1: target.add(LOOKAHEAD, 0, 0); break;  // east
-            case 2: target.add(0, 0, LOOKAHEAD); break;  // south
-            case 3: target.add(-LOOKAHEAD, 0, 0); break; // west
-            default: return false;
+
+        // The original movement controller targeted the next turn/intersection,
+        // rather than a point that moved with the mob. Because the direction tape is
+        // cached, we can recover that same target without touching maze blocks:
+        // continue along the current direction until the cached direction changes.
+        int targetX = cellX;
+        int targetZ = cellZ;
+        int scan = route.index;
+        while (scan < route.directions.length && route.directions[scan] == direction) {
+            targetX += dx(direction);
+            targetZ += dz(direction);
+            scan++;
         }
 
-        // Lagless's intended baseline is 1.0, with the existing stage multiplier
-        // providing the 1.0 -> 1.2 -> 1.4 ... progression. The old 1.4 base was
-        // appropriate for the target-based controller, but made continuous cached
-        // movement substantially faster because it no longer spent time decelerating
-        // into each waypoint.
-        return UtilEnt.CreatureMoveFast(entity, target, speed / 1.4f);
+        Location target = mazeLocation(targetX, targetZ);
+
+        // Deliberately keep the original 1.4 * stageMultiplier input. The old
+        // controller's near-target cap is part of its speed profile; changing the
+        // baseline to 1.0 would make the long-corridor portion slower than Mineplex.
+        return UtilEnt.CreatureMoveFast(entity, target, speed);
     }
 
     private MobRoute createRoute(Location start) {
