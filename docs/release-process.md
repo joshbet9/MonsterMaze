@@ -62,9 +62,9 @@ vX.Y.Z release
   |        +-- MM18
   |        +-- MM21
   |
-  +----> Hyper-V integration
-           +-- MM18
-           +-- MM21
+  +----> Hyper-V local integration/test VM
+           +-- MM18 (debug:true)
+           +-- MM21 (debug:true)
 ```
 
 ### Fly production
@@ -73,16 +73,19 @@ The release image is first built and published to GHCR. The deployment job then 
 
 The Fly deployment requires a repository/environment secret named `FLY_API_TOKEN`. It should be a deploy token scoped to the `monstermaze` app, not a full personal token.
 
-### Hyper-V integration
+### Hyper-V integration/test VM
 
-Hyper-V is a release promotion target for integration testing, not a player distribution and not a production authority. The deployment job connects to the Hyper-V Linux VM over SSH and runs the release-pinned `ops/hyperv/deploy-release.sh` script.
+Hyper-V is the persistent local integration/test VM. It is not a separate application or player distribution. The release workflow deploys the same immutable release to the VM over SSH and runs the release-pinned `ops/hyperv/deploy-release.sh` script.
+
+The hosted release artifacts themselves use the production-safe configuration (`solo-mode:false`, `debug:false`). During Hyper-V deployment, the script deliberately overlays the source-controlled Hyper-V configuration from the same release tag. This gives the local VM `solo-mode:false` and `debug:true` on both MM18 and MM21. The servers therefore start in normal competitive mode, while debug commands such as the runtime solo-mode toggle remain available for testing.
 
 The script:
 
 - downloads `MonsterMaze-Server-1.8.zip` and `MonsterMaze-Server-1.21.zip` from the exact release;
 - verifies them against `SHA256SUMS.txt` before installation;
-- preserves environment-owned worlds, logs, `server.properties`, and plugin configuration;
-- guarantees `solo-mode:false` for both servers;
+- verifies the same release tag's Hyper-V overlays are `solo-mode:false` and `debug:true`;
+- preserves environment-owned worlds, logs, `server.properties`, and Solo run data;
+- installs the Hyper-V overlay as the environment-owned plugin configuration;
 - migrates the two instances to explicit systemd services if necessary;
 - starts both services and verifies they are active.
 
@@ -100,11 +103,11 @@ The SSH account must have passwordless `sudo` for the deployment operations. SSH
 
 The release contains a safe, fresh-install Solo configuration. It does not contain production Hyper-V or Fly credentials.
 
-Existing environments retain their own configuration:
+Environment configuration ownership is explicit:
 
-- Solo installations preserve player/runtime configuration during updates;
-- Hyper-V uses the canonical server build with environment-owned state and `soloMode=false`;
-- Fly MM18/MM21 use the canonical hosted image with `soloMode=false`.
+- Solo installations use `solo-mode:true` and `debug:false` on fresh install;
+- Hyper-V uses the canonical hosted build with `solo-mode:false` and the Hyper-V overlay sets `debug:true`;
+- Fly MM18/MM21 use the canonical hosted image with `solo-mode:false` and `debug:false`.
 
 There is one application build per Minecraft version, not a separate gameplay build for each endpoint.
 
