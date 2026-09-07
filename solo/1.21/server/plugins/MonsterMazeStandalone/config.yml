@@ -2,6 +2,8 @@
 # This is a player installation setting and is preserved by the updater.
 mode: Modern
 solo-mode: true
+# Test-only runtime commands such as /mm solomode are disabled in player distributions.
+debug: false
 # Emit every completed Solo run to solo-runs/ for competition submission.
 record-runs: true
 map: eyeofender
