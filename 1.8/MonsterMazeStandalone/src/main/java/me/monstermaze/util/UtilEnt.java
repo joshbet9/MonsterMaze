@@ -55,12 +55,7 @@ public final class UtilEnt {
         if (ent == null || target == null) return false;
         double distSq = offsetSquared(ent.getLocation(), target);
         if (distSq < 0.01) return false;
-        if (distSq < 4) {
-            // Preserve the original 1.0f near-target cap for normal movement (1.4f),
-            // but scale that cap with Lagless's speed multiplier when a higher movement
-            // speed is supplied. Example: 2.1f straight-line speed gets a 1.5f corner cap.
-            speed = speed > 1.4f ? speed / 1.4f : Math.min(speed, 1f);
-        }
+        if (distSq < 4) speed = Math.min(speed, 1f);
         resolve();
         if (!available) {
             Location loc = ent.getLocation();
