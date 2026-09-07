@@ -3,7 +3,6 @@ package me.monstermaze.entity;
 import me.monstermaze.maze.MazeGenerator;
 import me.monstermaze.util.UtilEnt;
 import org.bukkit.Location;
-import org.bukkit.block.BlockFace;
 import org.bukkit.entity.LivingEntity;
 
 import java.util.HashMap;
@@ -26,10 +25,12 @@ import java.util.UUID;
  * - 2 exits: choose between the available exits, excluding reverse when possible
  * - 3/4 exits: choose from all non-reverse exits
  *
- * The route is independent of the Safe Pad: mobs are never routed toward it.
+ * Safe Pads are dynamic, so cached topology represents the permanent maze geometry
+ * while route generation checks the live path state before selecting each cell.
  */
 public final class LaglessMobRouteCache {
     private static final int ROUTE_LENGTH = 4096;
+    private static final int MAX_CATCHUP_CELLS = 8;
     private static final double LOOKAHEAD = 6.0D;
 
     private final MazeGenerator maze;
@@ -42,12 +43,12 @@ public final class LaglessMobRouteCache {
         buildTopology();
     }
 
-    /** Build the shared walkable-cell topology once for this maze. */
+    /** Build the permanent walkable-cell topology once for this maze. */
     private void buildTopology() {
         topology.clear();
         List<Location> paths = maze.getPathPoints();
         for (Location loc : paths) {
-            if (loc != null && maze.isPath(loc)) {
+            if (loc != null && maze.isPathRaw(loc)) {
                 topology.add(key(loc.getBlockX(), loc.getBlockZ()));
             }
         }
@@ -70,36 +71,68 @@ public final class LaglessMobRouteCache {
         if (entity == null || !entity.isValid() || entity.isDead()) return false;
 
         Location loc = entity.getLocation();
-        long cell = key(loc.getBlockX(), loc.getBlockZ());
-        MobRoute route = routes.get(entity.getUniqueId());
+        int cellX = loc.getBlockX();
+        int cellZ = loc.getBlockZ();
+        long cell = key(cellX, cellZ);
 
+        // A newly spawned Safe Pad can disable a cell after the shared topology was
+        // built. Mobs on that cell must be removed, not teleported off the pad or left
+        // fighting a stale cached route.
+        if (!topology.contains(cell)) {
+            Location nearest = maze.getClosestPath(loc);
+            if (nearest == null) return false;
+            entity.teleport(nearest);
+            loc = nearest;
+            cellX = loc.getBlockX();
+            cellZ = loc.getBlockZ();
+            cell = key(cellX, cellZ);
+        }
+        if (!maze.isPath(loc)) {
+            forget(entity);
+            entity.remove();
+            return false;
+        }
+
+        MobRoute route = routes.get(entity.getUniqueId());
         if (route == null) {
             route = createRoute(loc);
             if (route == null) return false;
             routes.put(entity.getUniqueId(), route);
         }
 
-        if (!topology.contains(cell)) {
-            // External kit movement can throw a mob off the cached route. Re-sync once
-            // it is back on a maze cell instead of allowing the route cache to fight it.
-            Location nearest = maze.getClosestPath(loc);
-            if (nearest == null) return false;
-            entity.teleport(nearest);
-            loc = nearest;
-            cell = key(loc.getBlockX(), loc.getBlockZ());
-            route = createRoute(loc);
-            if (route == null) return false;
-            routes.put(entity.getUniqueId(), route);
-        }
-
-        if (route.lastCell != cell) {
-            route.lastCell = cell;
-            route.index++;
-            if (route.index >= route.directions.length) {
+        // A fast mob can cross more than one block between ticks. Advance the cached
+        // tape until its current route cell catches up with the mob's actual cell.
+        // If the mob was knocked or otherwise moved off its cached route, regenerate
+        // from its current cell instead of applying the wrong direction at a corner.
+        if (route.cellX != cellX || route.cellZ != cellZ) {
+            boolean caughtUp = false;
+            int x = route.cellX;
+            int z = route.cellZ;
+            int index = route.index;
+            for (int i = 0; i < MAX_CATCHUP_CELLS && index < route.directions.length; i++) {
+                int direction = route.directions[index];
+                x += dx(direction);
+                z += dz(direction);
+                index++;
+                if (x == cellX && z == cellZ) {
+                    route.cellX = x;
+                    route.cellZ = z;
+                    route.index = index;
+                    caughtUp = true;
+                    break;
+                }
+            }
+            if (!caughtUp) {
                 route = createRoute(loc);
                 if (route == null) return false;
                 routes.put(entity.getUniqueId(), route);
             }
+        }
+
+        if (route.index >= route.directions.length) {
+            route = createRoute(loc);
+            if (route == null) return false;
+            routes.put(entity.getUniqueId(), route);
         }
 
         byte direction = route.directions[route.index];
@@ -112,10 +145,12 @@ public final class LaglessMobRouteCache {
             default: return false;
         }
 
-        // Keep the existing NMS CreatureMoveFast implementation, but give it a
-        // deliberately distant look-ahead target. This avoids the old near-target
-        // corner cap while the cached route controls exactly when a turn occurs.
-        return UtilEnt.CreatureMoveFast(entity, target, speed);
+        // Lagless's intended baseline is 1.0, with the existing stage multiplier
+        // providing the 1.0 -> 1.2 -> 1.4 ... progression. The old 1.4 base was
+        // appropriate for the target-based controller, but made continuous cached
+        // movement substantially faster because it no longer spent time decelerating
+        // into each waypoint.
+        return UtilEnt.CreatureMoveFast(entity, target, speed / 1.4f);
     }
 
     private MobRoute createRoute(Location start) {
@@ -124,7 +159,7 @@ public final class LaglessMobRouteCache {
         int x = start.getBlockX();
         int z = start.getBlockZ();
         long startKey = key(x, z);
-        if (!topology.contains(startKey)) return null;
+        if (!topology.contains(startKey) || !maze.isPath(start)) return null;
 
         byte[] directions = new byte[ROUTE_LENGTH];
         int previous = -1;
@@ -134,7 +169,7 @@ public final class LaglessMobRouteCache {
             int count = 0;
 
             for (int direction = 0; direction < 4; direction++) {
-                if (!hasNeighbour(x, z, direction)) continue;
+                if (!hasActiveNeighbour(x, z, direction)) continue;
                 if (previous >= 0 && direction == opposite(previous)) continue;
                 choices[count++] = direction;
             }
@@ -143,7 +178,7 @@ public final class LaglessMobRouteCache {
             // intentionally a fallback rather than a special movement mode.
             if (count == 0) {
                 for (int direction = 0; direction < 4; direction++) {
-                    if (hasNeighbour(x, z, direction)) choices[count++] = direction;
+                    if (hasActiveNeighbour(x, z, direction)) choices[count++] = direction;
                 }
             }
 
@@ -156,11 +191,20 @@ public final class LaglessMobRouteCache {
             z += dz(chosen);
         }
 
-        return new MobRoute(directions, startKey);
+        return new MobRoute(directions, startKey, start.getBlockX(), start.getBlockZ());
     }
 
-    private boolean hasNeighbour(int x, int z, int direction) {
-        return topology.contains(key(x + dx(direction), z + dz(direction)));
+    private boolean hasActiveNeighbour(int x, int z, int direction) {
+        int nx = x + dx(direction);
+        int nz = z + dz(direction);
+        return topology.contains(key(nx, nz)) && maze.isPath(mazeLocation(nx, nz));
+    }
+
+    private Location mazeLocation(int x, int z) {
+        Location center = maze.getCenter().clone();
+        center.setX(x + 0.5D);
+        center.setZ(z + 0.5D);
+        return center;
     }
 
     private static int dx(int direction) {
@@ -190,12 +234,14 @@ public final class LaglessMobRouteCache {
     private static final class MobRoute {
         private final byte[] directions;
         private int index;
-        private long lastCell;
+        private int cellX;
+        private int cellZ;
 
-        private MobRoute(byte[] directions, long startCell) {
+        private MobRoute(byte[] directions, long startCell, int cellX, int cellZ) {
             this.directions = directions;
             this.index = 0;
-            this.lastCell = startCell;
+            this.cellX = cellX;
+            this.cellZ = cellZ;
         }
     }
 }
