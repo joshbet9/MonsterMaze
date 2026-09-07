@@ -2,6 +2,7 @@ package me.monstermaze;
 
 import me.monstermaze.command.MMCommand;
 import me.monstermaze.command.MMUtilityCommandListener;
+import me.monstermaze.command.PauseCommand;
 import me.monstermaze.entity.MonsterDisguiseListener;
 import me.monstermaze.entity.MonsterEntityListener;
 import me.monstermaze.game.BuildBypassListener;
@@ -95,6 +96,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         new BuildBypassListener(this);
         new MMUtilityCommandListener(this);
         getCommand("mm").setExecutor(new MMCommand(this));
+        getCommand("pause").setExecutor(new PauseCommand(this));
         Bukkit.getScheduler().runTaskLater(this, new Runnable() { @Override public void run() { for (Player p : Bukkit.getOnlinePlayers()) gameManager.sendToLobby(p); } }, 20L);
         getLogger().info("MonsterMazeStandalone enabled.");
         getLogger().info("Active map: " + mapManager.getActiveMap());
