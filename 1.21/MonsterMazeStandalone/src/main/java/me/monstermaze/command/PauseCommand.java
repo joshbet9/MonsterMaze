@@ -90,7 +90,6 @@ public class PauseCommand implements CommandExecutor, Listener {
     }
 
     private void resume(CommandSender sender) {
-        final long pausedFor = Math.max(0L, System.currentTimeMillis() - pausedAtMs);
         resumeTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             int seconds = RESUME_COUNTDOWN_SECONDS;
 
@@ -103,6 +102,7 @@ public class PauseCommand implements CommandExecutor, Listener {
                 }
                 if (seconds <= 0) {
                     try {
+                        long pausedFor = Math.max(0L, System.currentTimeMillis() - pausedAtMs);
                         long liveStart = liveStartField.getLong(game);
                         liveStartField.setLong(game, liveStart + pausedFor);
                     } catch (Exception e) {
