@@ -122,7 +122,7 @@ public class GameScoreboard {
     private void sendInvisibleMetadata(Player observer, Player target, boolean invisible) {
         try {
             net.minecraft.server.v1_8_R3.EntityPlayer nmsTarget = ((CraftPlayer) target).getHandle();
-            byte flags = nmsTarget.getDataWatcher().getWatchableObjectByte(0);
+            byte flags = nmsTarget.getDataWatcher().getByte(0);
             flags = invisible ? (byte) (flags | 0x20) : (byte) (flags & ~0x20);
             DataWatcher watcher = new DataWatcher(null);
             watcher.a(0, flags);
