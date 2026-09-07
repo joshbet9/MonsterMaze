@@ -76,8 +76,14 @@ public final class LaglessMobRouteCache {
         long cell = key(cellX, cellZ);
 
         // A newly spawned Safe Pad can disable a cell after the shared topology was
-        // built. Mobs on that cell must be removed, not teleported off the pad or left
-        // fighting a stale cached route.
+        // built. Mobs on that cell must be removed immediately rather than teleported
+        // off the pad or left fighting a stale cached route.
+        if (!maze.isPath(loc)) {
+            forget(entity);
+            entity.remove();
+            return false;
+        }
+
         if (!topology.contains(cell)) {
             Location nearest = maze.getClosestPath(loc);
             if (nearest == null) return false;
@@ -86,11 +92,6 @@ public final class LaglessMobRouteCache {
             cellX = loc.getBlockX();
             cellZ = loc.getBlockZ();
             cell = key(cellX, cellZ);
-        }
-        if (!maze.isPath(loc)) {
-            forget(entity);
-            entity.remove();
-            return false;
         }
 
         MobRoute route = routes.get(entity.getUniqueId());
@@ -191,7 +192,7 @@ public final class LaglessMobRouteCache {
             z += dz(chosen);
         }
 
-        return new MobRoute(directions, startKey, start.getBlockX(), start.getBlockZ());
+        return new MobRoute(directions, start.getBlockX(), start.getBlockZ());
     }
 
     private boolean hasActiveNeighbour(int x, int z, int direction) {
@@ -237,7 +238,7 @@ public final class LaglessMobRouteCache {
         private int cellX;
         private int cellZ;
 
-        private MobRoute(byte[] directions, long startCell, int cellX, int cellZ) {
+        private MobRoute(byte[] directions, int cellX, int cellZ) {
             this.directions = directions;
             this.index = 0;
             this.cellX = cellX;
