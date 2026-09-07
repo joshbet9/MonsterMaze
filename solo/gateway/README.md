@@ -50,7 +50,7 @@ Recommended layout:
 
 ```text
 /home/ubuntu/monster-bot/       # existing Discord bot + API
-/home/ubuntu/monster-gateway/   # this gateway
+/home/ubuntu/monster-gateway/   # this gateway + local status API
 /etc/monstermaze-gateway.env    # Fly token + gateway configuration
 ```
 
@@ -61,19 +61,57 @@ sudo mkdir -p /home/ubuntu/monster-gateway
 sudo chown ubuntu:ubuntu /home/ubuntu/monster-gateway
 cd /home/ubuntu/monster-gateway
 curl -fsSL https://raw.githubusercontent.com/joshbet9/MonsterMaze/main/solo/gateway/monstermaze_gateway.py -o monstermaze_gateway.py
+curl -fsSL https://raw.githubusercontent.com/joshbet9/MonsterMaze/main/solo/gateway/status_api.py -o status_api.py
 ```
 
 Create `/etc/monstermaze-gateway.env` from the committed example and put the
 real Fly token there. **Do not commit the real token.**
 
-Install the service:
+Install the services:
 
 ```bash
 sudo cp /home/ubuntu/monster-gateway/monstermaze-gateway.service /etc/systemd/system/monstermaze-gateway.service
+sudo cp /home/ubuntu/monster-gateway/monstermaze-status.service /etc/systemd/system/monstermaze-status.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now monstermaze-gateway.service
-sudo systemctl status monstermaze-gateway.service
+sudo systemctl enable --now monstermaze-gateway.service monstermaze-status.service
+sudo systemctl status monstermaze-gateway.service monstermaze-status.service
 ```
+
+## Discord server status
+
+The local status API is intentionally bound to `127.0.0.1:8765`; it is not
+internet-facing. It is consumed by the Discord bot using:
+
+```text
+http://127.0.0.1:8765/status
+```
+
+For each server, it first checks the Fly Machine state. A stopped/suspended
+Machine is reported offline and **no Minecraft connection is attempted**. A
+starting/restarting Machine is reported as starting. Only when Fly reports the
+Machine as started does the API perform a normal Minecraft server-list status
+request to obtain the live player count. If that status request is not yet
+available, the server remains yellow/starting rather than falsely reporting
+online.
+
+The bot keeps one persistent message in the configured `server-status`
+channel and edits it rather than posting repeatedly:
+
+```text
+🟢 MM18     3 players
+🟡 MM21     Starting...
+```
+
+Configure these optional bot settings in `solo/bot/config.json`:
+
+```json
+"server_status_channel": "server-status",
+"server_status_url": "http://127.0.0.1:8765/status",
+"server_status_interval": 15
+```
+
+The bot stores the message ID in its existing `boards` table, so restarting
+the bot does not create a second status message.
 
 ## Fly token
 
@@ -114,24 +152,27 @@ the gameplay traffic through the Australian gateway again.
 ## Testing order
 
 1. Stop both Fly Machines.
-2. Confirm the gateway is listening on Oracle port 25565.
-3. Refresh the Minecraft server list. This must **not** start either Machine.
-4. Connect using Minecraft 1.8.9. The gateway should start mm18 and show the
-   direct Fly address plus the reconnect message.
-5. Reconnect to `monstermaze.fly.dev:25565`; gameplay must connect directly to
-   the Fly service and must not appear in the gateway's proxy/login logs.
-6. Repeat with Minecraft 1.21.11 and verify mm21 starts, then reconnect to
-   `monstermaze.fly.dev:25566`.
-7. Leave the server empty and confirm Fly eventually stops the Machine.
-8. Refresh the server list again while stopped; the gateway should answer the
-   ping without waking the Machine.
-9. While a Machine is already running, connecting to the gateway should only
-   return the direct Fly address; it must never proxy gameplay.
+2. Confirm the gateway and status API are active on Oracle.
+3. Query `curl -fsS http://127.0.0.1:8765/status`; both stopped Machines must be
+   reported offline.
+4. Repeat the status query several times while both Machines are stopped. The
+   Machine states must remain stopped; the status API must never wake them.
+5. Wake MM18 using a real Minecraft login through the gateway. The Discord
+   status should progress from offline to starting to online.
+6. Join/leave MM18 and confirm the player count changes without creating a new
+   Discord message.
+7. Repeat with MM21.
+8. Stop each Machine and confirm Discord returns to offline.
+9. Restart the bot and confirm it edits the existing status message rather than
+   creating a duplicate.
+10. Refresh the Minecraft server list while a Machine is stopped; the existing
+    gateway safety guarantee still applies and the Machine must not wake.
 
 ## Security notes
 
 - The gateway exposes only the Minecraft TCP wake listener and the Fly API
   token is read from a root-readable environment file.
+- The Discord status API binds to localhost only and exposes no Fly credentials.
 - Unknown Minecraft protocol versions are rejected before reaching a backend.
 - The Fly token should be app-scoped and rotated if it is ever exposed.
 - The gateway never accepts a player connection to a backend. It starts the
