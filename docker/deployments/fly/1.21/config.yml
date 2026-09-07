@@ -2,3 +2,4 @@
 # This file is applied at container startup and is intentionally separate
 # from the player-facing Solo configuration.
 solo-mode: false
+debug: false
