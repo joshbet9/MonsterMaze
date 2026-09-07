@@ -55,35 +55,12 @@ public final class UtilEnt {
         if (ent == null || target == null) return false;
         double distSq = offsetSquared(ent.getLocation(), target);
         if (distSq < 0.01) return false;
-        if (distSq < 4) speed = Math.min(speed, 1f);
-        resolve();
-        if (!available) {
-            Location loc = ent.getLocation();
-            org.bukkit.util.Vector dir = target.toVector().subtract(loc.toVector());
-            if (dir.lengthSquared() < 1e-6) return false;
-            dir.normalize().multiply(Math.min(speed * 0.2, dir.length()));
-            Location next = loc.clone().add(dir);
-            next.setYaw(loc.getYaw()); next.setPitch(loc.getPitch());
-            ent.teleport(next);
-            return true;
+        if (distSq < 4) {
+            // Preserve the original 1.0f near-target cap for normal movement (1.4f),
+            // but scale that cap with Lagless's speed multiplier when a higher movement
+            // speed is supplied. Example: 2.1f straight-line speed gets a 1.5f corner cap.
+            speed = speed > 1.4f ? speed / 1.4f : Math.min(speed, 1f);
         }
-        try {
-            Object handle = getHandle.invoke(ent);
-            Object controller = getControllerMove.invoke(handle);
-            controllerMoveA.invoke(controller, target.getX(), target.getY(), target.getZ(), (double) speed);
-            return true;
-        } catch (Throwable t) { return false; }
-    }
-
-    /**
-     * Movement variant with an explicit near-target speed cap. Used by Lagless so its
-     * existing 1.0f corner/approach cap scales with the configured speed multiplier.
-     */
-    public static boolean CreatureMoveFast(Entity ent, Location target, float speed, boolean slow, float nearTargetSpeed) {
-        if (ent == null || target == null) return false;
-        double distSq = offsetSquared(ent.getLocation(), target);
-        if (distSq < 0.01) return false;
-        if (distSq < 4) speed = Math.min(speed, nearTargetSpeed);
         resolve();
         if (!available) {
             Location loc = ent.getLocation();
