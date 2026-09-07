@@ -46,6 +46,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q "debug:false and solo-mode:false" ops/hyperv/deploy-release.sh
-          grep -q "sed -i -E 's/\^debug:.*/debug: false/'" ops/hyperv/deploy-release.sh
-          grep -q "grep -Eq '\^debug:\[\[:space:\]\]\*false" ops/hyperv/deploy-release.sh
+          grep -q "solo-mode:false and debug:false" ops/hyperv/deploy-release.sh
+          grep -q "debug: false" ops/hyperv/deploy-release.sh
+          grep -q "solo-mode:[[:space:]]*false" ops/hyperv/deploy-release.sh
