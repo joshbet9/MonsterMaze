@@ -10,7 +10,7 @@ class CompetitiveTests(unittest.TestCase):
         self.db = sqlite3.connect(":memory:")
         competitive.ensure_schema(self.db)
         self.db.execute("CREATE TABLE competitions(platform TEXT,mode TEXT,pattern INTEGER,kit TEXT,start_ts TEXT,end_ts TEXT)")
-        self.db.execute("CREATE TABLE submissions(uuid TEXT,platform TEXT,mode TEXT,pattern INTEGER,kit TEXT,submitted_at INTEGER,stage INTEGER)")
+        self.db.execute("CREATE TABLE submissions(uuid TEXT,name TEXT,platform TEXT,mode TEXT,pattern INTEGER,kit TEXT,submitted_at INTEGER,stage INTEGER)")
         self.db.execute("CREATE TABLE runs(platform TEXT,mode TEXT,pattern INTEGER,kit TEXT,uuid TEXT,name TEXT,stage INTEGER,time_ms INTEGER,PRIMARY KEY(platform,mode,pattern,kit,uuid))")
         self.season = competitive.ensure_current_season(
             self.db, datetime(2026, 8, 31, 12, tzinfo=timezone.utc)
@@ -32,7 +32,7 @@ class CompetitiveTests(unittest.TestCase):
         return start, end
 
     def add_submission(self, uuid, stage, submitted_at, platform="1.21", mode="modern", pattern=1, kit="Jumper", name=None):
-        self.db.execute("INSERT INTO submissions VALUES(?,?,?,?,?,?,?)", (uuid, platform, mode, pattern, kit, int(submitted_at), int(stage)))
+        self.db.execute("INSERT INTO submissions VALUES(?,?,?,?,?,?,?,?)", (uuid, name or uuid, platform, mode, pattern, kit, int(submitted_at), int(stage)))
 
     def test_one_v_one_elo(self):
         self.add_players(("a", "Alice"), ("b", "Bob"))
