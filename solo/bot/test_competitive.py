@@ -13,7 +13,7 @@ class CompetitiveTests(unittest.TestCase):
         self.db.execute("CREATE TABLE submissions(uuid TEXT,name TEXT,platform TEXT,mode TEXT,pattern INTEGER,kit TEXT,submitted_at INTEGER,stage INTEGER)")
         self.db.execute("CREATE TABLE runs(platform TEXT,mode TEXT,pattern INTEGER,kit TEXT,uuid TEXT,name TEXT,stage INTEGER,time_ms INTEGER,PRIMARY KEY(platform,mode,pattern,kit,uuid))")
         self.season = competitive.ensure_current_season(
-            self.db, datetime(2026, 8, 31, 12, tzinfo=timezone.utc)
+            self.db, datetime(2026, 8, 1, 12, tzinfo=timezone.utc)
         )
         self.sid = int(self.season[0])
 
