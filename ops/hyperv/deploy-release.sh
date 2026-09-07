@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # Release promotion target for the local Hyper-V integration server.
-# Runs on the Hyper-V Linux VM. It consumes validated build artifacts supplied
-# by the release workflow, preserves environment-owned state, and guarantees
-# solo-mode:false and debug:false for both hosted instances. Hyper-V debug mode
-# is enabled only by the separate test-release deployment path.
+# Hyper-V is the persistent local test environment, so it intentionally runs
+# with debug commands enabled while starting in competitive mode. The hosted
+# release artifacts are production-safe; this deployment overlays the
+# Hyper-V-specific debug configuration before starting the local services.
 
 TAG="${1:-}"
 ASSET_DIR="${2:-}"
@@ -16,6 +16,7 @@ ASSET_DIR="${2:-}"
 
 REPO="joshbet9/MonsterMaze"
 BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+SOURCE_BASE_URL="https://raw.githubusercontent.com/${REPO}/refs/tags/${TAG}"
 ROOT="/home/monstermaze/servers"
 TMP="$(mktemp -d /tmp/monstermaze-deploy.XXXXXX)"
 
@@ -112,6 +113,13 @@ for version in 1.8 1.21; do
   config="$TMP/extracted/$version/plugins/MonsterMazeStandalone/config.yml"
   grep -Eq '^solo-mode:[[:space:]]*false[[:space:]]*$' "$config"
   grep -Eq '^debug:[[:space:]]*false[[:space:]]*$' "$config"
+
+  # Hyper-V's debug configuration is source-controlled separately from the
+  # production-safe hosted artifact. It is pinned to the same release tag.
+  curl -fsSL "${SOURCE_BASE_URL}/docker/deployments/hyperv/${version}/config.yml" \
+    -o "$TMP/hyperv-config-${version}.yml"
+  grep -Eq '^solo-mode:[[:space:]]*false[[:space:]]*$' "$TMP/hyperv-config-${version}.yml"
+  grep -Eq '^debug:[[:space:]]*true[[:space:]]*$' "$TMP/hyperv-config-${version}.yml"
 done
 
 install_service() {
@@ -147,11 +155,11 @@ sleep 2
 
 # Preserve environment-owned state. In particular, do not replace worlds,
 # logs, server.properties, or the environment's plugin config. If a plugin
-# config is absent, the canonical release config is installed. Existing
-# environment configs are normalized to production-safe mode below.
+# config is absent, install the Hyper-V overlay from the exact release tag.
 for version in 1.8 1.21; do
   target="$ROOT/$version"
   stage="$TMP/extracted/$version"
+
   sudo mkdir -p "$target"
 
   sudo rsync -a "$stage/" "$target/" \
@@ -164,18 +172,10 @@ for version in 1.8 1.21; do
     --exclude='plugins/MonsterMazeStandalone/config.yml'
 
   config="$target/plugins/MonsterMazeStandalone/config.yml"
-  if ! sudo test -f "$config"; then
-    sudo install -D -m 0644 "$stage/plugins/MonsterMazeStandalone/config.yml" "$config"
-  fi
+  sudo install -D -m 0644 "$TMP/hyperv-config-${version}.yml" "$config"
 
-  sudo sed -i -E 's/^solo-mode:.*/solo-mode: false/' "$config"
-  if sudo grep -Eq '^debug:' "$config"; then
-    sudo sed -i -E 's/^debug:.*/debug: false/' "$config"
-  else
-    printf '\ndebug: false\n' | sudo tee -a "$config" >/dev/null
-  fi
   sudo grep -Eq '^solo-mode:[[:space:]]*false[[:space:]]*$' "$config"
-  sudo grep -Eq '^debug:[[:space:]]*false[[:space:]]*$' "$config"
+  sudo grep -Eq '^debug:[[:space:]]*true[[:space:]]*$' "$config"
   sudo chown -R monstermaze:monstermaze "$target"
 done
 
@@ -190,4 +190,4 @@ sleep 3
 sudo systemctl is-active --quiet monstermaze-18.service
 sudo systemctl is-active --quiet monstermaze-21.service
 
-log "Hyper-V is now running release $TAG with solo-mode:false and debug:false on MM18/MM21."
+log "Hyper-V is now running release $TAG with solo-mode:false and debug:true on MM18/MM21."
