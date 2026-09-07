@@ -16,19 +16,16 @@ import java.util.UUID;
 /**
  * Cached movement controller used exclusively by the 1.8 Lagless mode.
  *
- * The important speed invariant is that this controller still uses the original
- * CreatureMoveFast speed input (1.4 * stage multiplier). The old controller's
- * apparent average speed was lower because its target was the next turn/intersection
- * and CreatureMoveFast deliberately capped the final approach when that target was
- * within two blocks. The first cached implementation used a moving six-block
- * lookahead, which prevented that approach phase from happening and was therefore
- * genuinely faster even with the same 1.4 input.
+ * Route selection is cached so the runtime movement path does not need to scan
+ * the maze. Speed is deliberately independent of the distance to a turn: the
+ * controller sends a constant-speed movement command in the currently cached
+ * cardinal direction, and the route tape changes that direction when the mob
+ * enters the next maze cell.
  *
- * This cache reproduces that target geometry without scanning maze blocks at runtime:
- * each route cell stores the direction chosen from the cached topology, and the
- * runtime target is the final cell before that direction changes. Thus straight
- * corridors continue to the next turn, corners/dead ends become targets, and the
- * existing near-target speed cap remains active exactly where it was before.
+ * The baseline is intentionally 1.0, matching the speed used by the old
+ * near-target phase. The existing MonsterManager stage multiplier is then
+ * applied once, so speed changes only every five stages and remains constant
+ * between those changes.
  *
  * Direction selection works for any number of exits:
  * - 1 exit: forced (including a dead-end U-turn)
@@ -41,6 +38,8 @@ import java.util.UUID;
 public final class LaglessMobRouteCache {
     private static final int ROUTE_LENGTH = 4096;
     private static final int MAX_CATCHUP_CELLS = 8;
+    private static final float BASE_SPEED = 1.0f;
+    private static final int LOOKAHEAD_CELLS = 3;
 
     private final MazeGenerator maze;
     private final Set<Long> topology = new HashSet<Long>();
@@ -76,7 +75,7 @@ public final class LaglessMobRouteCache {
      * Move one Lagless mob. Returns false when the mob cannot currently be routed.
      * The caller remains responsible for launched/frozen entities.
      */
-    public boolean move(LivingEntity entity, float speed) {
+    public boolean move(LivingEntity entity, float speedMultiplier) {
         if (entity == null || !entity.isValid() || entity.isDead()) return false;
 
         Location loc = entity.getLocation();
@@ -150,25 +149,17 @@ public final class LaglessMobRouteCache {
 
         byte direction = route.directions[route.index];
 
-        // The original movement controller targeted the next turn/intersection,
-        // rather than a point that moved with the mob. Because the direction tape is
-        // cached, we can recover that same target without touching maze blocks:
-        // continue along the current direction until the cached direction changes.
-        int targetX = cellX;
-        int targetZ = cellZ;
-        int scan = route.index;
-        while (scan < route.directions.length && route.directions[scan] == direction) {
-            targetX += dx(direction);
-            targetZ += dz(direction);
-            scan++;
-        }
-
+        // Do not target the next turn. A turn target recreates the exact distance-based
+        // slowdown we are removing from Lagless. Instead, give NMS a point several
+        // blocks ahead in the cached cardinal direction. The dedicated constant-speed
+        // helper never applies a near-target speed cap, so the command's speed is
+        // determined solely by the stage multiplier.
+        int targetX = cellX + dx(direction) * LOOKAHEAD_CELLS;
+        int targetZ = cellZ + dz(direction) * LOOKAHEAD_CELLS;
         Location target = mazeLocation(targetX, targetZ);
 
-        // Deliberately keep the original 1.4 * stageMultiplier input. The old
-        // controller's near-target cap is part of its speed profile; changing the
-        // baseline to 1.0 would make the long-corridor portion slower than Mineplex.
-        return UtilEnt.CreatureMoveFast(entity, target, speed);
+        float speed = BASE_SPEED * speedMultiplier;
+        return UtilEnt.CreatureMoveConstant(entity, target, speed);
     }
 
     private MobRoute createRoute(Location start) {
