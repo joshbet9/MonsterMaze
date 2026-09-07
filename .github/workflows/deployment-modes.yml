@@ -1,0 +1,51 @@
+name: Validate Deployment Modes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deployment-matrix:
+    name: Validate deployment mode matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate config matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          assert_mode() {
+            local file="$1" solo="$2" debug="$3"
+            test -f "$file"
+            actual_solo=$(awk -F': *' '$1 == "solo-mode" { print $2; exit }' "$file")
+            actual_debug=$(awk -F': *' '$1 == "debug" { print $2; exit }' "$file")
+            [ "$actual_solo" = "$solo" ] || { echo "$file: expected solo-mode=$solo, found '$actual_solo'"; exit 1; }
+            [ "$actual_debug" = "$debug" ] || { echo "$file: expected debug=$debug, found '$actual_debug'"; exit 1; }
+          }
+
+          # Player-facing Solo distributions: solo mode on, debug commands off.
+          assert_mode solo/server/plugins/MonsterMazeStandalone/config.yml true false
+          assert_mode solo/1.21/server/plugins/MonsterMazeStandalone/config.yml true false
+
+          # Fly production: competitive mode, debug commands off.
+          assert_mode docker/deployments/fly/1.8/config.yml false false
+          assert_mode docker/deployments/fly/1.21/config.yml false false
+
+          # Hyper-V integration: competitive mode by default, debug commands available.
+          assert_mode docker/deployments/hyperv/1.8/config.yml false true
+          assert_mode docker/deployments/hyperv/1.21/config.yml false true
+
+      - name: Validate production promotion cannot leave Hyper-V in debug mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "debug:false and solo-mode:false" ops/hyperv/deploy-release.sh
+          grep -q "sed -i -E 's/\^debug:.*/debug: false/'" ops/hyperv/deploy-release.sh
+          grep -q "grep -Eq '\^debug:\[\[:space:\]\]\*false" ops/hyperv/deploy-release.sh
