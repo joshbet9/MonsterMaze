@@ -2,6 +2,7 @@ package me.monstermaze;
 
 import me.monstermaze.command.MMCommand;
 import me.monstermaze.command.MMDebugCommand;
+import me.monstermaze.command.PauseCommand;
 import me.monstermaze.game.BuildBypassListener;
 import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
@@ -71,6 +72,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         new BuildBypassListener(this);
         getCommand("mm").setExecutor(new MMCommand(this));
         getCommand("mmdebug").setExecutor(new MMDebugCommand(this));
+        getCommand("pause").setExecutor(new PauseCommand(this));
         Bukkit.getScheduler().runTaskLater(this, new Runnable() {
             @Override public void run() { for (Player p : Bukkit.getOnlinePlayers()) gameManager.sendToLobby(p); }
         }, 20L);
