@@ -23,7 +23,6 @@ technical implementations where Minecraft requires them.
 | 1.8.9 | Original | 60s → 15s | 150 | Original gameplay and 5 Jumper charges |
 | 1.8.9 | Speed | 60s → 15s | 150 | Enhanced kits and Safe Pad Jumper restoration while retaining original pacing/spawning |
 | 1.8.9 | Modern | 35s → 15s | 225 | Enhanced kits, faster pacing and heavier monster spawning |
-| 1.8.9 | Lagless | 35s → 15s | 500 fixed | No per-stage monster batches; monster speed increases every 5 stages |
 | 1.21.11 | Original | 60s → 15s | 150 | Original gameplay and 5 Jumper charges |
 | 1.21.11 | Modern | 35s → 15s | 225 | Enhanced kits and Modern movement-speed handling |
 | 1.21.11 | Classic | 35s → 15s | 225 | Modern tuning without the Modern movement-speed boost |
@@ -89,8 +88,6 @@ Across both versions:
 - Modern pacing starts at 35 seconds and reaches the 15-second floor over the
   first 10 stages.
 - 1.8 Speed keeps Original pacing and spawning while using enhanced gameplay.
-- 1.8 Lagless replaces recurring monster batches with a fixed 500-monster pool
-  and increases monster speed every 5 stages.
 - 1.8 Modern adds 30 monsters per Safe Pad transition.
 
 ---
