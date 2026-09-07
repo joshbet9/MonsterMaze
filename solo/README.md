@@ -115,9 +115,9 @@ The Discord layout is:
 #1.21-leaderboard-kits
 ```
 
-1.8 modes are Original, Modern, Speed and Lagless. 1.21 modes are Original,
-Modern and Classic. The five kits are shared by both platforms: Jumper,
-Slowballer, Body Builder, Repulsor and Maverick.
+1.8 modes are Original, Modern and Speed. 1.21 modes are Original, Modern and
+Classic. The five kits are shared by both platforms: Jumper, Slowballer, Body Builder,
+Repulsor and Maverick.
 
 The lifetime leaderboard database key is:
 
