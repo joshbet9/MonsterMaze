@@ -33,6 +33,7 @@ public class GameScoreboard {
             board = Bukkit.getScoreboardManager().getNewScoreboard();
             Team ghostTeam = board.registerNewTeam("mm_ghosts");
             ghostTeam.setCanSeeFriendlyInvisibles(true);
+            ghostTeam.addEntry(p.getName());
 
             Objective obj = board.registerNewObjective("mm", "dummy");
             obj.setDisplaySlot(DisplaySlot.SIDEBAR);
@@ -90,11 +91,7 @@ public class GameScoreboard {
         for (UUID id : boards.keySet()) {
             Player target = Bukkit.getPlayer(id);
             if (target == null || !target.isOnline() || target.getUniqueId().equals(observer.getUniqueId())) continue;
-
-            // KitManager used to drive this feature with a real potion effect. Remove that
-            // global state; the client-specific metadata below is the source of truth.
             if (target.hasPotionEffect(PotionEffectType.INVISIBILITY)) target.removePotionEffect(PotionEffectType.INVISIBILITY);
-
             if (mode == VisibilityMode.INVISIBLE) {
                 observer.hidePlayer(target);
                 if (ghostTeam != null) ghostTeam.removeEntry(target.getName());
@@ -137,9 +134,7 @@ public class GameScoreboard {
     }
 
     /** Compatibility shim for older KitManager calls. Global ghost state is intentionally gone. */
-    public void setGhost(UUID hidden, boolean ghost) {
-        // Intentionally no-op: visibility is strictly observer-local now.
-    }
+    public void setGhost(UUID hidden, boolean ghost) { }
 
     /** On the observer's own scoreboard only, add/remove a target from its ghost team. */
     public void setGhostFor(UUID observer, UUID hidden, boolean ghost) {
