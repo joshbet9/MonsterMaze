@@ -12,9 +12,7 @@ public enum MazeMode {
     SPEED("Speed", ChatColor.GOLD,
             "Modern gameplay with the original timer and monster spawning."),
     MODERN("Modern", ChatColor.LIGHT_PURPLE,
-            "Enhanced gameplay with faster stages, more monsters, and expanded kit abilities."),
-    LAGLESS("Lagless", ChatColor.AQUA,
-            "Designed to reduce server load with a fixed monster pool and steadily increasing monster speed.");
+            "Enhanced gameplay with faster stages, more monsters, and expanded kit abilities.");
 
     public final String id;
     public final ChatColor color;

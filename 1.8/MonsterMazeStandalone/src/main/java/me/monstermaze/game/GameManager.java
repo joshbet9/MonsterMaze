@@ -504,7 +504,7 @@ public class GameManager implements Listener {
      *  Modern:  35 -> 15 floor, reached by stage 10.
      */
     private int stageTimer(int stage) {
-        if (mode == MazeMode.MODERN || mode == MazeMode.LAGLESS) {
+        if (mode == MazeMode.MODERN) {
             return Math.max(15, 35 - ((stage - 1) * 20 / 9));
         }
         return Math.max(15, 60 - ((stage - 1) * 2));
@@ -547,15 +547,7 @@ public class GameManager implements Listener {
                 }
             }
 
-            if (getMode() == MazeMode.LAGLESS) {
-                // Fixed 500 pool: no per-stage spawns. Difficulty comes from a speed step every
-                // 5 stages (1.0 -> 1.2 -> 1.4 -> ...), first bump entering stage 6.
-                int enteringStage = curSafe + 1;
-                int steps = (enteringStage - 1) / 5;
-                monsterManager.setSpeedMultiplier(1.0f + 0.2f * steps);
-            } else {
-                monsterManager.spawnMore(getMode() == MazeMode.MODERN ? 30 : 15);
-            }
+            monsterManager.spawnMore(getMode() == MazeMode.MODERN ? 30 : 15);
             stopSafePad();
             playersOnPad.clear();
             firstClaimedThisPhase = false;

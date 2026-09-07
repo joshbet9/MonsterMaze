@@ -1,5 +1,5 @@
 # MonsterMazeStandalone configuration
-# Active game mode: Original, Speed, Modern, or Lagless
+# Active game mode: Original, Speed, or Modern
 mode: Original
 
 # Solo mode: when true, the plugin records a run record (JSON) to the
@@ -57,7 +57,7 @@ maps:
     # arctic theme
     top:    {id: 80,  data: 0}    # snow block (walk surface)
     mid:    {id: 80,  data: 0}    # snow block (support)
-    bottom: {id: 80,  data: 0}    # snow block (base)
+    bottom: {id: 80, data: 0}    # snow block (base)
   swampland:
     world-folder: mm_swampland
     mob: zombie

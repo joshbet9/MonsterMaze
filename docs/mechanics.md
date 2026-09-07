@@ -96,7 +96,6 @@ allowing the normal random-direction knockback.
 | 1.8 | Original | 150 |
 | 1.8 | Speed | 150 |
 | 1.8 | Modern | 225 |
-| 1.8 | Lagless | 500 fixed pool |
 | 1.21 | Original | 150 |
 | 1.21 | Modern | 225 |
 | 1.21 | Classic | 225 |
@@ -106,16 +105,7 @@ allowing the normal random-direction knockback.
 - Original pacing starts at 60 seconds and decreases by 2 seconds per stage until reaching 15 seconds.
 - Modern pacing starts at 35 seconds and decreases toward 15 seconds over the first 10 stages.
 - 1.8 Speed uses the Original timer/pacing while retaining the Modern gameplay changes.
-- 1.8 Lagless uses the Modern timer.
 - 1.21 Classic uses the Modern timer.
-
-### Lagless
-
-The 1.8 Lagless mode uses a fixed pool of 500 monsters created at the start of the run and does not add
-another monster batch at each stage.
-
-Instead, monster movement speed increases every 5 stages to maintain progression difficulty. Its timer
-matches Modern and it retains the non-Original kit mechanics.
 
 ---
 
@@ -207,13 +197,6 @@ They should not contain implementation labels.
 - Faster timer: 35 seconds toward 15 seconds over the first 10 stages.
 - 225 starter monsters instead of 150.
 - Non-Original kit mechanics.
-
-**Lagless**
-
-- Fixed pool of 500 monsters.
-- No per-stage monster spawning.
-- Monster speed increases every 5 stages.
-- Modern timer and non-Original kit mechanics.
 
 ### 1.21
 

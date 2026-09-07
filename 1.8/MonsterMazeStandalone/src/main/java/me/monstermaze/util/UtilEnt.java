@@ -75,34 +75,6 @@ public final class UtilEnt {
         } catch (Throwable t) { return false; }
     }
 
-    /**
-     * Set a constant movement command for callers that explicitly manage their own
-     * route. Unlike CreatureMoveFast, this method never reduces speed based on the
-     * distance to its target. It is intentionally used only by the 1.8 Lagless
-     * cached movement controller.
-     */
-    public static boolean CreatureMoveConstant(Entity ent, Location target, float speed) {
-        if (ent == null || target == null) return false;
-        if (offsetSquared(ent.getLocation(), target) < 0.01) return false;
-        resolve();
-        if (!available) {
-            Location loc = ent.getLocation();
-            org.bukkit.util.Vector dir = target.toVector().subtract(loc.toVector());
-            if (dir.lengthSquared() < 1e-6) return false;
-            dir.normalize().multiply(speed * 0.2);
-            Location next = loc.clone().add(dir);
-            next.setYaw(loc.getYaw()); next.setPitch(loc.getPitch());
-            ent.teleport(next);
-            return true;
-        }
-        try {
-            Object handle = getHandle.invoke(ent);
-            Object controller = getControllerMove.invoke(handle);
-            controllerMoveA.invoke(controller, target.getX(), target.getY(), target.getZ(), (double) speed);
-            return true;
-        } catch (Throwable t) { return false; }
-    }
-
     public static double offsetSquared(Location a, Location b) {
         if (a == null || b == null || a.getWorld() != b.getWorld()) return Double.MAX_VALUE;
         double dx = a.getX() - b.getX(), dy = a.getY() - b.getY(), dz = a.getZ() - b.getZ();
