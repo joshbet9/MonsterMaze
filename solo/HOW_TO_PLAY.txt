@@ -58,7 +58,7 @@ When you die, your run ends and your result is recorded automatically.
 MODES
 --------------------------------------------
 
-The 1.8 version has four modes:
+The 1.8 version has three modes:
 
   Original
     The original Monster Maze experience, recreated as faithfully as
@@ -69,10 +69,6 @@ The 1.8 version has four modes:
 
   Modern
     Faster stages, more monsters, and expanded kit abilities.
-
-  Lagless
-    Uses a fixed monster pool instead of adding new monsters at each
-    stage, with monster speed increasing as the run progresses.
 
 If you are playing for the main leaderboard, use the mode specified by
 whoever is running the competition.
