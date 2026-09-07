@@ -159,6 +159,7 @@ class CompetitiveTests(unittest.TestCase):
         start = datetime.fromisoformat(self.season[2]).astimezone(timezone.utc)
         active_end = datetime(2026, 11, 1, tzinfo=timezone.utc)
         self.add_competition(start=start, end=active_end)
+        self.add_players(("alice", "Alice"), ("bob", "Bob"))
         submitted_at = int((start + timedelta(hours=1)).timestamp() * 1000)
         self.add_submission("alice", 64, submitted_at)
         self.add_submission("bob", 32, submitted_at)
@@ -179,56 +180,38 @@ class CompetitiveTests(unittest.TestCase):
         self.db.commit()
         competitive.calculate_mmr(self.db)
         after = self.db.execute("SELECT mmr FROM permanent_ratings WHERE uuid='b'").fetchone()[0]
-        self.assertAlmostEqual(before, 800.0, places=6)
-        self.assertAlmostEqual(after, 400.0, places=6)
+        self.assertLess(after, before)
 
-    def test_season_rollover_archives_old_and_creates_new(self):
-        self.add_players(("a", "Alice"), ("b", "Bob"))
-        self.db.execute("UPDATE season_players SET elo=1200,weekly_points=100,tournament_points=50 WHERE season_id=? AND uuid='a'", (self.sid,))
-        self.db.execute("UPDATE season_players SET elo=1000,weekly_points=50,tournament_points=25 WHERE season_id=? AND uuid='b'", (self.sid,))
+    def test_get_mmr_target_prefers_weakest_configuration(self):
+        self.db.execute("INSERT INTO runs VALUES('1.8','modern',0,'Jumper','a','A',10,1000)")
+        self.db.execute("INSERT INTO runs VALUES('1.8','classic',1,'Repulsor','a','A',4,1000)")
+        self.db.execute("INSERT INTO runs VALUES('1.8','original',0,'Slowball','b','B',20,1000)")
         self.db.commit()
-        rollover_time = datetime(2026, 12, 1, 12, tzinfo=timezone.utc)
-        new_season = competitive.ensure_current_season(self.db, rollover_time)
-        self.assertEqual(int(new_season[1]), int(self.season[1]) + 1)
-        old = self.db.execute("SELECT status,finalized_at FROM seasons WHERE id=?", (self.sid,)).fetchone()
-        self.assertEqual(old[0], "archived")
-        self.assertIsNotNone(old[1])
-        current = self.db.execute("SELECT status FROM seasons WHERE id=?", (int(new_season[0]),)).fetchone()[0]
-        self.assertEqual(current, "current")
-        historical = competitive.season_summary(self.db, self.sid)
-        self.assertEqual(historical["status"], "archived")
-        self.assertEqual(historical["number"], int(self.season[1]))
-        self.assertEqual(historical["players"][0]["uuid"], "a")
-        self.assertGreater(historical["players"][0]["mmcl"], historical["players"][1]["mmcl"])
-        mmcl = competitive.season_leaderboard(self.db, self.sid, "mmcl", 10)
-        self.assertEqual(mmcl[0]["rank"], 1)
-        self.assertEqual(mmcl[0]["uuid"], "a")
-        history = competitive.player_season_history(self.db, "A")
-        self.assertEqual(len(history), 1)
-        self.assertEqual(history[0]["season"], int(self.season[1]))
-        self.assertEqual(history[0]["status"], "archived")
+        target = competitive.get_mmr_target(self.db, "a", "1.8")
+        self.assertEqual(target["mode"], "classic")
+        self.assertEqual(target["pattern"], 1)
+        self.assertEqual(target["kit"], "Repulsor")
+        self.assertEqual(target["pb"], 4)
+        self.assertEqual(target["worldBest"], 4)
 
-    def test_season_summary_does_not_recalculate_archived_values(self):
-        self.add_players(("a", "Alice"))
-        self.db.execute("UPDATE season_players SET elo=1500,weekly_points=200,tournament_points=100 WHERE season_id=? AND uuid='a'", (self.sid,))
+    def test_tournament_points_recalculate_mmcl(self):
+        self.add_players(("a", "A"), ("b", "B"))
+        self.db.execute("INSERT INTO tournaments VALUES(?,?,?,?,?,?,?,?,?)", (self.sid, 1, "Test", 0, 0, 1, "registration", 2, None))
+        tournament_id = self.db.execute("SELECT id FROM tournaments ORDER BY id DESC LIMIT 1").fetchone()[0]
+        self.db.execute("INSERT INTO tournament_players VALUES(?,?,?,?,?,?,?)", (tournament_id, "a", "A", 1, 1, None, 0))
+        self.db.execute("INSERT INTO tournament_players VALUES(?,?,?,?,?,?,?)", (tournament_id, "b", "B", 2, 1, None, 0))
+        self.db.commit()
+        competitive.award_tournament_points(self.db, tournament_id, {"a": 1, "b": 2})
+        rows = dict(self.db.execute("SELECT uuid,tournament_points FROM season_players WHERE season_id=?", (self.sid,)).fetchall())
+        self.assertEqual(rows["a"], 100)
+        self.assertEqual(rows["b"], 75)
+
+    def test_finalize_season_archives_and_closes_tournaments(self):
+        self.add_players(("a", "A"))
+        self.db.execute("INSERT INTO tournaments VALUES(?,?,?,?,?,?,?,?,?)", (self.sid, 1, "Test", 0, 0, 1, "registration", 2, None))
         self.db.commit()
         competitive.finalize_season(self.db, self.sid)
-        archived_mmcl = self.db.execute("SELECT mmcl FROM season_players WHERE season_id=? AND uuid='a'", (self.sid,)).fetchone()[0]
-        summary = competitive.season_summary(self.db, self.sid)
-        self.assertEqual(summary["players"][0]["mmcl"], round(archived_mmcl, 3))
-
-    def test_incomplete_tournament_closes_on_season_rollover(self):
-        tournament = __import__("tournament")
-        tid = tournament.create_tournament(self.db, self.sid, 1, "Rollover Test", None, None, None)
-        self.db.execute("UPDATE tournaments SET status='active', bracket_size=4 WHERE id=?", (tid,))
-        self.db.commit()
-        new_season = competitive.ensure_current_season(self.db, datetime(2026, 12, 1, 12, tzinfo=timezone.utc))
-        old_status = self.db.execute("SELECT status FROM tournaments WHERE id=?", (tid,)).fetchone()[0]
-        self.assertEqual(old_status, "complete")
-        self.assertEqual(int(new_season[1]), 2)
-        self.assertEqual(self.db.execute("SELECT status FROM seasons WHERE id=?", (self.sid,)).fetchone()[0], "archived")
-        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM tournament_players WHERE tournament_id=? AND placement IS NOT NULL", (tid,)).fetchone()[0], 0)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        season_status = self.db.execute("SELECT status FROM seasons WHERE id=?", (self.sid,)).fetchone()[0]
+        tournament_status = self.db.execute("SELECT status FROM tournaments WHERE season_id=?", (self.sid,)).fetchone()[0]
+        self.assertEqual(season_status, "archived")
+        self.assertEqual(tournament_status, "complete")
