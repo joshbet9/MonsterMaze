@@ -21,13 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Per-observer scoreboard and player-visibility state.
- *
- * <p>The visibility toggle is deliberately client-specific. Each observer has their own
- * scoreboard/team and receives their own entity-metadata packet, so one player's view mode
- * cannot change what another player sees.</p>
- */
+/** Per-observer scoreboard and player-visibility state. */
 public class GameScoreboard {
     private final Map<UUID, Scoreboard> boards = new ConcurrentHashMap<UUID, Scoreboard>();
     private final ProtocolManager protocolManager = ProtocolLibrary.getProtocolManager();
@@ -38,6 +32,7 @@ public class GameScoreboard {
             board = Bukkit.getScoreboardManager().getNewScoreboard();
             Team ghostTeam = board.registerNewTeam("mm_ghosts");
             ghostTeam.setCanSeeFriendlyInvisibles(true);
+            ghostTeam.addEntry(p.getName());
 
             Objective obj = board.registerNewObjective("mm", "dummy");
             obj.setDisplaySlot(DisplaySlot.SIDEBAR);
@@ -62,7 +57,6 @@ public class GameScoreboard {
     }
 
     private String label(ChatColor color, String text) { return color + "" + ChatColor.BOLD + text; }
-
     private void setupDynamicLine(Scoreboard board, Objective obj, int score, String teamName, String prefix, String suffix) {
         Team team = board.registerNewTeam(teamName);
         String entry = getUniqueEntry(score);
@@ -71,9 +65,7 @@ public class GameScoreboard {
         team.setSuffix(suffix);
         obj.getScore(entry).setScore(score);
     }
-
     private void setStatic(Scoreboard board, Objective obj, int score, String text) { obj.getScore(text).setScore(score); }
-
     private String getUniqueEntry(int score) { return ChatColor.values()[Math.abs(score) % 15].toString() + ChatColor.RESET; }
 
     public void update(Player p, int alive, int stage, int phaseSeconds, boolean hasPad, String mode, String pbText) {
@@ -95,9 +87,7 @@ public class GameScoreboard {
         for (UUID id : boards.keySet()) {
             Player target = Bukkit.getPlayer(id);
             if (target == null || !target.isOnline() || target.getUniqueId().equals(observer.getUniqueId())) continue;
-
             if (target.hasPotionEffect(PotionEffectType.INVISIBILITY)) target.removePotionEffect(PotionEffectType.INVISIBILITY);
-
             if (mode == VisibilityMode.INVISIBLE) {
                 observer.hidePlayer(target);
                 if (ghostTeam != null) ghostTeam.removeEntry(target.getName());
@@ -115,7 +105,6 @@ public class GameScoreboard {
     }
 
     private enum VisibilityMode { VISIBLE, INVISIBLE, TRANSPARENT }
-
     private VisibilityMode visibilityMode(Player observer) {
         org.bukkit.inventory.ItemStack item = observer.getInventory().getItem(7);
         if (item == null) return VisibilityMode.VISIBLE;
@@ -130,24 +119,18 @@ public class GameScoreboard {
             Byte current = source.getByte(0);
             byte flags = current == null ? 0 : current.byteValue();
             flags = invisible ? (byte) (flags | 0x20) : (byte) (flags & ~0x20);
-
             PacketContainer packet = protocolManager.createPacket(PacketType.Play.Server.ENTITY_METADATA);
             packet.getIntegers().write(0, target.getEntityId());
             List<WrappedDataValue> values = new ArrayList<WrappedDataValue>();
             values.add(new WrappedDataValue(0, WrappedDataWatcher.Registry.get(Byte.class), flags));
             packet.getDataValueCollectionModifier().write(0, values);
             protocolManager.sendServerPacket(observer, packet);
-        } catch (Throwable ignored) {
-            // Never let a ProtocolLib mismatch break the game loop.
-        }
+        } catch (Throwable ignored) { }
     }
 
     /** Compatibility shim for older KitManager calls. Global ghost state is intentionally gone. */
-    public void setGhost(UUID hidden, boolean ghost) {
-        // Intentionally no-op: visibility is strictly observer-local now.
-    }
+    public void setGhost(UUID hidden, boolean ghost) { }
 
-    /** On the observer's own scoreboard only, add/remove a target from its ghost team. */
     public void setGhostFor(UUID observer, UUID hidden, boolean ghost) {
         Player op = Bukkit.getPlayer(observer);
         if (op == null || !op.isOnline()) return;
@@ -170,16 +153,13 @@ public class GameScoreboard {
             team.setSuffix(suffix);
         }
     }
-
     public void create() { }
-
     public void apply(List<Player> players) {
         for (Player p : players) {
             Scoreboard board = boards.get(p.getUniqueId());
             if (board != null) p.setScoreboard(board);
         }
     }
-
     public void clear(List<Player> players) {
         Scoreboard main = Bukkit.getScoreboardManager().getMainScoreboard();
         for (Player p : players) {
