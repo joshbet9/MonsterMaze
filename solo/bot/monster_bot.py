@@ -5,6 +5,7 @@ import os
 import discord
 import api_server
 import monster_bot_v2 as base
+import server_status
 import tournament_bot as tournament_impl
 
 CURRENT_BOT = None
@@ -68,6 +69,11 @@ class APIMonsterBot(tournament_impl.TournamentBot):
         super().__init__(cfg)
         global CURRENT_BOT
         CURRENT_BOT = self
+
+    async def on_ready(self):
+        await super().on_ready()
+        if not getattr(self, "server_status_task", None) or self.server_status_task.done():
+            self.server_status_task = asyncio.create_task(server_status.run(self, self.cfg))
 
 
 def configure_api():
