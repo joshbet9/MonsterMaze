@@ -9,51 +9,39 @@ import tournament
 DB=INSERT_SUBMISSION=UPSERT_RUN=CREATE_COMPETITION=BOARD_ROWS=COMPETITION_ROWS=REFRESH_BOT=POST_FEED=None
 ALLOWED_MODES={"1.8":{"original","modern","speed"},"1.21":{"original","modern","classic"}}
 
-
 def configure(*,db_fn,insert_submission,upsert_run,create_competition,board_rows,competition_rows=None,refresh_bot=None,post_feed=None):
     global DB,INSERT_SUBMISSION,UPSERT_RUN,CREATE_COMPETITION,BOARD_ROWS,COMPETITION_ROWS,REFRESH_BOT,POST_FEED
     DB=db_fn;INSERT_SUBMISSION=insert_submission;UPSERT_RUN=upsert_run;CREATE_COMPETITION=create_competition;BOARD_ROWS=board_rows;COMPETITION_ROWS=competition_rows;REFRESH_BOT=refresh_bot;POST_FEED=post_feed
 
-
 def token_ok(h):
     expected=os.getenv("MM_API_TOKEN","").strip();return bool(expected) and h.headers.get("Authorization","")=="Bearer "+expected
-
 
 def send_json(h,status,payload):
     body=json.dumps(payload,separators=(",",":"),ensure_ascii=False).encode("utf-8");h.send_response(status);h.send_header("Content-Type","application/json; charset=utf-8");h.send_header("Content-Length",str(len(body)));h.send_header("Cache-Control","no-store");h.end_headers();h.wfile.write(body)
 
-
 def retired_mode_cleanup(c):
-    """One-way migration for the retired 1.8 Lagless mode.
-
-    Old Lagless submissions/PBs are no longer valid leaderboard records and must
-    not participate in permanent MMR calculations. This runs before competitive
-    reads/writes so existing databases self-clean on first API use.
-    """
+    """Remove retired Lagless data before any leaderboard/MMR operation."""
+    c.execute("CREATE TABLE IF NOT EXISTS permanent_ratings(uuid TEXT PRIMARY KEY,name TEXT,mmr REAL NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL DEFAULT 0)")
     c.execute("DELETE FROM submissions WHERE lower(mode)='lagless'")
     c.execute("DELETE FROM runs WHERE lower(mode)='lagless'")
     c.execute("DELETE FROM permanent_ratings WHERE uuid NOT IN (SELECT DISTINCT uuid FROM runs)")
     c.commit()
 
-
 def validate_mode(platform,mode):
-    p=str(platform); m=str(mode).lower()
+    p=str(platform);m=str(mode).lower()
     if p not in ALLOWED_MODES:raise ValueError("unsupported platform")
     if m not in ALLOWED_MODES[p]:raise ValueError("unsupported mode")
     return m
-
 
 def refresh_bot(platform):
     if REFRESH_BOT:
         try:REFRESH_BOT(platform)
         except Exception as exc:print(f"[api] leaderboard refresh failed: {exc}",flush=True)
 
-
 def post_feed(run):
     if POST_FEED:
         try:POST_FEED(run)
         except Exception as exc:print(f"[api] feed post failed: {exc}",flush=True)
-
 
 def background_updates(platform,run,should_feed):
     def work():
@@ -61,22 +49,18 @@ def background_updates(platform,run,should_feed):
         refresh_bot(platform)
     threading.Thread(target=work,name="MonsterMazeAPIUpdate",daemon=True).start()
 
-
 def season_row(r):
     if not r:return None
     return {"uuid":r[0],"name":r[1],"elo":round(float(r[2]),3),"weeklyPoints":int(r[3]),"tournamentPoints":int(r[4]),"eloComponent":round(float(r[5]),3),"weeklyComponent":round(float(r[6]),3),"tournamentComponent":round(float(r[7]),3),"mmcl":round(float(r[8]),3)}
 
-
 def competitive_get(parts):
     c=DB()
     try:
-        retired_mode_cleanup(c);competitive.ensure_schema(c);season=competitive.ensure_current_season(c);sid=int(season[0])
+        competitive.ensure_schema(c);retired_mode_cleanup(c);season=competitive.ensure_current_season(c);sid=int(season[0])
         if parts==["season","current"]:
-            competitive.recalculate_components(c,sid);rows=c.execute("SELECT uuid,name,elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component,mmcl FROM season_players WHERE season_id=? ORDER BY mmcl DESC,uuid ASC",(sid,)).fetchall()
-            return {"ok":True,"season":{"id":sid,"number":int(season[1]),"start":season[2],"end":season[3],"status":season[4]},"rows":[season_row(r) for r in rows]}
+            competitive.recalculate_components(c,sid);rows=c.execute("SELECT uuid,name,elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component,mmcl FROM season_players WHERE season_id=? ORDER BY mmcl DESC,uuid ASC",(sid,)).fetchall();return {"ok":True,"season":{"id":sid,"number":int(season[1]),"start":season[2],"end":season[3],"status":season[4]},"rows":[season_row(r) for r in rows]}
         if len(parts)==2 and parts[0] in ("mmcl","elo","weekly","tournament") and parts[1]=="leaderboard":
-            competitive.recalculate_components(c,sid);col={"mmcl":"mmcl","elo":"elo","weekly":"weekly_points","tournament":"tournament_points"}[parts[0]];rows=c.execute(f"SELECT uuid,name,{col} FROM season_players WHERE season_id=? ORDER BY {col} DESC,uuid ASC LIMIT 25",(sid,)).fetchall()
-            return {"ok":True,"seasonId":sid,"kind":parts[0],"rows":[{"uuid":u,"name":n,"score":round(float(v),3)} for u,n,v in rows]}
+            competitive.recalculate_components(c,sid);col={"mmcl":"mmcl","elo":"elo","weekly":"weekly_points","tournament":"tournament_points"}[parts[0]];rows=c.execute(f"SELECT uuid,name,{col} FROM season_players WHERE season_id=? ORDER BY {col} DESC,uuid ASC LIMIT 25",(sid,)).fetchall();return {"ok":True,"seasonId":sid,"kind":parts[0],"rows":[{"uuid":u,"name":n,"score":round(float(v),3)} for u,n,v in rows]}
         if parts==["mmr","leaderboard"]:
             competitive.calculate_mmr(c);rows=c.execute("SELECT uuid,name,mmr FROM permanent_ratings ORDER BY mmr DESC,uuid ASC LIMIT 25").fetchall();return {"ok":True,"kind":"mmr","rows":[{"uuid":u,"name":n,"score":round(float(v),3)} for u,n,v in rows]}
         if len(parts)==5 and parts[0]=="mmr" and parts[1]=="player" and parts[3]=="next":
@@ -91,11 +75,10 @@ def competitive_get(parts):
         return None
     finally:c.close()
 
-
 def historical_get(parts):
     c=DB()
     try:
-        retired_mode_cleanup(c);competitive.ensure_schema(c)
+        competitive.ensure_schema(c);retired_mode_cleanup(c)
         if parts==["seasons"]:
             rows=c.execute("SELECT id,season_number,start_ts,end_ts,status,finalized_at FROM seasons ORDER BY season_number DESC").fetchall();return {"ok":True,"seasons":[{"id":int(sid),"number":int(num),"start":start,"end":end,"status":status,"finalizedAt":finalized} for sid,num,start,end,status,finalized in rows]}
         if len(parts)>=2 and parts[0]=="seasons":
@@ -113,17 +96,14 @@ def historical_get(parts):
         return None
     finally:c.close()
 
-
 def tournament_payload(c,t):
     if not t:return None
-    tid=int(t[0]);rows=c.execute("SELECT uuid,name,seed,placement,points FROM tournament_players WHERE tournament_id=? ORDER BY CASE WHEN placement IS NULL THEN 99 ELSE placement END,registered_at ASC",(tid,)).fetchall();matches=c.execute("SELECT id,round_number,slot,player1_uuid,player2_uuid,best_of,player1_wins,player2_wins,winner_uuid,status FROM tournament_matches WHERE tournament_id=? ORDER BY round_number,slot",(tid,)).fetchall()
-    return {"id":tid,"seasonId":int(t[1]),"number":int(t[2]),"name":t[3],"registrationStart":t[4],"registrationEnd":t[5],"start":t[6],"status":t[7],"bracketSize":t[8],"players":[{"uuid":u,"name":n,"seed":s,"placement":p,"points":int(pt)} for u,n,s,p,pt in rows],"matches":[{"id":int(i),"round":int(r),"slot":int(sl),"player1":p1,"player2":p2,"bestOf":int(bo),"player1Wins":int(w1),"player2Wins":int(w2),"winner":w,"status":st} for i,r,sl,p1,p2,bo,w1,w2,w,st in matches]}
-
+    tid=int(t[0]);rows=c.execute("SELECT uuid,name,seed,placement,points FROM tournament_players WHERE tournament_id=? ORDER BY CASE WHEN placement IS NULL THEN 99 ELSE placement END,registered_at ASC",(tid,)).fetchall();matches=c.execute("SELECT id,round_number,slot,player1_uuid,player2_uuid,best_of,player1_wins,player2_wins,winner_uuid,status FROM tournament_matches WHERE tournament_id=? ORDER BY round_number,slot",(tid,)).fetchall();return {"id":tid,"seasonId":int(t[1]),"number":int(t[2]),"name":t[3],"registrationStart":t[4],"registrationEnd":t[5],"start":t[6],"status":t[7],"bracketSize":t[8],"players":[{"uuid":u,"name":n,"seed":s,"placement":p,"points":int(pt)} for u,n,s,p,pt in rows],"matches":[{"id":int(i),"round":int(r),"slot":int(sl),"player1":p1,"player2":p2,"bestOf":int(bo),"player1Wins":int(w1),"player2Wins":int(w2),"winner":w,"status":st} for i,r,sl,p1,p2,bo,w1,w2,w,st in matches]}
 
 def tournament_get(parts):
     c=DB()
     try:
-        retired_mode_cleanup(c);competitive.ensure_schema(c);tournament.ensure_schema(c);season=competitive.ensure_current_season(c);sid=int(season[0])
+        competitive.ensure_schema(c);retired_mode_cleanup(c);tournament.ensure_schema(c);season=competitive.ensure_current_season(c);sid=int(season[0])
         if parts==["current"]:
             row=c.execute("SELECT id,season_id,number,name,registration_start,registration_end,start_ts,status,bracket_size FROM tournaments WHERE season_id=? AND status!='complete' ORDER BY number DESC LIMIT 1",(sid,)).fetchone();return {"ok":True,"tournament":tournament_payload(c,row)}
         if len(parts)==1:
@@ -134,7 +114,6 @@ def tournament_get(parts):
             tid=int(current[0]);return {"ok":True,"tournamentId":tid,"match":tournament.current_match(c,tid,parts[1])}
         return None
     finally:c.close()
-
 
 class Handler(BaseHTTPRequestHandler):
     server_version="MonsterMazeAPI/1.5"
@@ -193,8 +172,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/v1/runs":
                 required=("submissionId","platform","mode","pattern","kit","uuid","name","stage","timeMs");missing=[k for k in required if k not in payload]
                 if missing:raise ValueError("missing fields: "+",".join(missing))
-                platform=str(payload["platform"]);mode=validate_mode(platform,payload["mode"])
-                pattern=int(payload["pattern"]);stage=int(payload["stage"])
+                platform=str(payload["platform"]);mode=validate_mode(platform,payload["mode"]);pattern=int(payload["pattern"]);stage=int(payload["stage"])
                 if not 0<=pattern<3:raise ValueError("invalid pattern")
                 if stage<1 or stage>10000:raise ValueError("invalid stage")
                 kit=str(payload["kit"]);kit="Slowball" if kit.lower()=="slowballer" else kit
@@ -202,10 +180,9 @@ class Handler(BaseHTTPRequestHandler):
                 normalized={"submission_id":str(payload["submissionId"])[:256],"platform":platform,"plugin":str(payload.get("plugin","1.0.0"))[:64],"mode":mode,"pattern":pattern,"kit":kit,"uuid":str(payload["uuid"]).lower()[:64],"name":str(payload["name"])[:256],"stage":stage,"time_ms":max(0,int(payload.get("timeMs",0))),"config_hash":str(payload.get("configHash",""))[:128],"submitted_at":max(0,int(payload.get("submittedAt",0)))}
                 if not normalized["submitted_at"]:
                     import time;normalized["submitted_at"]=int(time.time()*1000)
-                c=DB();retired_mode_cleanup(c);c.close()
-                inserted=INSERT_SUBMISSION(normalized);improved=UPSERT_RUN(normalized)
+                c=DB();retired_mode_cleanup(c);c.close();inserted=INSERT_SUBMISSION(normalized);improved=UPSERT_RUN(normalized)
                 if improved:
-                    c=DB();competitive.calculate_mmr(c);c.close()
+                    c=DB();competitive.ensure_schema(c);competitive.calculate_mmr(c);c.close()
                 send_json(self,200,{"ok":True,"accepted":True,"newSubmission":bool(inserted),"newLifetimePB":bool(improved)});background_updates(platform,normalized,bool(inserted));return
             if path=="/api/v1/matches":
                 required=("matchId","platform","mode","pattern","kit","startedAt","endedAt","players");missing=[k for k in required if k not in payload]
@@ -225,7 +202,6 @@ class Handler(BaseHTTPRequestHandler):
             send_json(self,404,{"ok":False,"error":"not_found"})
         except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:send_json(self,400,{"ok":False,"error":str(exc)})
         except Exception as exc:print(f"[api] POST failed: {exc}",flush=True);send_json(self,500,{"ok":False,"error":"internal_error"})
-
 
 def start_server(*,host="0.0.0.0",port=8090):
     server=ThreadingHTTPServer((host,int(port)),Handler);threading.Thread(target=server.serve_forever,name="MonsterMazeAPI",daemon=True).start();print(f"[api] listening on {host}:{port}",flush=True);return server
