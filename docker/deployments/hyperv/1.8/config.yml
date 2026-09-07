@@ -1,0 +1,4 @@
+# Deployment overlay for the Hyper-V integration test server.
+# Debug commands are intentionally enabled only in this test environment.
+solo-mode: false
+debug: true
