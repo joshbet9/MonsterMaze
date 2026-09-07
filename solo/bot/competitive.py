@@ -35,6 +35,106 @@ def ensure_schema(c:sqlite3.Connection)->None:
     c.commit()
 
 
+def _week_start(now=None):
+    local=(now or datetime.now(timezone.utc)).astimezone(TZ)
+    return (local-timedelta(days=local.weekday())).replace(hour=0,minute=0,second=0,microsecond=0)
+
+
+def ensure_current_season(c,now=None):
+    ensure_schema(c); start=_week_start(now)
+    row=c.execute("SELECT id,season_number,start_ts,end_ts,status FROM seasons WHERE status='current' ORDER BY id DESC LIMIT 1").fetchone()
+    if row:
+        end=datetime.fromisoformat(row[3]).astimezone(TZ)
+        if start<end:return row
+        finalize_season(c,row[0])
+    n=c.execute("SELECT COALESCE(MAX(season_number),0)+1 FROM seasons").fetchone()[0]; end=start+timedelta(weeks=SEASON_WEEKS)
+    c.execute("INSERT INTO seasons(season_number,start_ts,end_ts,status) VALUES(?,?,?,'current')",(n,start.isoformat(),end.isoformat())); c.commit()
+    return c.execute("SELECT id,season_number,start_ts,end_ts,status FROM seasons WHERE id=last_insert_rowid()").fetchone()
+
+
+def ensure_player(c,sid,uuid,name=None):
+    u=uuid.lower(); c.execute("INSERT INTO season_players(season_id,uuid,name) VALUES(?,?,?) ON CONFLICT(season_id,uuid) DO UPDATE SET name=COALESCE(excluded.name,season_players.name)",(sid,u,name))
+
+
+def expected(a,b):return 1.0/(1.0+10.0**((b-a)/400.0))
+
+def _actual(a,b):return 1.0 if a<b else 0.0 if a>b else 0.5
+
+
+def _find_tournament_assignment(c,sid,players):
+    if len(players)!=2:return None
+    ids=sorted([players[0]["uuid"].lower(),players[1]["uuid"].lower()])
+    row=c.execute("""SELECT tm.id,tm.tournament_id,tm.player1_wins,tm.player2_wins
+        FROM tournament_matches tm JOIN tournaments t ON t.id=tm.tournament_id
+        WHERE t.season_id=? AND t.status='bracket' AND tm.status IN ('ready','active')
+          AND ((lower(tm.player1_uuid)=? AND lower(tm.player2_uuid)=?) OR (lower(tm.player1_uuid)=? AND lower(tm.player2_uuid)=?))
+        ORDER BY t.number DESC,tm.round_number ASC,tm.slot ASC LIMIT 1""",(sid,ids[0],ids[1],ids[1],ids[0])).fetchone()
+    if not row:return None
+    return int(row[1]),int(row[0]),int(row[2])+int(row[3])+1
+
+
+def record_match(c,match,players):
+    ensure_schema(c)
+    if c.execute("SELECT 1 FROM matches WHERE id=?",(match["id"],)).fetchone():return False
+    sid=int(match.get("season_id") or ensure_current_season(c)[0])
+    assignment=None
+    tournament_id=match.get("tournament_id")
+    tournament_match_id=match.get("tournament_match_id")
+    tournament_game_number=match.get("tournament_game_number")
+    if tournament_id is None and tournament_match_id is None and len(players)==2:
+        assignment=_find_tournament_assignment(c,sid,players)
+        if assignment:
+            tournament_id,tournament_match_id,tournament_game_number=assignment
+    if tournament_id is not None:
+        if len(players)!=2 or sorted(int(p["placement"]) for p in players)!=[1,2]:raise ValueError("tournament matches must be completed 1v1")
+        if tournament_match_id is None or tournament_game_number is None:raise ValueError("tournament game metadata is incomplete")
+    c.execute("INSERT INTO matches VALUES(?,?,?,?,?,?,?,?,?,?)",(match["id"],match["platform"],match["mode"],int(match["pattern"]),match["kit"],int(match["started_at"]),int(match["ended_at"]),sid,tournament_id,int(time.time()*1000)))
+    for p in players:ensure_player(c,sid,p["uuid"],p.get("name"))
+    ratings={p["uuid"].lower():float(c.execute("SELECT elo FROM season_players WHERE season_id=? AND uuid=?",(sid,p["uuid"].lower())).fetchone()[0]) for p in players}
+    updates={}
+    for p in players:
+        u=p["uuid"].lower(); actual=sum(_actual(int(p["placement"]),int(q["placement"])) for q in players if q is not p)/(len(players)-1); exp=sum(expected(ratings[u],ratings[q["uuid"].lower()]) for q in players if q is not p)/(len(players)-1)
+        updates[u]=ratings[u]+K_FACTOR*(actual-exp)
+        c.execute("INSERT INTO match_players VALUES(?,?,?,?,?,?)",(match["id"],u,p.get("name"),int(p["placement"]),int(p["elimination_tick"]),actual))
+    for u,r in updates.items():c.execute("UPDATE season_players SET elo=? WHERE season_id=? AND uuid=?",(r,sid,u))
+    if tournament_id is not None:
+        winner=next(p["uuid"] for p in players if int(p["placement"])==1)
+        tournament.record_game(c,int(tournament_match_id),int(tournament_game_number),match["platform"],match["mode"],int(match["pattern"]),match["kit"],str(match["id"]),winner)
+    recalculate_components(c,sid); calculate_mmr(c); c.commit(); return True
+
+
+def _linear_pool_points(results):
+    """Return integer linear placement points whose sum is exactly N*base.
+
+    Results are (uuid, best_stage, name) sorted by best stage descending. Ties
+    share the average of the linear weights for the occupied placements. Any
+    integer remainder is assigned by largest remainder, then deterministic
+    rank order.
+    """
+    n=len(results)
+    if not n:return {}
+    pool=n*WEEKLY_POOL_BASE
+    weight_sum=n*(n+1)//2
+    raw=[]
+    pos=1
+    while pos<=n:
+        end=pos
+        while end<n and int(results[end][1])==int(results[pos-1][1]):
+            end+=1
+        average_weight=Fraction((n-pos+1)+(n-end+1),2)
+        for idx in range(pos-1,end):
+            exact=Fraction(pool)*average_weight/Fraction(weight_sum)
+            raw.append((results[idx][0],exact,idx))
+        pos=end+1
+    points={u:int(exact) for u,exact,_ in raw}
+    remainder=pool-sum(points.values())
+    if remainder:
+        ranked=sorted(raw,key=lambda item:(-(item[1]-int(item[1])),item[2]))
+        for u,_,_ in ranked[:remainder]:
+            points[u]+=1
+    return points
+
+
 def calculate_weekly(c,sid):
     row=c.execute("SELECT start_ts,end_ts FROM seasons WHERE id=?",(sid,)).fetchone()
     if not row:return
@@ -107,31 +207,86 @@ def calculate_mmr(c):
     c.commit()
 
 
-def get_mmr_target(c, uuid, platform):
+def get_mmr_target(c,uuid,platform):
     """Return the player's weakest eligible MMR configuration for a platform.
 
     Missing PBs count as zero. Only configurations with an existing world-best
     are eligible. Selection is based on the lowest PB/world-best percentage.
     """
     ensure_schema(c)
-    platform = str(platform)
-    uuid = str(uuid).lower()
-    boards = c.execute("""
+    platform=str(platform)
+    uuid=str(uuid).lower()
+    boards=c.execute("""
         SELECT platform, mode, pattern, kit, MAX(stage)
         FROM runs
         WHERE platform=?
         GROUP BY platform, mode, pattern, kit
-    """, (platform,)).fetchall()
-    if not boards:
-        return None
-    best_target = None
-    for p, mode, pattern, kit, best in boards:
-        pb = c.execute("SELECT stage FROM runs WHERE platform=? AND mode=? AND pattern=? AND kit=? AND uuid=?", (p, mode, pattern, kit, uuid)).fetchone()
-        ratio = float(pb[0]) / float(best) if pb and best else 0.0
-        target = (ratio, mode, pattern, kit, int(best), int(pb[0]) if pb else 0)
-        if best_target is None or target < best_target:
-            best_target = target
-    if best_target is None:
-        return None
-    ratio, mode, pattern, kit, best, pb = best_target
-    return {"platform": platform, "mode": mode, "pattern": pattern, "kit": kit, "bestStage": best, "pbStage": pb, "ratio": ratio}
+    """,(platform,)).fetchall()
+    candidates=[]
+    for board_platform,mode,pattern,kit,best in boards:
+        best=int(best or 0)
+        if best<=0:continue
+        pb_row=c.execute("""
+            SELECT MAX(stage)
+            FROM runs
+            WHERE platform=? AND mode=? AND pattern=? AND kit=? AND uuid=?
+        """,(board_platform,mode,pattern,kit,uuid)).fetchone()
+        pb=int(pb_row[0] or 0)
+        percentage=(float(pb)/float(best))*100.0
+        candidates.append((percentage,str(mode),int(pattern),str(kit),pb,best))
+    if not candidates:return None
+    candidates.sort(key=lambda x:(x[0],x[1],x[2],x[3]))
+    percentage,mode,pattern,kit,pb,best=candidates[0]
+    return {"platform":platform,"mode":mode,"pattern":pattern,"kit":kit,"pb":pb,"worldBest":best,"percentage":round(percentage,3),"gap":round(100.0-percentage,3)}
+
+
+def award_tournament_points(c,tournament_id,placements):
+    t=c.execute("SELECT season_id FROM tournaments WHERE id=?",(tournament_id,)).fetchone()
+    if not t:raise ValueError("unknown tournament")
+    sid=int(t[0])
+    for uuid,place in placements.items():
+        pts=TOURNAMENT_POINTS.get(int(place),PARTICIPATION_POINTS); u=uuid.lower()
+        ensure_player(c,sid,u); c.execute("UPDATE tournament_players SET placement=?,points=? WHERE tournament_id=? AND uuid=?",(int(place),pts,tournament_id,u)); c.execute("UPDATE season_players SET tournament_points=tournament_points+? WHERE season_id=? AND uuid=?",(pts,sid,u))
+    recalculate_components(c,sid); c.commit()
+
+
+def finalize_season(c,sid):
+    # An archived season must never retain a playable tournament. We close any
+    # incomplete tournament as complete-without-placements so existing API and
+    # scheduler queries (which already treat 'complete' as terminal) cannot
+    # accidentally surface or resume it in the new season. No tournament
+    # points are awarded because there are no placements.
+    c.execute("UPDATE tournaments SET status='complete' WHERE season_id=? AND status!='complete'",(int(sid),))
+    recalculate_components(c,sid); c.execute("UPDATE seasons SET status='archived',finalized_at=? WHERE id=?",(datetime.now(timezone.utc).isoformat(),sid)); c.commit()
+
+
+def season_summary(c,sid):
+    """Return an immutable historical snapshot from the stored final season rows."""
+    row=c.execute("SELECT id,season_number,start_ts,end_ts,status,finalized_at FROM seasons WHERE id=?",(int(sid),)).fetchone()
+    if not row:return None
+    players=c.execute("""SELECT uuid,name,elo,weekly_points,tournament_points,elo_component,weekly_component,tournament_component,mmcl
+        FROM season_players WHERE season_id=? ORDER BY mmcl DESC,uuid ASC""",(int(sid),)).fetchall()
+    return {"id":int(row[0]),"number":int(row[1]),"start":row[2],"end":row[3],"status":row[4],"finalizedAt":row[5],"players":[{"uuid":u,"name":n,"elo":round(float(e),3),"weeklyPoints":int(w),"tournamentPoints":int(t),"eloComponent":round(float(ec),3),"weeklyComponent":round(float(wc),3),"tournamentComponent":round(float(tc),3),"mmcl":round(float(m),3)} for u,n,e,w,t,ec,wc,tc,m in players]}
+
+
+def season_leaderboard(c,sid,kind="mmcl",limit=25):
+    """Return a historical leaderboard without changing archived season data."""
+    allowed={"mmcl":"mmcl","elo":"elo","weekly":"weekly_points","tournament":"tournament_points"}
+    col=allowed.get(str(kind).lower())
+    if not col:raise ValueError("invalid season leaderboard kind")
+    if int(limit)<1 or int(limit)>100:raise ValueError("invalid season leaderboard limit")
+    rows=c.execute(f"SELECT uuid,name,{col} FROM season_players WHERE season_id=? ORDER BY {col} DESC,uuid ASC LIMIT ?",(int(sid),int(limit))).fetchall()
+    return [{"rank":i,"uuid":u,"name":n,"score":round(float(v),3)} for i,(u,n,v) in enumerate(rows,1)]
+
+
+def season_tournaments(c,sid):
+    rows=c.execute("SELECT id,number,name,status,registration_start,registration_end,start_ts,bracket_size FROM tournaments WHERE season_id=? ORDER BY number ASC",(int(sid),)).fetchall()
+    return [{"id":int(i),"number":int(n),"name":name,"status":status,"registrationStart":rs,"registrationEnd":re,"start":st,"bracketSize":bs} for i,n,name,status,rs,re,st,bs in rows]
+
+
+def player_season_history(c,uuid,limit=100):
+    rows=c.execute("""SELECT s.id,s.season_number,s.start_ts,s.end_ts,s.status,s.finalized_at,
+        sp.name,sp.elo,sp.weekly_points,sp.tournament_points,sp.elo_component,sp.weekly_component,sp.tournament_component,sp.mmcl
+        FROM seasons s JOIN season_players sp ON sp.season_id=s.id
+        WHERE lower(sp.uuid)=? ORDER BY s.season_number DESC LIMIT ?""",(str(uuid).lower(),int(limit))).fetchall()
+    return [{"seasonId":int(sid),"season":int(num),"start":start,"end":end,"status":status,"finalizedAt":finalized,"name":name,"elo":round(float(elo),3),"weeklyPoints":int(w),"tournamentPoints":int(t),"eloComponent":round(float(ec),3),"weeklyComponent":round(float(wc),3),"tournamentComponent":round(float(tc),3),"mmcl":round(float(m),3)} for sid,num,start,end,status,finalized,name,elo,w,t,ec,wc,tc,m in rows]
