@@ -4,6 +4,7 @@ import json
 import urllib.request
 
 import discord
+import monster_bot_v2 as base
 
 STATUS_KEY = "server-status"
 STATUS_CHANNEL_DEFAULT = "server-status"
@@ -50,7 +51,7 @@ async def update(bot, cfg):
         print(f"[server-status] status API failed: {exc}", flush=True)
         return
 
-    stored = base_get_board_msg(bot, STATUS_KEY)
+    stored = base.get_board_msg(STATUS_KEY)
     message = None
     if stored:
         try:
@@ -64,17 +65,9 @@ async def update(bot, cfg):
                 await bot.call(lambda: message.edit(content=content), "server status")
         else:
             message = await bot.call(lambda: channel.send(content=content), "server status")
-            base_set_board_msg(bot, STATUS_KEY, channel.id, message.id)
+            base.set_board_msg(STATUS_KEY, channel.id, message.id)
     except discord.HTTPException as exc:
         print(f"[server-status] Discord update failed: {exc}", flush=True)
-
-
-def base_get_board_msg(bot, key):
-    return bot.get_board_msg(key)
-
-
-def base_set_board_msg(bot, key, channel_id, message_id):
-    bot.set_board_msg(key, channel_id, message_id)
 
 
 async def run(bot, cfg):
