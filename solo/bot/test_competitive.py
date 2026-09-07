@@ -155,6 +155,20 @@ class CompetitiveTests(unittest.TestCase):
         self.assertEqual(rows["bob"], 134)
         self.assertEqual(rows["alice"] + rows["bob"], 400)
 
+    def test_weekly_active_competition_does_not_award_points(self):
+        start = datetime.fromisoformat(self.season[2]).astimezone(timezone.utc)
+        active_end = datetime(2026, 11, 1, tzinfo=timezone.utc)
+        self.add_competition(start=start, end=active_end)
+        submitted_at = int((start + timedelta(hours=1)).timestamp() * 1000)
+        self.add_submission("alice", 64, submitted_at)
+        self.add_submission("bob", 32, submitted_at)
+        self.db.commit()
+        competitive.calculate_weekly(self.db, self.sid)
+        rows = dict(self.db.execute("SELECT uuid,weekly_points FROM season_players WHERE season_id=?", (self.sid,)).fetchall())
+        self.assertEqual(rows["alice"], 0)
+        self.assertEqual(rows["bob"], 0)
+        self.assertEqual(sum(rows.values()), 0)
+
     def test_mmr_recalculates_against_current_kit_best(self):
         self.db.execute("INSERT INTO runs VALUES('1.8','modern',0,'Jumper','a','A',10,1000)")
         self.db.execute("INSERT INTO runs VALUES('1.8','modern',0,'Jumper','b','B',8,1000)")
