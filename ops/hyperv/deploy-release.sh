@@ -4,7 +4,8 @@ set -euo pipefail
 # Release promotion target for the local Hyper-V integration server.
 # Runs on the Hyper-V Linux VM. It consumes validated build artifacts supplied
 # by the release workflow, preserves environment-owned state, and guarantees
-# solo-mode:false for both hosted instances.
+# solo-mode:false and debug:false for both hosted instances. Hyper-V debug mode
+# is enabled only by the separate test-release deployment path.
 
 TAG="${1:-}"
 ASSET_DIR="${2:-}"
@@ -110,6 +111,7 @@ for version in 1.8 1.21; do
   fi
   config="$TMP/extracted/$version/plugins/MonsterMazeStandalone/config.yml"
   grep -Eq '^solo-mode:[[:space:]]*false[[:space:]]*$' "$config"
+  grep -Eq '^debug:[[:space:]]*false[[:space:]]*$' "$config"
 done
 
 install_service() {
@@ -145,7 +147,8 @@ sleep 2
 
 # Preserve environment-owned state. In particular, do not replace worlds,
 # logs, server.properties, or the environment's plugin config. If a plugin
-# config is absent, the canonical release config is installed and must be false.
+# config is absent, the canonical release config is installed. Existing
+# environment configs are normalized to production-safe mode below.
 for version in 1.8 1.21; do
   target="$ROOT/$version"
   stage="$TMP/extracted/$version"
@@ -166,7 +169,13 @@ for version in 1.8 1.21; do
   fi
 
   sudo sed -i -E 's/^solo-mode:.*/solo-mode: false/' "$config"
+  if sudo grep -Eq '^debug:' "$config"; then
+    sudo sed -i -E 's/^debug:.*/debug: false/' "$config"
+  else
+    printf '\ndebug: false\n' | sudo tee -a "$config" >/dev/null
+  fi
   sudo grep -Eq '^solo-mode:[[:space:]]*false[[:space:]]*$' "$config"
+  sudo grep -Eq '^debug:[[:space:]]*false[[:space:]]*$' "$config"
   sudo chown -R monstermaze:monstermaze "$target"
 done
 
@@ -181,4 +190,4 @@ sleep 3
 sudo systemctl is-active --quiet monstermaze-18.service
 sudo systemctl is-active --quiet monstermaze-21.service
 
-log "Hyper-V is now running release $TAG with solo-mode:false on MM18/MM21."
+log "Hyper-V is now running release $TAG with solo-mode:false and debug:false on MM18/MM21."
