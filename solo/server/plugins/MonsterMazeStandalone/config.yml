@@ -5,5 +5,7 @@ mode: Modern
 
 # Solo mode ON: the plugin uses Solo-specific player conveniences.
 solo-mode: true
+# Test-only runtime commands such as /mm solomode are disabled in player distributions.
+debug: false
 # Emit every completed Solo run to solo-runs/ for competition submission.
 record-runs: true
