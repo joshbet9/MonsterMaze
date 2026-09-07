@@ -11,6 +11,9 @@ commands:
     description: Monster Maze map-test diagnostics
     usage: /mmdebug [mobs]
     permission: monstermaze.admin
+  pause:
+    description: Pause or resume the current Monster Maze round
+    usage: /pause
 permissions:
   monstermaze.admin:
     description: Allows control of Monster Maze
