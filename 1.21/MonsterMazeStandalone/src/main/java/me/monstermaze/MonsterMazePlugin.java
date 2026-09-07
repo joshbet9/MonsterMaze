@@ -14,6 +14,7 @@ import me.monstermaze.stats.BackendClient;
 import me.monstermaze.stats.ChallengeManager;
 import me.monstermaze.stats.CompetitiveMatchTracker;
 import me.monstermaze.stats.RunRecorder;
+import me.monstermaze.stats.StatusHeartbeatReporter;
 import me.monstermaze.stats.SoloRunCompletionListener;
 import me.monstermaze.world.MapCommandListener;
 import me.monstermaze.world.MapManager;
@@ -48,6 +49,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private MonsterDisguiseListener monsterDisguiseListener;
     private ChallengeManager challengeManager;
     private CompetitiveMatchTracker competitiveMatchTracker;
+    private StatusHeartbeatReporter statusHeartbeatReporter;
 
     @Override
     public void onEnable() {
@@ -92,6 +94,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.mapThemeApplier.start();
         this.soloRunCompletionListener = new SoloRunCompletionListener(this);
         this.competitiveMatchTracker = new CompetitiveMatchTracker(this);
+        this.statusHeartbeatReporter = new StatusHeartbeatReporter(this);
         gameManager.bootstrapLobby(mapCenter);
         new LobbyListener(this, gameManager, voidWorlds);
         new MapCommandListener(this);
@@ -102,6 +105,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         getCommand("mm").setExecutor(new MMCommand(this));
         getCommand("pause").setExecutor(new PauseCommand(this));
         Bukkit.getScheduler().runTaskLater(this, new Runnable() { @Override public void run() { for (Player p : Bukkit.getOnlinePlayers()) gameManager.sendToLobby(p); } }, 20L);
+        statusHeartbeatReporter.start();
         getLogger().info("MonsterMazeStandalone enabled.");
         getLogger().info("Active map: " + mapManager.getActiveMap());
         getLogger().info("Solo mode: " + soloMode);
