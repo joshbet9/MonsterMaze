@@ -75,6 +75,34 @@ public final class UtilEnt {
         } catch (Throwable t) { return false; }
     }
 
+    /**
+     * Movement variant with an explicit near-target speed cap. Used by Lagless so its
+     * existing 1.0f corner/approach cap scales with the configured speed multiplier.
+     */
+    public static boolean CreatureMoveFast(Entity ent, Location target, float speed, boolean slow, float nearTargetSpeed) {
+        if (ent == null || target == null) return false;
+        double distSq = offsetSquared(ent.getLocation(), target);
+        if (distSq < 0.01) return false;
+        if (distSq < 4) speed = Math.min(speed, nearTargetSpeed);
+        resolve();
+        if (!available) {
+            Location loc = ent.getLocation();
+            org.bukkit.util.Vector dir = target.toVector().subtract(loc.toVector());
+            if (dir.lengthSquared() < 1e-6) return false;
+            dir.normalize().multiply(Math.min(speed * 0.2, dir.length()));
+            Location next = loc.clone().add(dir);
+            next.setYaw(loc.getYaw()); next.setPitch(loc.getPitch());
+            ent.teleport(next);
+            return true;
+        }
+        try {
+            Object handle = getHandle.invoke(ent);
+            Object controller = getControllerMove.invoke(handle);
+            controllerMoveA.invoke(controller, target.getX(), target.getY(), target.getZ(), (double) speed);
+            return true;
+        } catch (Throwable t) { return false; }
+    }
+
     public static double offsetSquared(Location a, Location b) {
         if (a == null || b == null || a.getWorld() != b.getWorld()) return Double.MAX_VALUE;
         double dx = a.getX() - b.getX(), dy = a.getY() - b.getY(), dz = a.getZ() - b.getZ();
