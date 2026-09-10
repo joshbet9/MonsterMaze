@@ -267,6 +267,8 @@ async def handle_login(target: Target, client_reader: asyncio.StreamReader, clie
             LOG.info("LOGIN PROBE from %s target=%s username=%r uuid_candidate=%s remaining_bytes=0", peer, target.name, username, uuid_candidate)
         else:
             LOG.info("LOGIN PROBE from %s target=%s username=%r uuid_candidate=none remaining_bytes=%d remaining_hex=%s", peer, target.name, username, len(remaining), remaining.hex())
+            LOG.warning("BLOCKED LOGIN from %s target=%s username=%r: no UUID supplied; not waking Machine", peer, target.name, username)
+            return
     except asyncio.TimeoutError:
         LOG.warning("LOGIN PROBE from %s target=%s: no login-start packet within %.1fs; not waking Machine", peer, target.name, LOGIN_PROBE_TIMEOUT)
         return
