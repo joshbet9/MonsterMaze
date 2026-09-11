@@ -21,6 +21,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Optional
+from uuid import UUID
 
 LOG = logging.getLogger("monstermaze-gateway")
 LISTEN_HOST = os.getenv("MM_GATEWAY_HOST", "0.0.0.0")
@@ -30,7 +31,8 @@ FLY_API_TOKEN = os.environ.get("FLY_API_TOKEN", "")
 FLY_APP = os.getenv("FLY_APP", "monstermaze")
 FLY_BACKEND_HOST = os.getenv("FLY_BACKEND_HOST", "monstermaze.fly.dev")
 FLY_API_TIMEOUT = float(os.getenv("FLY_API_TIMEOUT", "10"))
-START_MESSAGE = os.getenv("MM_START_MESSAGE", "Monster Maze is starting this server.\\n\\nPlease reconnect in about 60 seconds.")
+LOGIN_PROBE_TIMEOUT = float(os.getenv("MM_LOGIN_PROBE_TIMEOUT", "3"))
+START_MESSAGE = os.getenv("MM_START_MESSAGE", "Monster Maze is starting this server.\n\nPlease reconnect in about 60 seconds.")
 
 @dataclass(frozen=True)
 class Target:
@@ -123,6 +125,24 @@ def parse_handshake(payload: bytes) -> tuple[int, str, int, int]:
     if next_state not in (1, 2):
         raise ProtocolError(f"unsupported handshake next state {next_state}")
     return protocol, host, port, next_state
+
+def parse_login_start(payload: bytes) -> tuple[str, Optional[str], bytes]:
+    """Extract the login-start username and an optional UUID candidate.
+
+    The login-start packet is intentionally parsed only for investigation in
+    phase 1. We do not trust the identity yet and do not use it for access
+    control. Some protocol versions include a UUID immediately after the
+    username; if exactly 16 bytes remain, record it as the UUID candidate.
+    """
+    packet_id, offset = read_varint_bytes(payload)
+    if packet_id != 0:
+        raise ProtocolError(f"expected login-start packet 0x00, got 0x{packet_id:02x}")
+    username, offset = read_string_bytes(payload, offset)
+    remaining = payload[offset:]
+    uuid_candidate = None
+    if len(remaining) == 16:
+        uuid_candidate = str(UUID(bytes=remaining))
+    return username, uuid_candidate, remaining
 
 def target_for_protocol(protocol: int) -> Optional[Target]:
     for target in TARGETS.values():
@@ -238,16 +258,32 @@ async def handle_status(target: Target, client_reader: asyncio.StreamReader, cli
     backend_writer.close()
     client_writer.close()
 
-async def handle_login(target: Target, client_writer: asyncio.StreamWriter) -> None:
-    """Wake the backend and redirect the player to its direct Fly address."""
+async def handle_login(target: Target, client_reader: asyncio.StreamReader, client_writer: asyncio.StreamWriter, peer: object) -> None:
+    """Probe the login-start identity before performing the existing wake flow."""
+    try:
+        _, login_payload = await asyncio.wait_for(read_packet(client_reader), timeout=LOGIN_PROBE_TIMEOUT)
+        username, uuid_candidate, remaining = parse_login_start(login_payload)
+        if uuid_candidate:
+            LOG.info("LOGIN PROBE from %s target=%s username=%r uuid_candidate=%s remaining_bytes=0", peer, target.name, username, uuid_candidate)
+        else:
+            LOG.info("LOGIN PROBE from %s target=%s username=%r uuid_candidate=none remaining_bytes=%d remaining_hex=%s", peer, target.name, username, len(remaining), remaining.hex())
+            LOG.warning("BLOCKED LOGIN from %s target=%s username=%r: no UUID supplied; not waking Machine", peer, target.name, username)
+            return
+    except asyncio.TimeoutError:
+        LOG.warning("LOGIN PROBE from %s target=%s: no login-start packet within %.1fs; not waking Machine", peer, target.name, LOGIN_PROBE_TIMEOUT)
+        return
+    except (asyncio.IncompleteReadError, ConnectionError, ProtocolError) as exc:
+        LOG.warning("LOGIN PROBE from %s target=%s failed before identity could be read: %s; not waking Machine", peer, target.name, exc)
+        return
+
     state = await machine_state(target)
     if state != "started":
         await start_machine(target)
         LOG.info("%s Machine was stopped; waking it and redirecting player to direct Fly service", target.name)
-        message = f"{START_MESSAGE}\\n\\nDirect server: {FLY_BACKEND_HOST}:{target.backend_port}"
+        message = f"{START_MESSAGE}\n\nDirect server: {FLY_BACKEND_HOST}:{target.backend_port}"
     else:
         LOG.info("%s Machine is already running; redirecting player directly to Fly service", target.name)
-        message = f"Monster Maze is already running.\\n\\nPlease connect directly to {FLY_BACKEND_HOST}:{target.backend_port}."
+        message = f"Monster Maze is already running.\n\nPlease connect directly to {FLY_BACKEND_HOST}:{target.backend_port}."
     client_writer.write(start_disconnect(message))
     await client_writer.drain()
 
@@ -265,7 +301,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         if next_state == 1:
             await handle_status(target, reader, writer, first_packet)
         else:
-            await handle_login(target, writer)
+            await handle_login(target, reader, writer, peer)
     except (asyncio.IncompleteReadError, ConnectionError, ProtocolError) as exc:
         LOG.debug("Connection %s closed/invalid: %s", peer, exc)
     except Exception:
