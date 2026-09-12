@@ -18,6 +18,7 @@ import logging
 import os
 import struct
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Optional
@@ -32,6 +33,11 @@ FLY_APP = os.getenv("FLY_APP", "monstermaze")
 FLY_BACKEND_HOST = os.getenv("FLY_BACKEND_HOST", "monstermaze.fly.dev")
 FLY_API_TIMEOUT = float(os.getenv("FLY_API_TIMEOUT", "10"))
 LOGIN_PROBE_TIMEOUT = float(os.getenv("MM_LOGIN_PROBE_TIMEOUT", "3"))
+MINECRAFT_PROFILE_LOOKUP_URL = os.getenv(
+    "MM_MINECRAFT_PROFILE_LOOKUP_URL",
+    "https://api.minecraftservices.com/minecraft/profile/lookup/name",
+)
+MINECRAFT_PROFILE_TIMEOUT = float(os.getenv("MM_MINECRAFT_PROFILE_TIMEOUT", "3"))
 START_MESSAGE = os.getenv("MM_START_MESSAGE", "Monster Maze is starting this server.\n\nPlease reconnect in about 60 seconds.")
 
 @dataclass(frozen=True)
@@ -181,6 +187,36 @@ def fly_request(method: str, path: str) -> tuple[int, bytes]:
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read()
 
+def lookup_username_uuid(username: str) -> Optional[str]:
+    """Return the authoritative current UUID for a Minecraft username."""
+    encoded_username = urllib.parse.quote(username, safe="")
+    url = f"{MINECRAFT_PROFILE_LOOKUP_URL.rstrip('/')}/{encoded_username}"
+    request = urllib.request.Request(
+        url,
+        method="GET",
+        headers={"Accept": "application/json", "User-Agent": "MonsterMaze-Gateway/1"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=MINECRAFT_PROFILE_TIMEOUT) as response:
+            body = response.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise RuntimeError(f"Minecraft profile lookup returned HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Minecraft profile lookup failed: {exc.reason}") from exc
+
+    try:
+        profile = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Minecraft profile lookup returned invalid JSON") from exc
+
+    profile_id = profile.get("id")
+    profile_name = profile.get("name")
+    if not isinstance(profile_id, str) or len(profile_id) != 32 or not isinstance(profile_name, str):
+        raise RuntimeError("Minecraft profile lookup returned an invalid profile")
+    return str(UUID(profile_id))
+
 async def machine_state(target: Target) -> str:
     status, body = await asyncio.to_thread(fly_request, "GET", f"/v1/apps/{FLY_APP}/machines/{target.machine_id}")
     if status != 200:
@@ -265,6 +301,18 @@ async def handle_login(target: Target, client_reader: asyncio.StreamReader, clie
         username, uuid_candidate, remaining = parse_login_start(login_payload)
         if uuid_candidate:
             LOG.info("LOGIN PROBE from %s target=%s username=%r uuid_candidate=%s remaining_bytes=0", peer, target.name, username, uuid_candidate)
+            try:
+                authoritative_uuid = await asyncio.to_thread(lookup_username_uuid, username)
+            except Exception as exc:
+                LOG.warning("BLOCKED LOGIN from %s target=%s username=%r uuid_candidate=%s: UUID lookup failed: %s; not waking Machine", peer, target.name, username, uuid_candidate, exc)
+                return
+            if authoritative_uuid is None:
+                LOG.warning("BLOCKED LOGIN from %s target=%s username=%r uuid_candidate=%s: username not found by Minecraft profile lookup; not waking Machine", peer, target.name, username, uuid_candidate)
+                return
+            if UUID(uuid_candidate).hex != UUID(authoritative_uuid).hex:
+                LOG.warning("BLOCKED LOGIN from %s target=%s username=%r uuid_candidate=%s authoritative_uuid=%s: UUID mismatch; not waking Machine", peer, target.name, username, uuid_candidate, authoritative_uuid)
+                return
+            LOG.info("UUID MATCH from %s target=%s username=%r uuid=%s", peer, target.name, username, authoritative_uuid)
         else:
             LOG.info("LOGIN PROBE from %s target=%s username=%r uuid_candidate=none remaining_bytes=%d remaining_hex=%s", peer, target.name, username, len(remaining), remaining.hex())
             LOG.warning("BLOCKED LOGIN from %s target=%s username=%r: no UUID supplied; not waking Machine", peer, target.name, username)
