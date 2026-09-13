@@ -7,6 +7,7 @@ import api_server
 import monster_bot_v2 as base
 import server_status
 import tournament_bot as tournament_impl
+from ign_denylist import handle_denylist
 
 CURRENT_BOT = None
 
@@ -74,6 +75,18 @@ class APIMonsterBot(tournament_impl.TournamentBot):
         await super().on_ready()
         if not getattr(self, "server_status_task", None) or self.server_status_task.done():
             self.server_status_task = asyncio.create_task(server_status.run(self, self.cfg))
+
+    async def on_message(self, message):
+        if message.author == self.user:
+            return
+        text = message.content.strip()
+        if text.lower() == "!blacklist":
+            await handle_denylist(self, message, [])
+            return
+        if text.lower().startswith("!blacklist "):
+            await handle_denylist(self, message, text[len("!blacklist"):].strip().split())
+            return
+        await super().on_message(message)
 
 
 def configure_api():
