@@ -65,6 +65,36 @@ def set_state(server, state):
     conn.close()
 
 
+def get_previous_starter(server):
+    conn = base.db()
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS server_status_starter "
+        "(server TEXT PRIMARY KEY, started_by TEXT)"
+    )
+    row = conn.execute(
+        "SELECT started_by FROM server_status_starter WHERE server = ?",
+        (server,),
+    ).fetchone()
+    conn.commit()
+    conn.close()
+    return row[0] if row else None
+
+
+def set_previous_starter(server, started_by):
+    conn = base.db()
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS server_status_starter "
+        "(server TEXT PRIMARY KEY, started_by TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO server_status_starter(server, started_by) VALUES(?, ?) "
+        "ON CONFLICT(server) DO UPDATE SET started_by=excluded.started_by",
+        (server, started_by),
+    )
+    conn.commit()
+    conn.close()
+
+
 async def fetch_status(url):
     def request():
         req = urllib.request.Request(url, headers={"User-Agent": "MonsterMaze-DiscordStatus/1"})
@@ -112,15 +142,26 @@ async def update(bot, cfg):
     current_states = status_states(data)
     for server, new_state in current_states.items():
         old_state = previous_states.get(server)
+        server_data = data.get("servers", {}).get(server, {})
+        starter = server_data.get("started_by")
+        previous_starter = get_previous_starter(server)
+
         if new_state in STATUS_NOTIFY_STATES:
-            if old_state is not None and old_state != new_state:
+            should_notify = old_state is not None and old_state != new_state
+            if new_state == "starting" and starter and starter != previous_starter:
+                should_notify = True
+            if should_notify:
                 await notify_state_change(
                     bot,
                     server,
                     old_state,
                     new_state,
-                    data.get("servers", {}).get(server, {}),
+                    server_data,
                 )
+            if new_state == "starting":
+                set_previous_starter(server, starter)
+            elif new_state == "offline":
+                set_previous_starter(server, None)
             set_state(server, new_state)
 
     stored = base.get_board_msg(STATUS_KEY)
