@@ -187,6 +187,17 @@ public class GameManager implements Listener {
     public Location getCenter() { return center; }
     public MonsterManager getMonsterManager() { return monsterManager; }
     public KitManager getKitManager() { return kitManager; }
+
+    /** Current active safe pad exposed to the CPU observation encoder. */
+    public SafePad getSafePad() { return safePad; }
+
+    /** Current preview pad location exposed to the CPU observation encoder. */
+    public Location getNextSafePadLocation() {
+        return nextSafePad == null ? null : nextSafePad.getLocation();
+    }
+
+    public int getPhaseTimerSeconds() { return phaseTimer; }
+    public int getPhaseTimerStartSeconds() { return phaseTimerStart; }
     public MazeGenerator getMazeGenerator() { return mazeGenerator; }
     public long getGameLiveTime() { return liveStartMs; }
 
@@ -293,13 +304,19 @@ public class GameManager implements Listener {
                 safePad = nextSafePad;
                 nextSafePad = null;
 
+                // CPU opponents enter as ordinary gameplay participants. The
+                // avatar/brain manager is optional and disabled by default.
+                if (plugin.getCpuOpponentManager() != null) {
+                    plugin.getCpuOpponentManager().spawnForMatch();
+                }
+
                 // Point every alive player's compass at the active safe pad / beacon from spawn.
                 updateCompasses();
 
                 // --- FIX: INITIALIZE & APPLY SCOREBOARD UPFRONT (Issue #5) ---
                 scoreboard.create();
                 int pattern = getPatternIndex();
-                for (Player p : getAlivePlayers()) {
+                for (Player p : getAliveHumanPlayers()) {
                     String pbText = null;
                     if (pattern >= 0) {
                         me.monstermaze.stats.LeaderboardManager.PBInfo best =
@@ -312,7 +329,7 @@ public class GameManager implements Listener {
                     scoreboard.update(p, getAlivePlayers().size(), curSafe, phaseTimer, safePad != null,
                             getMode().color + getMode().id, pbText);
                 }
-                scoreboard.apply(getAlivePlayers());
+                scoreboard.apply(getAliveHumanPlayers());
                 // -------------------------------------------------------------
 
                 // Spawn maze monsters now (behind the containment glass) so players see them
@@ -384,7 +401,7 @@ public class GameManager implements Listener {
                 if ((liveTick % 10) == 1) {
                     int pattern = getPatternIndex();
                     int aliveCount = aliveNow.size();
-                    for (Player p : aliveNow) {
+                    for (Player p : getAliveHumanPlayers()) {
                         String pbText = null;
                         if (pattern >= 0) {
                             me.monstermaze.stats.LeaderboardManager.PBInfo best =
@@ -397,7 +414,7 @@ public class GameManager implements Listener {
                         scoreboard.update(p, aliveCount, curSafe, phaseTimer, safePad != null,
                                 getMode().color + getMode().id, pbText);
                     }
-                    scoreboard.apply(aliveNow);
+                    scoreboard.apply(getAliveHumanPlayers());
                 }
             }
         }, 1L, 1L);
@@ -410,6 +427,9 @@ public class GameManager implements Listener {
         if (startingTask != null) { startingTask.cancel(); startingTask = null; }
 
         destroyCpuParticipants();
+        if (plugin.getCpuOpponentManager() != null) {
+            plugin.getCpuOpponentManager().shutdownMatch();
+        }
         monsterManager.stop();
         kitManager.clearSelectors();
         destroyAllPads();
