@@ -28,10 +28,11 @@ public final class CpuOpponentManager {
     private final CpuObservationBuilder observations;
     private BukkitTask tickTask;
 
-    public CpuOpponentManager(MonsterMazePlugin plugin) {
+    public CpuOpponentManager(MonsterMazePlugin plugin, GameManager game) {
         if (plugin == null) throw new IllegalArgumentException("plugin");
+        if (game == null) throw new IllegalArgumentException("game");
         this.plugin = plugin;
-        this.observations = new CpuObservationBuilder(plugin.getGameManager());
+        this.observations = new CpuObservationBuilder(game);
 
         tickTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
             @Override
