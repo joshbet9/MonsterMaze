@@ -1,5 +1,6 @@
 package me.monstermaze.game;
 
+import me.monstermaze.cpu.CpuAvatar;
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.entity.MonsterManager;
 import me.monstermaze.event.FirstToSafepadEvent;
@@ -35,6 +36,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * Full game loop closer to original Mineplex Monster Maze.
@@ -58,6 +61,10 @@ public class GameManager implements Listener {
 
     private final Set<UUID> alive = new HashSet<UUID>();
     private final Set<UUID> spectators = new HashSet<UUID>();
+
+    /** CPU participants are genuine player-shaped entities, but are not network players/accounts. */
+    private final Map<UUID, Player> cpuPlayers = new HashMap<UUID, Player>();
+    private final Map<UUID, CpuAvatar> cpuAvatars = new HashMap<UUID, CpuAvatar>();
     private final List<Player> playersOnPad = new ArrayList<Player>();
 
     private SafePad safePad;          // active pad
@@ -402,6 +409,7 @@ public class GameManager implements Listener {
         if (secondTask != null) { secondTask.cancel(); secondTask = null; }
         if (startingTask != null) { startingTask.cancel(); startingTask = null; }
 
+        destroyCpuParticipants();
         monsterManager.stop();
         kitManager.clearSelectors();
         destroyAllPads();
@@ -691,9 +699,21 @@ public class GameManager implements Listener {
         kitManager.applyKit(p);
     }
 
+    /**
+     * All alive gameplay participants, including CPU players.
+     *
+     * <p>This method intentionally remains Player-shaped so existing Monster Maze
+     * mechanics can operate on a genuine CPU CraftPlayer without a parallel rules path.
+     */
     public List<Player> getAlivePlayers() {
         List<Player> list = new ArrayList<Player>();
         for (UUID id : new HashSet<UUID>(alive)) {
+            Player cpu = cpuPlayers.get(id);
+            if (cpu != null) {
+                list.add(cpu);
+                continue;
+            }
+
             Player p = Bukkit.getPlayer(id);
             if (p != null && p.isOnline()) list.add(p);
             else alive.remove(id);
@@ -701,8 +721,65 @@ public class GameManager implements Listener {
         return list;
     }
 
+    /** Alive human players only; use this for account/backend/PB systems. */
+    public List<Player> getAliveHumanPlayers() {
+        List<Player> humans = new ArrayList<Player>();
+        for (Player player : getAlivePlayers()) {
+            if (!isCpuPlayer(player)) humans.add(player);
+        }
+        return humans;
+    }
+
+    public boolean isCpuPlayer(Player player) {
+        return player != null && cpuPlayers.containsKey(player.getUniqueId());
+    }
+
+    /** Register and spawn a genuine server-side CPU participant. */
+    public Player addCpuParticipant(CpuAvatar avatar, me.monstermaze.kit.KitType kit, Location location) {
+        if (avatar == null) throw new IllegalArgumentException("avatar");
+        if (location == null) throw new IllegalArgumentException("location");
+        if (state != GameState.STARTING && state != GameState.LIVE) {
+            throw new IllegalStateException("CPU participants can only join a running game");
+        }
+
+        avatar.spawn(location);
+        Player player = avatar.player();
+        UUID id = player.getUniqueId();
+        cpuPlayers.put(id, player);
+        cpuAvatars.put(id, avatar);
+        alive.add(id);
+
+        if (kit != null) kitManager.setKit(player, kit);
+        preparePlayer(player);
+        return player;
+    }
+
+    /** Remove one CPU participant and its world entity. */
+    public void removeCpuParticipant(UUID id) {
+        if (id == null) return;
+        alive.remove(id);
+        CpuAvatar avatar = cpuAvatars.remove(id);
+        cpuPlayers.remove(id);
+        if (avatar != null) avatar.destroy();
+    }
+
+    private void destroyCpuParticipants() {
+        for (CpuAvatar avatar : new ArrayList<CpuAvatar>(cpuAvatars.values())) {
+            try {
+                avatar.destroy();
+            } catch (Throwable ignored) {
+                // Cleanup must never prevent the server from returning to the lobby.
+            }
+        }
+        cpuAvatars.clear();
+        cpuPlayers.clear();
+    }
+
     /** Record this player's highest stage reached for the active mode+pattern (persisted). */
     private void recordPB(Player player) {
+        // CPU competitors are gameplay-only identities; never write them into
+        // human personal-best, leaderboard or submission systems.
+        if (isCpuPlayer(player)) return;
         int pattern = getPatternIndex();
         if (pattern < 0) return;
         String kit = null;
@@ -732,6 +809,16 @@ public class GameManager implements Listener {
 
     private void eliminate(Player player, String message) {
         if (!alive.remove(player.getUniqueId())) return;
+
+        if (isCpuPlayer(player)) {
+            // CPU elimination is a gameplay event, not a spectator/account event.
+            broadcast(message);
+            kitManager.resetPlayerState(player);
+            removeCpuParticipant(player.getUniqueId());
+            checkWin();
+            return;
+        }
+
         recordPB(player);
         spectators.add(player.getUniqueId());
         broadcast(message);
