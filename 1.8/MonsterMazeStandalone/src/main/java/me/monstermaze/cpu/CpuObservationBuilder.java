@@ -101,7 +101,7 @@ public final class CpuObservationBuilder {
         out.set(22, game.isOnAnyPad(player) ? 1.0f : 0.0f);
 
         KitType kit = game.getKitManager().getKit(player);
-        out.set(23, kitIndex(kit) / 3.0f);
+        out.set(23, kitIndex(kit) / 4.0f);
         out.set(24, jumperCharges(player) / 5.0f);
         out.set(25, abilityReady(player, kit) ? 1.0f : 0.0f);
         MazeMode mode = game.getMode();
@@ -229,9 +229,7 @@ public final class CpuObservationBuilder {
     }
 
     private static int kitIndex(KitType kit) {
-        if (kit == KitType.SLOWBALL) return 1;
-        if (kit == KitType.BODY_BUILDER) return 2;
-        return kit == KitType.REPULSOR ? 3 : 0;
+        return kit == null ? 0 : kit.ordinal();
     }
 
     private static float norm(double value, double range) {
