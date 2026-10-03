@@ -1,5 +1,6 @@
 package me.monstermaze.kit;
 
+import org.bukkit.Location;
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.entity.MonsterManager;
 import me.monstermaze.event.AbilityUseEvent;
@@ -528,8 +529,34 @@ public class KitManager implements Listener {
         if (hand == null || hand.getType() != Material.COAL) return;
 
         event.setCancelled(true);
+        activateRepulse(player);
+    }
 
-        // Consume 1 coal
+    /**
+     * Server-side semantic ability activation used by CPU players.
+     * This follows the same mechanic implementation as the human input path.
+     */
+    public boolean tryUseAbility(Player player) {
+        if (player == null || game.getState() != GameState.LIVE) return false;
+        if (!game.getAlivePlayers().contains(player)) return false;
+
+        switch (getKit(player)) {
+            case REPULSOR:
+                return activateRepulse(player);
+            case BODY_BUILDER:
+                return game.qolEnabled() && activateBodyRush(player);
+            case SLOWBALL:
+                return game.qolEnabled() && activateCryoBlitz(player);
+            default:
+                return false;
+        }
+    }
+
+    private boolean activateRepulse(Player player) {
+        if (getKit(player) != KitType.REPULSOR) return false;
+        ItemStack hand = player.getItemInHand();
+        if (hand == null || hand.getType() != Material.COAL) return false;
+
         if (hand.getAmount() <= 1) {
             player.setItemInHand(null);
         } else {
@@ -538,7 +565,6 @@ public class KitManager implements Listener {
         }
         player.updateInventory();
 
-        // UtilFirework BALL_LARGE AQUA
         try {
             org.bukkit.entity.Firework fw = player.getWorld().spawn(
                     player.getLocation().add(0, 0.5, 0), org.bukkit.entity.Firework.class);
@@ -558,27 +584,25 @@ public class KitManager implements Listener {
             player.getWorld().playEffect(player.getLocation(), Effect.FIREWORKS_SPARK, 0);
         }
 
-        // Radius 6 — living non-players
+        Location playerLocation = player.getLocation();
         for (Entity ent : player.getNearbyEntities(6, 6, 6)) {
             if (ent instanceof Player) continue;
             if (!(ent instanceof LivingEntity)) continue;
-            if (player.getLocation().distanceSquared(ent.getLocation()) > 36) continue;
+            if (playerLocation.distanceSquared(ent.getLocation()) > 36) continue;
 
             ent.playEffect(org.bukkit.EntityEffect.HURT);
-            // Exact: UtilAction.velocity(ent, UtilAlg.getTrajectory2d(player, ent), 1, true, 0, 0.8, 2, true);
             UtilAction.velocity(ent, UtilAlg.getTrajectory2d(player, ent), 1, true, 0, 0.8, 2, true);
 
-            launched.put(ent, System.currentTimeMillis());
+            long now = System.currentTimeMillis();
+            launched.put(ent, now);
             Bukkit.getPluginManager().callEvent(new EntityLaunchEvent(ent));
 
-            // Notify MonsterManager so path AI stops tracking if needed
             MonsterManager mm = game.getMonsterManager();
-            if (mm != null) {
-                mm.launch((LivingEntity) ent, ent.getVelocity());
-            }
+            if (mm != null) mm.launch((LivingEntity) ent, ent.getVelocity());
         }
 
         Bukkit.getPluginManager().callEvent(new AbilityUseEvent(player));
+        return true;
     }
 
     private void repulseCleanup() {
@@ -647,20 +671,30 @@ public class KitManager implements Listener {
 
         ItemStack hand = player.getItemInHand();
         if (hand == null || hand.getType() != Material.APPLE) return;
+        event.setCancelled(true);
+        activateBodyRush(player);
+    }
+
+    private boolean activateBodyRush(Player player) {
+        if (!game.qolEnabled() || getKit(player) != KitType.BODY_BUILDER) return false;
+        ItemStack hand = player.getItemInHand();
+        if (hand == null || hand.getType() != Material.APPLE) return false;
+
         long now = System.currentTimeMillis();
         Long until = bodyRushUntil.get(player.getUniqueId());
-        if (until != null && until.longValue() > now) {
-            event.setCancelled(true);
-            return;
-        }
-        event.setCancelled(true);
+        if (until != null && until.longValue() > now) return false;
+
         if (hand.getAmount() <= 1) player.setItemInHand(null);
-        else { hand.setAmount(hand.getAmount()-1); player.setItemInHand(hand); }
+        else {
+            hand.setAmount(hand.getAmount() - 1);
+            player.setItemInHand(hand);
+        }
         bodyRushUntil.put(player.getUniqueId(), now + BODY_RUSH_DURATION_MS);
         bodyRushHitFeedback.remove(player.getUniqueId());
         bodyRushVisual(player);
         TextUtil.actionBar(player, ChatColor.RED + ChatColor.BOLD.toString() + "BODY RUSH 10.0s");
         Bukkit.getPluginManager().callEvent(new AbilityUseEvent(player));
+        return true;
     }
 
     public boolean isBodyRushActive(Player player) {
@@ -744,14 +778,16 @@ public class KitManager implements Listener {
         if (!game.getAlivePlayers().contains(player)) return;
 
         event.setCancelled(true);
+        activateCryoBlitz(player);
+    }
+
+    private boolean activateCryoBlitz(Player player) {
+        if (game.getState() != GameState.LIVE || !game.qolEnabled()) return false;
+        if (getKit(player) != KitType.SLOWBALL) return false;
 
         long now = System.currentTimeMillis();
         Long last = cryoCooldown.get(player.getUniqueId());
-        if (last != null && now - last < CRYO_COOLDOWN_MS) {
-            long left = (CRYO_COOLDOWN_MS - (now - last)) / 1000L;
-            player.sendMessage(ChatColor.AQUA + "Cryo Blitz on cooldown (" + left + "s).");
-            return;
-        }
+        if (last != null && now - last < CRYO_COOLDOWN_MS) return false;
         cryoCooldown.put(player.getUniqueId(), now);
 
         MonsterManager mm = game.getMonsterManager();
@@ -759,24 +795,23 @@ public class KitManager implements Listener {
         if (mm != null) {
             java.util.List<LivingEntity> list = new java.util.ArrayList<LivingEntity>();
             for (LivingEntity ent : mm.getMonsters()) list.add(ent);
+            Location playerLocation = player.getLocation();
             for (LivingEntity ent : list) {
                 if (ent == null || !ent.isValid()) continue;
-                if (player.getLocation().distanceSquared(ent.getLocation()) > CRYO_RADIUS * CRYO_RADIUS) continue;
+                if (playerLocation.distanceSquared(ent.getLocation()) > CRYO_RADIUS * CRYO_RADIUS) continue;
                 mm.freeze(ent, now + CRYO_FREEZE_MS);
                 ent.getWorld().playEffect(ent.getLocation(), Effect.SNOWBALL_BREAK, 0);
                 frozenCount++;
             }
         }
+
         player.playSound(player.getLocation(), Sound.DIG_SNOW, 1.0f, 0.5f);
         TextUtil.title(player, "", ChatColor.AQUA + "" + ChatColor.BOLD + "Cryo Blitz!"
-                        + ChatColor.WHITE + " " + frozenCount + " mob(s) frozen", 5, 30, 5);
+                + ChatColor.WHITE + " " + frozenCount + " mob(s) frozen", 5, 30, 5);
         if (frozenCount > 0) cryoFrozenUntil.put(player.getUniqueId(), now + CRYO_FREEZE_MS);
         cryoVisual(player);
-        // NOTE: do not rewrite slot 0 here. The dropped item is restored by the cancelled drop,
-        // and swapping the slot's ItemStack before the restore could make 1.8 place the restored
-        // item in the next free slot (an extra snowball). The PerkConstructor tick refreshes the
-        // cooldown lore within 2s.
         Bukkit.getPluginManager().callEvent(new AbilityUseEvent(player));
+        return true;
     }
 
     private void cryoVisual(Player player) { player.playSound(player.getLocation(), Sound.CLICK, 1.0f, .7f); player.getWorld().playEffect(player.getLocation(), Effect.SNOWBALL_BREAK, 0); }

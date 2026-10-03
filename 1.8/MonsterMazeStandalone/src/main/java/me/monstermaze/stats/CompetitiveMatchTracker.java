@@ -45,7 +45,7 @@ public final class CompetitiveMatchTracker implements Listener {
         if (plugin.getGameManager() == null || plugin.isSoloMode()) return;
         GameState state = plugin.getGameManager().getState();
         if (!active && state == GameState.LIVE) {
-            List<Player> players = plugin.getGameManager().getAlivePlayers();
+            List<Player> players = plugin.getGameManager().getAliveHumanPlayers();
             if (players.size() >= 2) begin(players);
         }
         if (!active) return;
@@ -96,7 +96,7 @@ public final class CompetitiveMatchTracker implements Listener {
             return;
         }
         Set<UUID> aliveNow = new HashSet<UUID>();
-        for (Player p : plugin.getGameManager().getAlivePlayers()) aliveNow.add(p.getUniqueId());
+        for (Player p : plugin.getGameManager().getAliveHumanPlayers()) aliveNow.add(p.getUniqueId());
         for (UUID id : participants) if (!aliveNow.contains(id)) captureIfParticipant(id);
         if (eliminationTicks.size() >= participants.size() - 1) finish();
     }
