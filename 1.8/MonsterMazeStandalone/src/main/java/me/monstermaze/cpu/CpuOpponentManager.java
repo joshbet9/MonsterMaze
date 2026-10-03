@@ -82,6 +82,11 @@ public final class CpuOpponentManager {
         }
     }
 
+    /** Clear controllers at the end of one match while keeping the manager alive for the next match. */
+    public void shutdownMatch() {
+        controllers.clear();
+    }
+
     public void shutdown() {
         if (tickTask != null) {
             tickTask.cancel();
