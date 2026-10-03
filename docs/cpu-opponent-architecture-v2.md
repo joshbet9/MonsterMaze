@@ -350,3 +350,43 @@ This architecture does not make the existing `StableLiveMovementController`, `Be
 Those components remain useful as development/teacher/search tools until their functionality has been replaced or distilled into the learned policy.
 
 The production server should have one small, deterministic inference path rather than a growing collection of exceptional movement controllers.
+
+
+## Authoritative server observation
+
+Unlike the current Minecraft-client prototype, the final CPU does not need visual/perceptual maze detection.
+
+The 1.8 server already knows the authoritative maze, active/preview pads, monster state, player state and participant progress. The CPU runtime should consume a deliberately reduced **player-equivalent observation**, built directly from those authoritative objects.
+
+This is both faster and more reliable than scanning the world or trying to infer the maze from blocks.
+
+The observation builder must apply an explicit information policy:
+
+- active Safe Pad information is available;
+- preview-pad information is exposed only when a normal player would have access to it;
+- nearby monsters are exposed according to the profile's awareness capability;
+- other participants are exposed according to the intended competitor-awareness rules;
+- hidden/internal server state is not automatically passed to the brain.
+
+Difficulty can therefore control awareness/reaction without changing the game's mechanics.
+
+## Route compilation
+
+The three fixed maze patterns permit route topology to be precomputed.
+
+Production CPU runtime should use a compact route catalogue or cache containing:
+
+- traversable edges;
+- physical gap transitions;
+- corner/turn information;
+- candidate route families between valid objective regions.
+
+Route lookup happens on objective changes, not every tick.
+
+The locomotion brain consumes the selected route/edge context; it never performs A*/beam search on the server tick.
+
+## Human versus CPU accounting
+
+A CPU may participate in gameplay-wide queries such as first-to-pad and monster collisions, but must not be treated as an online human account for backend/PB/submission systems.
+
+The participant abstraction should make this distinction explicit rather than relying on UUID heuristics.
