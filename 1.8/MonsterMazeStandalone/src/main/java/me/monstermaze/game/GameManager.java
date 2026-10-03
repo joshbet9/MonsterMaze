@@ -65,6 +65,7 @@ public class GameManager implements Listener {
     /** CPU participants are genuine player-shaped entities, but are not network players/accounts. */
     private final Map<UUID, Player> cpuPlayers = new HashMap<UUID, Player>();
     private final Map<UUID, CpuAvatar> cpuAvatars = new HashMap<UUID, CpuAvatar>();
+    private final me.monstermaze.cpu.CpuOpponentManager cpuOpponentManager;
     private final List<Player> playersOnPad = new ArrayList<Player>();
 
     private SafePad safePad;          // active pad
@@ -94,6 +95,7 @@ public class GameManager implements Listener {
         this.mazeGenerator = new MazeGenerator(plugin);
         this.monsterManager = new MonsterManager(plugin, this);
         this.kitManager = new KitManager(plugin, this, scoreboard);
+        this.cpuOpponentManager = new me.monstermaze.cpu.CpuOpponentManager(plugin, this);
         this.stats = new StatTracker(this, plugin);
         this.leaderboardBoard = new LeaderboardBoard(plugin);
         Bukkit.getPluginManager().registerEvents(this, plugin);
@@ -306,7 +308,7 @@ public class GameManager implements Listener {
 
                 // CPU opponents enter as ordinary gameplay participants. The
                 // avatar/brain manager is optional and disabled by default.
-                if (plugin.getCpuOpponentManager() != null) {
+                if (cpuOpponentManager != null) {
                     plugin.getCpuOpponentManager().spawnForMatch();
                 }
 
