@@ -12,6 +12,7 @@ public final class CpuAvatarAction {
     public float yawDelta;
     public boolean jump;
     public boolean sprint;
+    public boolean useAbility;
 
     public CpuAvatarAction() {
         clear();
@@ -19,16 +20,22 @@ public final class CpuAvatarAction {
 
     public CpuAvatarAction(double forward, double strafe, float yawDelta,
                            boolean jump, boolean sprint) {
-        set(forward, strafe, yawDelta, jump, sprint);
+        set(forward, strafe, yawDelta, jump, sprint, false);
     }
 
     public CpuAvatarAction set(double forward, double strafe, float yawDelta,
                                boolean jump, boolean sprint) {
+        return set(forward, strafe, yawDelta, jump, sprint, false);
+    }
+
+    public CpuAvatarAction set(double forward, double strafe, float yawDelta,
+                               boolean jump, boolean sprint, boolean useAbility) {
         this.forward = clamp(forward);
         this.strafe = clamp(strafe);
         this.yawDelta = clampYaw(yawDelta);
         this.jump = jump;
         this.sprint = sprint;
+        this.useAbility = useAbility;
         return this;
     }
 
@@ -38,6 +45,7 @@ public final class CpuAvatarAction {
         yawDelta = 0.0f;
         jump = false;
         sprint = false;
+        useAbility = false;
         return this;
     }
 
