@@ -309,7 +309,7 @@ public class GameManager implements Listener {
                 // CPU opponents enter as ordinary gameplay participants. The
                 // avatar/brain manager is optional and disabled by default.
                 if (cpuOpponentManager != null) {
-                    plugin.getCpuOpponentManager().spawnForMatch();
+                    cpuOpponentManager.spawnForMatch();
                 }
 
                 // Point every alive player's compass at the active safe pad / beacon from spawn.
@@ -429,8 +429,8 @@ public class GameManager implements Listener {
         if (startingTask != null) { startingTask.cancel(); startingTask = null; }
 
         destroyCpuParticipants();
-        if (plugin.getCpuOpponentManager() != null) {
-            plugin.getCpuOpponentManager().shutdownMatch();
+        if (cpuOpponentManager != null) {
+            cpuOpponentManager.shutdownMatch();
         }
         monsterManager.stop();
         kitManager.clearSelectors();
