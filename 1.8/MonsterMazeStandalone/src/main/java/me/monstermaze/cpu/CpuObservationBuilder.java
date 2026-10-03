@@ -111,7 +111,8 @@ public final class CpuObservationBuilder {
         out.set(28, pattern == 0 ? 1.0f : 0.0f);
         out.set(29, pattern == 1 ? 1.0f : 0.0f);
         out.set(30, pattern == 2 ? 1.0f : 0.0f);
-        out.set(31, clamp(game.getLiveSeconds() / 180.0, 0.0, 1.0));
+        double phaseElapsed = (phaseStart - game.getPhaseTimerSeconds()) / phaseStart;
+        out.set(31, clamp((game.getStage() - 1.0 + phaseElapsed) / 100.0, 0.0, 1.0));
 
         MazeGenerator maze = game.getMazeGenerator();
         Block b = p.getBlock();
