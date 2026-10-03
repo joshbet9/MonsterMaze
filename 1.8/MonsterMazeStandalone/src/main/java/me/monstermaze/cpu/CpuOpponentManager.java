@@ -129,6 +129,9 @@ public final class CpuOpponentManager {
             observations.build(player, observation);
             brain.decide(observation, action);
             avatar.apply(action);
+            if (action.useAbility) {
+                plugin.getGameManager().getKitManager().tryUseAbility(player);
+            }
         }
     }
 }
