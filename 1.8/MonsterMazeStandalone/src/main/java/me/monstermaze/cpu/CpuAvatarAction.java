@@ -39,6 +39,10 @@ public final class CpuAvatarAction {
         return this;
     }
 
+    public static CpuAvatarAction idle() {
+        return new CpuAvatarAction();
+    }
+
     public CpuAvatarAction clear() {
         forward = 0.0;
         strafe = 0.0;
