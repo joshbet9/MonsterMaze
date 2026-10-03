@@ -1,5 +1,6 @@
 package me.monstermaze.kit;
 
+import org.bukkit.Location;
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.entity.MonsterManager;
 import me.monstermaze.event.AbilityUseEvent;
