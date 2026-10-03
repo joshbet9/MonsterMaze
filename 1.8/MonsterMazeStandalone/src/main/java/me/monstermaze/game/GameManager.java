@@ -690,10 +690,14 @@ public class GameManager implements Listener {
         p.setExp(0.99f);
         p.setLevel(0);
         
-        // Ensure all alive players are visible to each other
-        for (Player online : Bukkit.getOnlinePlayers()) {
-            p.showPlayer(online);
-            online.showPlayer(p);
+        // Real CPU avatars broadcast their own spawn/despawn packets. Avoid
+        // re-sending them through Bukkit visibility APIs, which can duplicate
+        // the player entity packet sequence.
+        if (!isCpuPlayer(p)) {
+            for (Player online : Bukkit.getOnlinePlayers()) {
+                p.showPlayer(online);
+                online.showPlayer(p);
+            }
         }
 
         kitManager.applyKit(p);
