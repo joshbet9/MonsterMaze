@@ -23,11 +23,19 @@ public final class CpuObservation {
         values[index] = finite(value);
     }
 
+    public void set(int index, double value) {
+        values[index] = finite(value);
+    }
+
     public void clear() {
         for (int i = 0; i < values.length; i++) values[i] = 0.0f;
     }
 
     private static float finite(float value) {
         return Float.isNaN(value) || Float.isInfinite(value) ? 0.0f : value;
+    }
+
+    private static float finite(double value) {
+        return Double.isNaN(value) || Double.isInfinite(value) ? 0.0f : (float) value;
     }
 }
