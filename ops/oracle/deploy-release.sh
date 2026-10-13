@@ -17,7 +17,7 @@ SERVICE=monster-bot.service
 REPO=https://github.com/joshbet9/MonsterMaze.git
 VENV=/home/ubuntu/monster-bot/venv
 
-cleanup() { rm -rf "$TMP"; }
+cleanup() { rm -rf "$TMP"; if [[ -n "${BACKUP_TMP:-}" ]]; then rm -f -- "$BACKUP_TMP"; fi; }
 trap cleanup EXIT
 
 mkdir -p "$RELEASES" "$DATA"
@@ -49,7 +49,8 @@ ln -sfn "$VENV" "$BOT/venv"
 BACKUP_DIR="$BASE/backups"
 mkdir -p "$BACKUP_DIR"
 BACKUP_FILE="$BACKUP_DIR/leaderboard-before-${RELEASE_TAG}-$(date -u +%Y%m%dT%H%M%SZ).db"
-python3 - "$DATA/leaderboard.db" "$BACKUP_FILE" <<'PY'
+BACKUP_TMP="$BACKUP_FILE.tmp"
+python3 - "$DATA/leaderboard.db" "$BACKUP_TMP" <<'PY'
 import os, sqlite3, sys
 source_path, backup_path = map(os.path.abspath, sys.argv[1:3])
 source = sqlite3.connect(source_path, timeout=30)
@@ -63,8 +64,9 @@ finally:
     backup.close()
     source.close()
 PY
-chmod 0640 "$BACKUP_FILE"
-test -s "$BACKUP_FILE" || { echo "Database backup is empty." >&2; exit 1; }
+test -s "$BACKUP_TMP" || { echo "Database backup is empty." >&2; exit 1; }
+chmod 0640 "$BACKUP_TMP"
+mv "$BACKUP_TMP" "$BACKUP_FILE"
 echo "Created verified database backup: $BACKUP_FILE"
 # Keep the ten newest release backups to avoid unbounded disk growth.
 mapfile -t OLD_BACKUPS < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'leaderboard-before-*.db' -printf '%T@ %p\n' | sort -nr | tail -n +11 | cut -d' ' -f2-)
