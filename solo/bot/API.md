@@ -18,6 +18,20 @@ The API listens to `0.0.0.0` on port `8090` by default. Put it behind HTTPS befo
 
 ## Endpoints
 
+## JNP Mod (public, client-reported) endpoints
+
+The 1.8.9 JNP Mod can optionally share completed Monster Maze attempts and read leaderboard data. These routes are public and deliberately **do not use `MM_API_TOKEN`**; the mod must never contain the server's shared API secret.
+
+- `GET /api/v1/mod/leaderboard?source=community&context=MPS&mode=all&kind=overall&filter=all` returns client-reported attempts. `context` is `MPS`, `MIN`, or `ALL`; `mode` can be `all`, `original`, `modern`, `speed`, `classic`, or `unknown`; `kind` is `overall`, `pattern`, or `kit`.
+- `GET /api/v1/mod/leaderboard?source=server&platform=1.8&mode=original&kind=overall&filter=all` reads the existing authoritative server-plugin PB table. The source is kept separate from client reports.
+- `GET /api/v1/mod/player?source=community&uuid=<uuid>` or `?source=server&uuid=<uuid>` returns a player's personal-best rows for the selected source.
+- `POST /api/v1/mod/runs` accepts an opt-in, client-reported Monster Maze result. It has payload-size, username/UUID/context/stage validation and basic IP/player rate limits. It accepts only `MPS` and `MIN` contexts and stores results in `community_mod_runs`, never in authoritative `runs` or `submissions`.
+
+**Trust boundary:** client-reported stages are not authoritative. Modified clients can fabricate scoreboards or submissions. Do not use community rows for MMR, tournaments, rewards, or the server's official PBs. They are an opt-in community comparison only. Existing authenticated server-plugin endpoints retain their current security model.
+
+Before deploying, put the API behind HTTPS and test the new endpoints on the Oracle VM using its existing API service/SQLite database. A leaderboard base URL can be configured in the mod; no credential is required in the client.
+
+
 ### Health
 
 `GET /health`
