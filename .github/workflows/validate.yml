@@ -121,6 +121,14 @@ jobs:
           grep -q 'api/v1/mod/leaderboard?source=community' ops/oracle/deploy-release.sh
           grep -q 'api/v1/mod/leaderboard?source=server' ops/oracle/deploy-release.sh
           grep -q 'community_mod_runs' solo/bot/mod_leaderboards.py
+          # Oracle-only release must be isolated from the standard multi-target release.
+          oracle_workflow=.github/workflows/deploy-oracle-only.yml
+          test -f "$oracle_workflow"
+          grep -Fq "      - 'oracle-v*.*.*'" "$oracle_workflow"
+          grep -q 'test_mod_leaderboards.py' "$oracle_workflow"
+          grep -q 'RELEASE_COMMIT' "$oracle_workflow"
+          grep -q 'EXPECTED_COMMIT' ops/oracle/deploy-release.sh
+          ! grep -Eq 'FLY_API_TOKEN|HYPERV_SSH|flyctl deploy|tailscale/github-action|registry.fly.io' "$oracle_workflow"
 
   solo-integrity:
     name: Validate Solo PB integrity contract
