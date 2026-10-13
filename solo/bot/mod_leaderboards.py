@@ -290,29 +290,35 @@ def handle_submit(body, client_ip, db_fn):
         if time_ms < 0 or time_ms > 24 * 60 * 60 * 1000:
             raise ValueError("invalid run time")
         now = int(time.time() * 1000)
-        # A public client API cannot prove a run was genuine; throttle obvious spam.
-        monotonic = time.monotonic()
-        with _LOCK:
-            ip_last = _IP_LAST.get(client_ip, 0.0)
-            player_last = _PLAYER_LAST.get(player_uuid, 0.0)
-            if monotonic - ip_last < 0.25:
-                return 429, {"ok": False, "error": "rate_limited"}
-            if monotonic - player_last < 5.0:
-                return 429, {"ok": False, "error": "player_rate_limited"}
-            _IP_LAST[client_ip] = monotonic
-            _PLAYER_LAST[player_uuid] = monotonic
+        # Check idempotency before rate limiting: a retry after a lost HTTP response
+        # must receive an ACK rather than being stuck behind the per-player throttle.
+        # Keep duplicate lookup + insert under the process lock so concurrent copies of
+        # the same submission ID cannot race past the uniqueness check.
         c = db_fn()
         try:
             _ensure_schema(c)
-            existing = c.execute("SELECT 1 FROM community_mod_runs WHERE submission_id=?", (sid,)).fetchone()
-            if existing:
-                return 200, {"ok": True, "accepted": True, "duplicate": True, "submissionId": sid}
-            c.execute("""INSERT INTO community_mod_runs
-                         (submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at)
-                         VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                      (sid, player_uuid, name, context, game, mode, pattern, kit, stage, time_ms, now))
-            c.commit()
-            return 200, {"ok": True, "accepted": True, "verified": False, "submissionId": sid}
+            with _LOCK:
+                existing = c.execute("SELECT 1 FROM community_mod_runs WHERE submission_id=?", (sid,)).fetchone()
+                if existing:
+                    return 200, {"ok": True, "accepted": True, "duplicate": True, "submissionId": sid}
+
+                # Public client reports cannot be verified; throttle obvious spam.
+                monotonic = time.monotonic()
+                ip_last = _IP_LAST.get(client_ip, 0.0)
+                player_last = _PLAYER_LAST.get(player_uuid, 0.0)
+                if monotonic - ip_last < 0.25:
+                    return 429, {"ok": False, "error": "rate_limited"}
+                if monotonic - player_last < 5.0:
+                    return 429, {"ok": False, "error": "player_rate_limited"}
+
+                c.execute("""INSERT INTO community_mod_runs
+                             (submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                          (sid, player_uuid, name, context, game, mode, pattern, kit, stage, time_ms, now))
+                c.commit()
+                _IP_LAST[client_ip] = monotonic
+                _PLAYER_LAST[player_uuid] = monotonic
+                return 200, {"ok": True, "accepted": True, "verified": False, "submissionId": sid}
         finally:
             c.close()
     except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
