@@ -128,6 +128,7 @@ jobs:
           grep -q 'test_mod_leaderboards.py' "$oracle_workflow"
           grep -q 'RELEASE_COMMIT' "$oracle_workflow"
           grep -q 'EXPECTED_COMMIT' ops/oracle/deploy-release.sh
+          bash -n ops/oracle/deploy-release.sh
           ! grep -Eq 'FLY_API_TOKEN|HYPERV_SSH|flyctl deploy|tailscale/github-action|registry.fly.io' "$oracle_workflow"
 
   solo-integrity:
