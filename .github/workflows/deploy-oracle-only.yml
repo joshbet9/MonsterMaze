@@ -110,7 +110,6 @@ jobs:
           ORACLE_SSH_USER: ${{ secrets.ORACLE_SSH_USER }}
           ORACLE_SSH_PORT: ${{ secrets.ORACLE_SSH_PORT }}
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
-          RELEASE_COMMIT: ${{ env.RELEASE_COMMIT }}
         run: |
           set -euo pipefail
           [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Validated release commit SHA is missing or invalid.' >&2; exit 1; }
