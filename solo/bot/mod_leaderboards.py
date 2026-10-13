@@ -72,7 +72,7 @@ def handle_get(path, query, db_fn, allowed_modes):
                     if context not in ("MPS", "MIN", "ALL"):
                         raise ValueError("context must be MPS, MIN, or ALL")
                     mode = _value(query, "mode", "all").lower()
-                    if mode not in ("all",) | _ALLOWED_COMMUNITY_MODES:
+                    if mode != "all" and mode not in _ALLOWED_COMMUNITY_MODES:
                         raise ValueError("unsupported community mode")
                     kind = _value(query, "kind", "overall").lower()
                     filt = _value(query, "filter", "all")
