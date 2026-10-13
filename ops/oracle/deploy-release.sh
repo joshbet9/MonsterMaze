@@ -2,8 +2,13 @@
 set -euo pipefail
 
 RELEASE_TAG="${1:-}"
-if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "Usage: $0 vX.Y.Z" >&2
+EXPECTED_COMMIT="${2:-}"
+if [[ ! "$RELEASE_TAG" =~ ^(v|oracle-v)[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Usage: $0 vX.Y.Z or oracle-vX.Y.Z [expected-commit-sha]" >&2
+  exit 2
+fi
+if [[ -n "$EXPECTED_COMMIT" && ! "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Expected commit must be a full 40-character lowercase Git SHA." >&2
   exit 2
 fi
 
@@ -26,11 +31,24 @@ test -f "$DATA/leaderboard.db" || { echo "Missing $DATA/leaderboard.db" >&2; exi
 test -x "$VENV/bin/python" || { echo "Missing bot virtualenv at $VENV" >&2; exit 1; }
 
 if [[ -e "$TARGET" ]]; then
-  echo "Release $RELEASE_TAG already exists; reusing immutable checkout."
+  echo "Release $RELEASE_TAG already exists; verifying immutable checkout."
+  test -d "$TARGET/.git" || { echo "Existing release path is not a Git checkout." >&2; exit 1; }
+  ACTUAL_COMMIT="$(git -C "$TARGET" rev-parse HEAD)"
+  test "$(git -C "$TARGET" describe --exact-match --tags HEAD 2>/dev/null)" = "$RELEASE_TAG" \
+    || { echo "Existing release tag verification failed." >&2; exit 1; }
+  if [[ -n "$EXPECTED_COMMIT" && "$ACTUAL_COMMIT" != "$EXPECTED_COMMIT" ]]; then
+    echo "Existing release commit $ACTUAL_COMMIT does not match expected $EXPECTED_COMMIT." >&2
+    exit 1
+  fi
 else
   git clone --quiet --branch "$RELEASE_TAG" --single-branch "$REPO" "$TMP"
+  ACTUAL_COMMIT="$(git -C "$TMP" rev-parse HEAD)"
   test "$(git -C "$TMP" describe --exact-match --tags HEAD 2>/dev/null)" = "$RELEASE_TAG" \
     || { echo "Release tag verification failed." >&2; exit 1; }
+  if [[ -n "$EXPECTED_COMMIT" && "$ACTUAL_COMMIT" != "$EXPECTED_COMMIT" ]]; then
+    echo "Release tag points to $ACTUAL_COMMIT, expected $EXPECTED_COMMIT." >&2
+    exit 1
+  fi
   mv "$TMP" "$TARGET"
 fi
 
