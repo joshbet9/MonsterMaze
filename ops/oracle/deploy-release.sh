@@ -81,5 +81,20 @@ if ! sudo bash -c 'source /etc/monstermaze-api.env && curl -fsS --max-time 10 -H
   exit 1
 fi
 
+# The public JNP Mod API must be present after a release. Community submissions
+# stay in a separate unverified table and never enter official PB/MMR records.
+if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/leaderboard?source=community&context=ALL&mode=all&kind=overall&filter=all' \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("source") == "community" and d.get("verified") is False and isinstance(d.get("rows"), list)'; then
+  echo "Public JNP Mod community leaderboard health check failed." >&2
+  rollback
+  exit 1
+fi
+if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/leaderboard?source=server&platform=1.8&mode=original&kind=overall&filter=all' \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("source") == "server" and d.get("verified") is True and isinstance(d.get("rows"), list)'; then
+  echo "Public JNP Mod server-PB leaderboard health check failed." >&2
+  rollback
+  exit 1
+fi
+
 echo "Oracle bot deployment successful: $RELEASE_TAG"
 echo "Current release: $(readlink -f "$CURRENT")"
