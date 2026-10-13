@@ -69,8 +69,10 @@ def handle_get(path, query, db_fn, allowed_modes):
                 _ensure_schema(c)
                 if path.endswith("/leaderboard"):
                     context = _value(query, "context", "MPS").upper()
+                    if context in ("ARCADE", "PUBLIC"):
+                        context = "MIN"
                     if context not in ("MPS", "MIN", "ALL"):
-                        raise ValueError("context must be MPS, MIN, or ALL")
+                        raise ValueError("context must be MPS, MIN/ARCADE, or ALL")
                     mode = _value(query, "mode", "all").lower()
                     if mode != "all" and mode not in _ALLOWED_COMMUNITY_MODES:
                         raise ValueError("unsupported community mode")
@@ -114,10 +116,36 @@ def handle_get(path, query, db_fn, allowed_modes):
                 player_uuid = _value(query, "uuid").lower()
                 if not _UUID_RE.match(player_uuid):
                     raise ValueError("a valid player UUID is required")
+                where = ["lower(uuid)=?"]
+                args = [player_uuid]
+                context = _value(query, "context", "ALL").upper()
+                if context in ("ARCADE", "PUBLIC"):
+                    context = "MIN"
+                if context != "ALL":
+                    if context not in ("MPS", "MIN"):
+                        raise ValueError("context must be MPS, MIN/ARCADE, or ALL")
+                    where.append("context=?"); args.append(context)
+                mode = _value(query, "mode", "all").lower()
+                if mode != "all":
+                    if mode not in _ALLOWED_COMMUNITY_MODES:
+                        raise ValueError("unsupported community mode")
+                    where.append("mode=?"); args.append(mode)
+                pattern_raw = _value(query, "pattern", "all")
+                if pattern_raw != "all":
+                    try: pattern = int(pattern_raw)
+                    except ValueError: raise ValueError("pattern filter must be 0, 1, or 2")
+                    if pattern not in (0, 1, 2): raise ValueError("pattern filter must be 0, 1, or 2")
+                    where.append("pattern=?"); args.append(pattern)
+                kit_raw = _value(query, "kit", "all")
+                if kit_raw.lower() != "all":
+                    kit = "Slowball" if kit_raw.lower() in ("slowball", "slowballer") else kit_raw
+                    if kit not in _ALLOWED_KITS - {"Unknown"}:
+                        raise ValueError("invalid kit filter")
+                    where.append("kit=?"); args.append(kit)
                 rows = c.execute("""SELECT uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at
-                                     FROM community_mod_runs WHERE lower(uuid)=?
-                                     ORDER BY stage DESC,time_ms ASC,submitted_at DESC LIMIT 500""",
-                                 (player_uuid,)).fetchall()
+                                     FROM community_mod_runs WHERE %s
+                                     ORDER BY stage DESC,time_ms ASC,submitted_at DESC LIMIT 500""" % " AND ".join(where),
+                                 tuple(args)).fetchall()
                 if not rows:
                     return 200, {"ok": True, "source": "community", "player": None, "rows": []}
                 # Profile rows are personal bests per context/mode/pattern/kit, not every attempt.
