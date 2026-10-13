@@ -33,7 +33,25 @@ Context should be sent as `MPS` or `MIN` (the backend also accepts `ARCADE`/ `PU
 
 Each upload must have a valid UUID `submissionId`. The client derives a stable UUID from the logical run/player pair and persists pending JSON payloads in a local outbox. The outbox is removed only after the API acknowledges the upload. Retries reuse the same ID, so a lost response cannot create a second row. A local outbox is not proof that the server has received a score.
 
-## Release/deployment flow
+## Oracle-only release flow (JNP Mod API)
+
+For changes that should reach only the Oracle-hosted bot/API, use a dedicated tag such as `oracle-v1.3.10`. The `.github/workflows/deploy-oracle-only.yml` workflow accepts only `oracle-vX.Y.Z` tags (or an explicitly supplied tag via manual dispatch), checks that the tagged commit is already contained in `main`, runs the focused JNP Mod leaderboard API unit tests, verifies the Oracle SSH/service prerequisites, and calls the existing Oracle deployment script.
+
+This tag namespace is intentionally different from the standard `vX.Y.Z` tags used by `.github/workflows/release.yml`. Do not use a normal `vX.Y.Z` tag for an Oracle-only update: the normal release flow also builds and deploys other targets, including Fly production and Hyper-V integration servers. The Oracle-only workflow has no Fly or Hyper-V credentials or deployment steps.
+
+The Oracle-only flow deploys backend source into the existing Oracle release directory, backs up and validates the current SQLite database, switches the active release, restarts `monster-bot.service`, and runs local API smoke checks. It does not build or distribute the JNP Mod client JAR and does not deploy client-side Monster Maze Helper or Halloween Havoc features. The bot/API process is shared, so its restart may briefly interrupt that process, but this workflow changes only the Oracle endpoint.
+
+### Monster Maze leaderboard data separation
+
+The Mod presents distinct leaderboard sections because they query separate datasets:
+
+- **Community Mod runs:** client-recorded and client-uploaded Monster Maze runs are written to the `community_mod_runs` table, returned by `source=community`, and always remain unverified.
+- **Server PBs:** authoritative server-recorded results are read from the existing `runs` table, returned by `source=server`, and marked verified by the API.
+
+The API must not copy community submissions into `runs`, treat client-reported stages as authoritative, or use community records for MMR, tournament results, prizes, or official Server PBs. The Oracle-only workflow does not deploy any Halloween Havoc client code or change its local run data/leaderboard behaviour.
+
+## Standard multi-target release flow
+
 
 1. Review and merge the JNP Mod API feature PR only after the backend unit-test and validation jobs pass.
 2. Create/publish a normal `vX.Y.Z` Monster Maze release from `main`. Do not hot-edit `/home/ubuntu/monstermaze/current`; the release pipeline expects immutable tag-based checkouts.
