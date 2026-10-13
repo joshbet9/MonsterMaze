@@ -14,10 +14,11 @@ class ModLeaderboardTests(unittest.TestCase):
         handle, self.path = tempfile.mkstemp(suffix=".sqlite")
         os.close(handle)
         c = sqlite3.connect(self.path)
+        # Match the actual authoritative server-plugin leaderboard schema.
         c.execute("""CREATE TABLE runs (
-            platform TEXT, mode TEXT, pattern INTEGER, kit TEXT, uuid TEXT, name TEXT,
-            stage INTEGER, time_ms INTEGER, submitted_at INTEGER, config_hash TEXT,
-            PRIMARY KEY(platform, mode, pattern, kit, uuid)
+            platform TEXT NOT NULL, mode TEXT NOT NULL, pattern INTEGER NOT NULL,
+            kit TEXT NOT NULL, uuid TEXT NOT NULL, name TEXT, stage INTEGER NOT NULL,
+            time_ms INTEGER NOT NULL, PRIMARY KEY(platform, mode, pattern, kit, uuid)
         )""")
         c.commit()
         c.close()
@@ -71,9 +72,9 @@ class ModLeaderboardTests(unittest.TestCase):
     def test_server_board_returns_one_pb_per_player(self):
         player_uuid = str(uuid.uuid4())
         c = self.db()
-        c.executemany("INSERT INTO runs VALUES(?,?,?,?,?,?,?,?,?,?)", [
-            ("1.8", "original", 0, "Jumper", player_uuid, "MazeRunner", 20, 100000, 1, ""),
-            ("1.8", "original", 1, "Jumper", player_uuid, "MazeRunner", 25, 120000, 2, ""),
+        c.executemany("INSERT INTO runs VALUES(?,?,?,?,?,?,?,?)", [
+            ("1.8", "original", 0, "Jumper", player_uuid, "MazeRunner", 20, 100000),
+            ("1.8", "original", 1, "Jumper", player_uuid, "MazeRunner", 25, 120000),
         ])
         c.commit()
         c.close()
