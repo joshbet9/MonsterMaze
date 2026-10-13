@@ -2,8 +2,8 @@
 set -euo pipefail
 
 RELEASE_TAG="${1:-}"
-if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "Usage: $0 vX.Y.Z" >&2
+if [[ ! "$RELEASE_TAG" =~ ^(v|oracle-v)[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Usage: $0 vX.Y.Z or oracle-vX.Y.Z" >&2
   exit 2
 fi
 
