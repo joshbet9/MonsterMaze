@@ -76,8 +76,8 @@ def handle_get(path, query, db_fn, allowed_modes):
                         raise ValueError("unsupported community mode")
                     kind = _value(query, "kind", "overall").lower()
                     filt = _value(query, "filter", "all")
-                    if kind not in ("overall", "pattern", "kit"):
-                        raise ValueError("kind must be overall, pattern, or kit")
+                    if kind not in ("overall", "pattern", "kit", "combination"):
+                        raise ValueError("kind must be overall, pattern, kit, or combination")
                     where = ["game='Monster Maze'"]
                     args = []
                     if context != "ALL":
@@ -86,17 +86,19 @@ def handle_get(path, query, db_fn, allowed_modes):
                     if mode != "all":
                         where.append("mode=?")
                         args.append(mode)
-                    if kind == "pattern":
+                    if kind in ("pattern", "combination"):
+                        pattern_raw = _value(query, "pattern", filt) if kind == "combination" else filt
                         try:
-                            pattern = int(filt)
+                            pattern = int(pattern_raw)
                         except ValueError:
                             raise ValueError("pattern filter must be 0, 1, or 2")
                         if pattern not in (0, 1, 2):
                             raise ValueError("pattern filter must be 0, 1, or 2")
                         where.append("pattern=?")
                         args.append(pattern)
-                    elif kind == "kit":
-                        kit = "Slowball" if filt.lower() == "slowballer" else filt
+                    if kind in ("kit", "combination"):
+                        kit_raw = _value(query, "kit", filt) if kind == "combination" else filt
+                        kit = "Slowball" if kit_raw.lower() == "slowballer" else kit_raw
                         if kit not in _ALLOWED_KITS - {"Unknown"}:
                             raise ValueError("invalid kit filter")
                         where.append("kit=?")
@@ -137,17 +139,19 @@ def handle_get(path, query, db_fn, allowed_modes):
                         raise ValueError("unsupported platform/mode")
                     kind = _value(query, "kind", "overall").lower()
                     filt = _value(query, "filter", "all")
-                    if kind not in ("overall", "pattern", "kit"):
-                        raise ValueError("kind must be overall, pattern, or kit")
+                    if kind not in ("overall", "pattern", "kit", "combination"):
+                        raise ValueError("kind must be overall, pattern, kit, or combination")
                     where = ["platform=?", "lower(mode)=?"]
                     args = [platform, mode]
-                    if kind == "pattern":
-                        try: pattern = int(filt)
+                    if kind in ("pattern", "combination"):
+                        pattern_raw = _value(query, "pattern", filt) if kind == "combination" else filt
+                        try: pattern = int(pattern_raw)
                         except ValueError: raise ValueError("pattern filter must be 0, 1, or 2")
                         if pattern not in (0, 1, 2): raise ValueError("pattern filter must be 0, 1, or 2")
                         where.append("pattern=?"); args.append(pattern)
-                    elif kind == "kit":
-                        kit = "Slowball" if filt.lower() == "slowballer" else filt
+                    if kind in ("kit", "combination"):
+                        kit_raw = _value(query, "kit", filt) if kind == "combination" else filt
+                        kit = "Slowball" if kit_raw.lower() == "slowballer" else kit_raw
                         if kit not in ("Jumper", "Slowball", "Body Builder", "Repulsor", "Maverick"):
                             raise ValueError("invalid kit filter")
                         where.append("kit=?"); args.append(kit)
@@ -169,10 +173,32 @@ def handle_get(path, query, db_fn, allowed_modes):
                 player_uuid = _value(query, "uuid").lower()
                 if not _UUID_RE.match(player_uuid):
                     raise ValueError("a valid player UUID is required")
+                where = ["lower(uuid)=?"]
+                args = [player_uuid]
+                platform = _value(query, "platform", "")
+                mode = _value(query, "mode", "all").lower()
+                pattern_raw = _value(query, "pattern", "all")
+                kit_raw = _value(query, "kit", "all")
+                if platform:
+                    if platform not in allowed_modes: raise ValueError("unsupported platform")
+                    where.append("platform=?"); args.append(platform)
+                if mode != "all":
+                    if platform and mode not in allowed_modes[platform]: raise ValueError("unsupported platform/mode")
+                    where.append("lower(mode)=?"); args.append(mode)
+                if pattern_raw != "all":
+                    try: pattern = int(pattern_raw)
+                    except ValueError: raise ValueError("pattern filter must be 0, 1, or 2")
+                    if pattern not in (0, 1, 2): raise ValueError("pattern filter must be 0, 1, or 2")
+                    where.append("pattern=?"); args.append(pattern)
+                if kit_raw.lower() != "all":
+                    kit = "Slowball" if kit_raw.lower() in ("slowball", "slowballer") else kit_raw
+                    if kit not in ("Jumper", "Slowball", "Body Builder", "Repulsor", "Maverick"):
+                        raise ValueError("invalid kit filter")
+                    where.append("kit=?"); args.append(kit)
                 rows = c.execute("""SELECT uuid,name,platform,mode,pattern,kit,stage,time_ms
-                                    FROM runs WHERE lower(uuid)=?
-                                    ORDER BY stage DESC,time_ms ASC,platform,mode,pattern,kit LIMIT 100""",
-                                 (player_uuid,)).fetchall()
+                                    FROM runs WHERE %s
+                                    ORDER BY stage DESC,time_ms ASC,platform,mode,pattern,kit LIMIT 100""" % " AND ".join(where),
+                                 tuple(args)).fetchall()
                 result = [{"uuid": r[0], "name": r[1], "platform": r[2], "mode": r[3],
                            "pattern": int(r[4]), "kit": r[5], "stage": int(r[6]),
                            "timeMs": int(r[7]), "source": "server", "verified": True} for r in rows]
@@ -208,8 +234,10 @@ def handle_submit(body, client_ip, db_fn):
         if not _NAME_RE.match(name):
             raise ValueError("invalid Minecraft username")
         context = str(payload["context"]).upper()
+        if context in ("ARCADE", "PUBLIC"):
+            context = "MIN"
         if context not in ("MPS", "MIN"):
-            raise ValueError("context must be MPS or MIN")
+            raise ValueError("context must be MPS/MIN (ARCADE is accepted as a MIN alias)")
         game = str(payload["game"]).strip()
         if game != "Monster Maze":
             raise ValueError("unsupported game")
