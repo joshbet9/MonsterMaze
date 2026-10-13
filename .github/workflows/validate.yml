@@ -28,6 +28,9 @@ jobs:
       - name: Test JNP Mod public endpoints and filters
         working-directory: solo/bot
         run: python -m unittest -v test_mod_leaderboards.py
+      - name: Test JNP Mod community run admin safeguards
+        working-directory: solo/bot
+        run: python -m unittest -v test_admin_mod_runs.py
 
   build-1-8:
     name: Build Minecraft 1.8.8
@@ -121,6 +124,9 @@ jobs:
           grep -q 'api/v1/mod/leaderboard?source=community' ops/oracle/deploy-release.sh
           grep -q 'api/v1/mod/leaderboard?source=server' ops/oracle/deploy-release.sh
           grep -q 'community_mod_runs' solo/bot/mod_leaderboards.py
+          test -f solo/bot/admin_mod_runs.py
+          grep -q 'PRAGMA quick_check' solo/bot/admin_mod_runs.py
+          grep -q 'community_mod_run_admin_audit' solo/bot/admin_mod_runs.py
           # Oracle-only release must be isolated from the standard multi-target release.
           oracle_workflow=.github/workflows/deploy-oracle-only.yml
           test -f "$oracle_workflow"
