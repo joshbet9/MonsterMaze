@@ -112,6 +112,15 @@ jobs:
           grep -q 'COPY --from=java8 /opt/java/openjdk /opt/java8' Dockerfile
           grep -q 'JAVA_BIN=/opt/java8/bin/java' docker/entrypoint.sh
           grep -q 'JAVA_BIN=/usr/bin/java' docker/entrypoint.sh
+      - name: Check Oracle JNP Mod deployment safety gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'source.backup(backup)' ops/oracle/deploy-release.sh
+          grep -q 'PRAGMA quick_check' ops/oracle/deploy-release.sh
+          grep -q 'api/v1/mod/leaderboard?source=community' ops/oracle/deploy-release.sh
+          grep -q 'api/v1/mod/leaderboard?source=server' ops/oracle/deploy-release.sh
+          grep -q 'community_mod_runs' solo/bot/mod_leaderboards.py
 
   solo-integrity:
     name: Validate Solo PB integrity contract
