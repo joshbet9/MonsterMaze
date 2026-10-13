@@ -57,6 +57,38 @@ class ModLeaderboardTests(unittest.TestCase):
         self.assertEqual(board["rows"][0]["stage"], 27)
         self.assertEqual(board["rows"][0]["context"], "MPS")
 
+    def test_duplicate_submission_is_acknowledged_before_rate_limit(self):
+        player_uuid = str(uuid.uuid4())
+        submission_id = str(uuid.uuid4())
+        payload = {
+            "submissionId": submission_id, "uuid": player_uuid, "name": "MazeRunner",
+            "context": "MIN", "game": "Monster Maze", "mode": "original",
+            "pattern": 0, "kit": "Maverick", "stage": 16, "timeMs": 120000,
+        }
+        body = json.dumps(payload).encode("utf-8")
+        first_status, first_response = mod_leaderboards.handle_submit(
+            body, "test-ip-idempotency", self.db
+        )
+        self.assertEqual(first_status, 200)
+        self.assertTrue(first_response["accepted"])
+
+        # The same player/IP immediately retries after assuming its first response
+        # was lost. This should ACK the existing row rather than return HTTP 429.
+        retry_status, retry_response = mod_leaderboards.handle_submit(
+            body, "test-ip-idempotency", self.db
+        )
+        self.assertEqual(retry_status, 200)
+        self.assertTrue(retry_response["accepted"])
+        self.assertTrue(retry_response["duplicate"])
+
+        c = self.db()
+        rows = c.execute(
+            "SELECT COUNT(*) FROM community_mod_runs WHERE submission_id=?",
+            (submission_id.lower(),),
+        ).fetchone()[0]
+        c.close()
+        self.assertEqual(rows, 1)
+
     def test_client_report_rejects_unknown_context(self):
         payload = {
             "submissionId": str(uuid.uuid4()), "uuid": str(uuid.uuid4()), "name": "MazeRunner",
