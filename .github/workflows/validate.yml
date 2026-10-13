@@ -14,6 +14,21 @@ env:
   PROTOCOLLIB_URL: 'https://github.com/dmulloy2/ProtocolLib/releases/download/5.4.0/ProtocolLib.jar'
 
 jobs:
+
+  jnp-mod-api:
+    name: Validate JNP Mod leaderboard API
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test JNP Mod public endpoints and filters
+        working-directory: solo/bot
+        run: python -m unittest -v test_mod_leaderboards.py
+
   build-1-8:
     name: Build Minecraft 1.8.8
     runs-on: ubuntu-latest
