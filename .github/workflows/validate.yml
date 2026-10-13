@@ -14,6 +14,21 @@ env:
   PROTOCOLLIB_URL: 'https://github.com/dmulloy2/ProtocolLib/releases/download/5.4.0/ProtocolLib.jar'
 
 jobs:
+
+  jnp-mod-api:
+    name: Validate JNP Mod leaderboard API
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test JNP Mod public endpoints and filters
+        working-directory: solo/bot
+        run: python -m unittest -v test_mod_leaderboards.py
+
   build-1-8:
     name: Build Minecraft 1.8.8
     runs-on: ubuntu-latest
@@ -97,6 +112,15 @@ jobs:
           grep -q 'COPY --from=java8 /opt/java/openjdk /opt/java8' Dockerfile
           grep -q 'JAVA_BIN=/opt/java8/bin/java' docker/entrypoint.sh
           grep -q 'JAVA_BIN=/usr/bin/java' docker/entrypoint.sh
+      - name: Check Oracle JNP Mod deployment safety gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'source.backup(backup)' ops/oracle/deploy-release.sh
+          grep -q 'PRAGMA quick_check' ops/oracle/deploy-release.sh
+          grep -q 'api/v1/mod/leaderboard?source=community' ops/oracle/deploy-release.sh
+          grep -q 'api/v1/mod/leaderboard?source=server' ops/oracle/deploy-release.sh
+          grep -q 'community_mod_runs' solo/bot/mod_leaderboards.py
 
   solo-integrity:
     name: Validate Solo PB integrity contract

@@ -17,7 +17,7 @@ SERVICE=monster-bot.service
 REPO=https://github.com/joshbet9/MonsterMaze.git
 VENV=/home/ubuntu/monster-bot/venv
 
-cleanup() { rm -rf "$TMP"; }
+cleanup() { rm -rf "$TMP"; if [[ -n "${BACKUP_TMP:-}" ]]; then rm -f -- "$BACKUP_TMP"; fi; }
 trap cleanup EXIT
 
 mkdir -p "$RELEASES" "$DATA"
@@ -43,6 +43,34 @@ grep -q 'mmr.*next' "$BOT/api_server.py" || { echo "Release missing MMR API rout
 ln -sfn "$DATA/config.json" "$BOT/config.json"
 ln -sfn "$DATA/leaderboard.db" "$BOT/leaderboard.db"
 ln -sfn "$VENV" "$BOT/venv"
+
+# Take a consistent SQLite backup before switching/restarting application code.
+# The API change is additive, but a recoverable data snapshot is still required.
+BACKUP_DIR="$BASE/backups"
+mkdir -p "$BACKUP_DIR"
+BACKUP_FILE="$BACKUP_DIR/leaderboard-before-${RELEASE_TAG}-$(date -u +%Y%m%dT%H%M%SZ).db"
+BACKUP_TMP="$BACKUP_FILE.tmp"
+python3 - "$DATA/leaderboard.db" "$BACKUP_TMP" <<'PY'
+import os, sqlite3, sys
+source_path, backup_path = map(os.path.abspath, sys.argv[1:3])
+source = sqlite3.connect(source_path, timeout=30)
+backup = sqlite3.connect(backup_path, timeout=30)
+try:
+    source.backup(backup)
+    result = backup.execute("PRAGMA quick_check").fetchone()
+    if not result or result[0] != "ok":
+        raise SystemExit("SQLite backup failed integrity check: %r" % (result,))
+finally:
+    backup.close()
+    source.close()
+PY
+test -s "$BACKUP_TMP" || { echo "Database backup is empty." >&2; exit 1; }
+chmod 0640 "$BACKUP_TMP"
+mv "$BACKUP_TMP" "$BACKUP_FILE"
+echo "Created verified database backup: $BACKUP_FILE"
+# Keep the ten newest release backups to avoid unbounded disk growth.
+mapfile -t OLD_BACKUPS < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'leaderboard-before-*.db' -printf '%T@ %p\n' | sort -nr | tail -n +11 | cut -d' ' -f2-)
+for old_backup in "${OLD_BACKUPS[@]}"; do rm -f -- "$old_backup"; done
 
 PREVIOUS=""
 if [[ -L "$CURRENT" ]]; then
@@ -77,6 +105,21 @@ fi
 
 if ! sudo bash -c 'source /etc/monstermaze-api.env && curl -fsS --max-time 10 -H "Authorization: Bearer $MM_API_TOKEN" http://127.0.0.1:8090/api/v1/mmr/player/00000000-0000-0000-0000-000000000000/next/1.8 >/dev/null'; then
   echo "Authenticated MMR API health check failed." >&2
+  rollback
+  exit 1
+fi
+
+# The public JNP Mod API must be present after a release. Community submissions
+# stay in a separate unverified table and never enter official PB/MMR records.
+if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/leaderboard?source=community&context=ALL&mode=all&kind=overall&filter=all' \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("source") == "community" and d.get("verified") is False and isinstance(d.get("rows"), list)'; then
+  echo "Public JNP Mod community leaderboard health check failed." >&2
+  rollback
+  exit 1
+fi
+if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/leaderboard?source=server&platform=1.8&mode=original&kind=overall&filter=all' \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("source") == "server" and d.get("verified") is True and isinstance(d.get("rows"), list)'; then
+  echo "Public JNP Mod server-PB leaderboard health check failed." >&2
   rollback
   exit 1
 fi

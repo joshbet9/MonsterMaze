@@ -18,6 +18,20 @@ The API listens to `0.0.0.0` on port `8090` by default. Put it behind HTTPS befo
 
 ## Endpoints
 
+## JNP Mod (public, client-reported) endpoints
+
+The 1.8.9 JNP Mod can optionally share completed Monster Maze attempts and read leaderboard data. These routes are public and deliberately **do not use `MM_API_TOKEN`**; the mod must never contain the server's shared API secret.
+
+- `GET /api/v1/mod/leaderboard?source=community&context=MPS&mode=all&kind=overall&filter=all` returns client-reported attempts. `context` is `MPS`, `MIN`/(`ARCADE` alias), or `ALL`; `mode` can be `all`, `original`, `modern`, `speed`, `classic`, or `unknown`; `kind` is `overall`, `pattern`, `kit`, or `combination`.
+- `GET /api/v1/mod/leaderboard?source=server&platform=1.8&mode=original&kind=overall&filter=all` reads the existing authoritative server-plugin PB table. The source is kept separate from client reports. For 1.8, modes are `original`, `speed`, and `modern`; Maverick is a supported kit filter. Use `kind=combination&pattern=2&kit=Maverick` to combine both filters.
+- `GET /api/v1/mod/player?source=community&uuid=<uuid>` or `?source=server&uuid=<uuid>` returns a player's rows for the selected source. Optional context/mode/pattern/kit parameters scope a profile to the visible filters.
+- `POST /api/v1/mod/runs` accepts a client-reported Monster Maze result. It has payload-size, username/UUID/context/stage validation and basic IP/player rate limits. It accepts `MPS` or `MIN` contexts (with `ARCADE`/ `PUBLIC` aliases normalized to `MIN`) and stores results in `community_mod_runs`, never in authoritative `runs` or `submissions`. The required `submissionId` must be a UUID. Repeating a successfully stored ID returns an accepted duplicate acknowledgement before rate limiting, so a durable client outbox can retry after a lost response without creating a second row.
+
+**Trust boundary:** client-reported stages are not authoritative. Modified clients can fabricate scoreboards or submissions. Do not use community rows for MMR, tournaments, rewards, or the server's official PBs. They are an opt-in community comparison only. Existing authenticated server-plugin endpoints retain their current security model.
+
+Before deploying, put the API behind HTTPS and test the new endpoints on the Oracle VM using its existing API service/SQLite database. A leaderboard base URL can be configured in the mod; no credential is required in the client.
+
+
 ### Health
 
 `GET /health`
