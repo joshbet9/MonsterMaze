@@ -163,8 +163,10 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(benchmark["rows"][1]["compositeElapsedMs"], 25000)
         self.assertFalse(benchmark["verified"])
         self.assertEqual(benchmark["worldRecordTimeMs"], 30000)
-        self.assertIsNotNone(benchmark["worldRecord"])
-        self.assertEqual(len(benchmark["worldRecord"]["splits"]), 2)
+        # BKS response keeps WR timing separate without duplicating the entire WR run
+        # and its splits; the composite's own objective rows retain provenance.
+        self.assertNotIn("worldRecord", benchmark)
+        self.assertNotIn("rows", response)
 
     def test_bks_is_partial_when_no_completed_run_establishes_required_route(self):
         failed = self.payload(
