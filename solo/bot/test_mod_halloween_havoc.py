@@ -164,7 +164,7 @@ class HalloweenHavocApiTests(unittest.TestCase):
 
     def test_hhc_is_separate_from_hh(self):
         hh_run = self.payload()
-        hhc_run = self.payload(context="HHC")
+        hhc_run = self.payload(context="HHC", uuid=self.member2_uuid, name="RunnerB")
         self.assertEqual(self.submit(hh_run, "ip-a")[0], 200)
         self.assertEqual(self.submit(hhc_run, "ip-b")[0], 200)
         status, board = self.get({"context": ["HHC"], "kind": ["runs"]})
