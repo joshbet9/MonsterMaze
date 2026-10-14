@@ -74,6 +74,10 @@ jobs:
         working-directory: solo/bot
         run: python -m unittest -v test_mod_halloween_havoc.py
 
+      - name: Run JNP Mod admin tool tests
+        working-directory: solo/bot
+        run: python -m unittest -v test_admin_mod_runs.py
+
       - name: Prepare Oracle SSH credentials
         shell: bash
         env:
