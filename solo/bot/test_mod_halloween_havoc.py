@@ -192,6 +192,22 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("uploading player", response["error"])
 
+    def test_schema_migrates_older_split_table_to_include_run_status(self):
+        old = sqlite3.connect(self.path)
+        old.execute("""CREATE TABLE community_hh_splits (
+            submission_id TEXT NOT NULL, split_index INTEGER NOT NULL, run_id TEXT NOT NULL,
+            uuid TEXT NOT NULL, name TEXT NOT NULL, context TEXT NOT NULL, server_type TEXT NOT NULL,
+            server_node TEXT NOT NULL DEFAULT '', team_members_json TEXT NOT NULL,
+            team_signature TEXT NOT NULL, objective TEXT NOT NULL, split_ms INTEGER NOT NULL,
+            elapsed_ms INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'PASSED',
+            run_successful INTEGER NOT NULL DEFAULT 0, submitted_at INTEGER NOT NULL,
+            PRIMARY KEY (submission_id, split_index)
+        )""")
+        hh._ensure_schema(old)
+        columns = {row[1] for row in old.execute("PRAGMA table_info(community_hh_splits)").fetchall()}
+        old.close()
+        self.assertIn("run_status", columns)
+
     def test_unknown_route_returns_none(self):
         self.assertIsNone(hh.handle_get("/api/v1/mod/other", {}, self.db))
 
