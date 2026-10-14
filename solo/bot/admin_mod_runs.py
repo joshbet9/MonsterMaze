@@ -665,8 +665,26 @@ def format_submitted_at(value: int) -> str:
     return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
+def format_run_start(value: Any) -> str:
+    try:
+        timestamp = int(value)
+        if timestamp <= 0:
+            return "unknown"
+        instant = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+        return instant.strftime("%Y-%m-%d %H:%M:%S.") + f"{timestamp % 1000:03d} UTC"
+    except (TypeError, ValueError, OverflowError, OSError):
+        return "unknown"
+
+
+def with_display_fields(entry: dict[str, Any]) -> dict[str, Any]:
+    result = dict(entry)
+    if "started_at" in result:
+        result["started_at_utc"] = format_run_start(result["started_at"])
+    return result
+
+
 def print_entry(entry: dict[str, Any]) -> None:
-    print(json.dumps(entry, indent=2, sort_keys=True))
+    print(json.dumps(with_display_fields(entry), indent=2, sort_keys=True))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -729,7 +747,7 @@ def run_cli(args: argparse.Namespace) -> int:
             filters = {key: getattr(args, key) for key in ("name", "uuid", "submission_id", "context", "server_type")}
             entries = list_hh_entries(db_path, filters, args.limit, args.offset)
             if args.json:
-                print(json.dumps(entries, indent=2))
+                print(json.dumps([with_display_fields(entry) for entry in entries], indent=2))
             elif not entries:
                 print("No HH/HHC community runs matched.")
             else:
@@ -746,15 +764,15 @@ def run_cli(args: argparse.Namespace) -> int:
         filters = {key: getattr(args, key) for key in ("name", "uuid", "submission_id", "context", "mode")}
         entries = list_entries(db_path, filters, args.limit, args.offset)
         if args.json:
-            print(json.dumps(entries, indent=2))
+            print(json.dumps([with_display_fields(entry) for entry in entries], indent=2))
         elif not entries:
             print("No Monster Maze community runs matched.")
         else:
-            print(f"{'SUBMISSION ID':36} {'NAME':16} {'CTX':3} {'MODE':8} {'PAT':3} {'KIT':14} {'STAGE':5} {'TIME':10} SUBMITTED (UTC)")
+            print(f"{'SUBMISSION ID':36} {'NAME':16} {'CTX':3} {'MODE':8} {'PAT':3} {'KIT':14} {'STAGE':5} {'TIME':10} {'STARTED (UTC)':27} SUBMITTED (UTC)")
             for entry in entries:
                 print(f"{entry['submission_id']:36} {entry['name'][:16]:16} {entry['context']:3} "
                       f"{entry['mode'][:8]:8} {entry['pattern']:3} {entry['kit'][:14]:14} "
-                      f"{entry['stage']:5} {format_time_ms(entry['time_ms']):10} {format_submitted_at(entry['submitted_at'])}")
+                      f"{entry['stage']:5} {format_time_ms(entry['time_ms']):10} {format_run_start(entry.get('started_at', 0)):27} {format_submitted_at(entry['submitted_at'])}")
         print(f"Showing {len(entries)} Monster Maze run(s); use --offset to page through more.")
         return 0
 
