@@ -148,7 +148,7 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(self.submit(first, "bks-ip-a")[0], 200)
         self.assertEqual(self.submit(second, "bks-ip-b")[0], 200)
         status, response = self.get({"kind": "bks", "context": "HH", "serverType": "STANDARD"})
-        self.assertEqual(status, 200)
+        self.assertEqual(status, 200, response)
         self.assertTrue(response["ok"])
         self.assertEqual(response["kind"], "bks")
         self.assertEqual(len(response["benchmarks"]), 1)
@@ -177,7 +177,7 @@ class HalloweenHavocApiTests(unittest.TestCase):
         )
         self.assertEqual(self.submit(failed, "bks-partial-ip")[0], 200)
         status, response = self.get({"kind": "bks", "context": "HH", "serverType": "STANDARD"})
-        self.assertEqual(status, 200)
+        self.assertEqual(status, 200, response)
         benchmark = response["benchmarks"][0]
         self.assertFalse(benchmark["complete"])
         self.assertIsNone(benchmark["totalTimeMs"])
