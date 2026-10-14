@@ -132,6 +132,12 @@ class HalloweenHavocApiTests(unittest.TestCase):
             runId=str(uuid.uuid4()),
             teamSignature="second-quartet-signature",
             serverNode="HH-2",
+            teamMembers=[
+                {"uuid": self.member2_uuid, "name": "RunnerB"},
+                {"uuid": str(uuid.uuid4()), "name": "RunnerE"},
+                {"uuid": str(uuid.uuid4()), "name": "RunnerF"},
+                {"uuid": str(uuid.uuid4()), "name": "RunnerG"},
+            ],
             splits=[
                 {"index": 1, "objective": "Pumpkins", "splitMs": 5000, "elapsedMs": 5000,
                  "status": "PASSED", "completedAt": 1760000010000},
