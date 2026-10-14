@@ -31,6 +31,8 @@ Use the complete `submission_id` returned by `list` or `show`. Options such as `
 
 For MM entries, editable fields include player identity/name, context, mode, pattern, kit, stage, and duration. For HH/HHC, editable fields include name, context, server type/node, duration/reported duration, success/status, and finish reason. HH/HHC edits that affect shared run metadata (name, context, server type, status) propagate to the associated objective-split rows so the full-run and split leaderboards remain consistent. Deleting an HH/HHC run also deletes its linked split rows.
 
+For new MM uploads, `list` includes a `STARTED (UTC)` column and `show` includes both the raw `started_at` epoch milliseconds and a readable `started_at_utc` value. This is the time the client detected the start of the game; it is distinct from `time_ms` (the recorded run duration) and `submitted_at` (when the upload arrived at the API). The start time is read-only. Rows accepted before this field was deployed show `unknown` because the original upload did not carry a start timestamp. Use matching player/context plus nearby start timestamps to review likely duplicates, but inspect their stages and kits before deleting anything.
+
 ## Safeguards
 
 - Every confirmed edit or deletion creates a timestamped SQLite snapshot in `/home/ubuntu/monstermaze/backups/` (or the chosen `--backup-dir`) and validates it with `PRAGMA quick_check` before changing data.
