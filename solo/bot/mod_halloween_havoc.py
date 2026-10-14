@@ -397,6 +397,119 @@ def _best_splits(rows, objective=None):
     return result[:500]
 
 
+
+def _best_known_split_benchmarks(rows, required_objectives):
+    """Build composite best-known-split runs, retaining the source group for every objective.
+
+    The fastest section duration is selected independently per objective. A composite is
+    called complete only when a completed community run establishes the required objective
+    list and every objective in that list has an eligible split.
+    """
+    best = {}
+    for row in rows:
+        split = _split_dict(row)
+        split["teamMembers"] = _json_members(split.get("teamMembers"))
+        objective = str(split.get("objective", "")).strip()
+        split_ms = int(split.get("splitMs") or 0)
+        elapsed_ms = int(split.get("elapsedMs") or 0)
+        if not objective or split_ms <= 0 or elapsed_ms <= 0:
+            continue
+        scope = (str(split["context"]).upper(), str(split["serverType"]).upper())
+        key = scope + (objective.casefold(),)
+        prior = best.get(key)
+        score = (split_ms, elapsed_ms, -int(split.get("submittedAt") or 0))
+        prior_score = ((int(prior.get("splitMs") or 0), int(prior.get("elapsedMs") or 0),
+                        -int(prior.get("submittedAt") or 0)) if prior else None)
+        if prior is None or score < prior_score:
+            best[key] = split
+
+    scopes = sorted(set((key[0], key[1]) for key in best))
+    benchmarks = []
+    for scope in scopes:
+        scope_key = scope[0] + "|" + scope[1]
+        required = list(required_objectives.get(scope_key) or [])
+        available = [item for key, item in best.items() if key[:2] == scope]
+        by_objective = {str(item["objective"]).casefold(): item for item in available}
+        if required:
+            ordered_names = required
+            # Retain any previously recorded extra objectives after the known complete route.
+            known_keys = {name.casefold() for name in required}
+            extras = [item for item in available if str(item["objective"]).casefold() not in known_keys]
+            extras.sort(key=lambda item: (int(item.get("splitIndex") or 999), str(item["objective"]).casefold()))
+            ordered_names = required + [str(item["objective"]) for item in extras]
+        else:
+            # Without a completed run, route completeness cannot be proven. Display observed
+            # splits as partial evidence rather than pretending the composite is complete.
+            available.sort(key=lambda item: (int(item.get("splitIndex") or 999), str(item["objective"]).casefold()))
+            ordered_names = [str(item["objective"]) for item in available]
+
+        composite_rows = []
+        cumulative = 0
+        present = set()
+        for index, name in enumerate(ordered_names, 1):
+            split = by_objective.get(name.casefold())
+            if split is None:
+                continue
+            cumulative += int(split["splitMs"])
+            present.add(name.casefold())
+            split["compositeIndex"] = index
+            split["compositeSplitMs"] = int(split["splitMs"])
+            split["compositeElapsedMs"] = cumulative
+            split["sourceRunId"] = split.get("runId", "")
+            split["sourceSubmissionId"] = split.get("submissionId", "")
+            split["sourceAttemptStatus"] = split.get("runStatus", "UNKNOWN")
+            composite_rows.append(split)
+
+        missing = [name for name in required if name.casefold() not in present]
+        complete = bool(required) and not missing and len(composite_rows) >= len(required)
+        benchmarks.append({
+            "context": scope[0],
+            "serverType": scope[1],
+            "kind": "bks",
+            "verified": False,
+            "complete": complete,
+            "requiredObjectives": required,
+            "requiredObjectiveCount": len(required),
+            "knownObjectiveCount": len(present),
+            "missingObjectives": missing,
+            "knownCompositeTimeMs": cumulative,
+            "totalTimeMs": cumulative if complete else None,
+            "rows": composite_rows,
+        })
+    return benchmarks
+
+
+def _required_objectives_from_completed_runs(c, context, server_type):
+    """Infer the expected objective order from the fullest successful run available."""
+    clauses = ["successful=1"]
+    args = []
+    if context != "ALL":
+        clauses.append("context=?")
+        args.append(context)
+    if server_type != "ALL":
+        clauses.append("server_type=?")
+        args.append(server_type)
+    completed_rows = _run_select(c, " AND ".join(clauses), args)
+    chosen = {}
+    for raw_run in completed_rows:
+        run = _run_row(raw_run)
+        scope = (str(run.get("context", "HH")).upper(), str(run.get("serverType", "STANDARD")).upper())
+        scope_key = scope[0] + "|" + scope[1]
+        raw_splits = _split_select(c, "submission_id=?", [run["submissionId"]])
+        ordered = []
+        seen = set()
+        for raw_split in sorted(raw_splits, key=lambda item: (int(item[1]), str(item[9]).casefold())):
+            item = _split_dict(raw_split)
+            objective = str(item.get("objective", "")).strip()
+            key = objective.casefold()
+            if objective and key not in seen:
+                ordered.append(objective)
+                seen.add(key)
+        if len(ordered) > len(chosen.get(scope_key, [])):
+            chosen[scope_key] = ordered
+    return chosen
+
+
 def handle_get(path, query, db_fn):
     """Return (status, payload) for HH/HHC community boards and group profiles."""
     if path != "/api/v1/mod/halloween-havoc/leaderboard":
@@ -409,8 +522,8 @@ def handle_get(path, query, db_fn):
         if server_type not in ("STANDARD", "MPS", "ALL"):
             raise ValueError("serverType must be STANDARD, MPS, or ALL")
         kind = _value(query, "kind", "runs").lower()
-        if kind not in ("runs", "splits", "group", "history"):
-            raise ValueError("kind must be runs, splits, group, or history")
+        if kind not in ("runs", "splits", "group", "history", "bks"):
+            raise ValueError("kind must be runs, splits, group, history, or bks")
         objective = _value(query, "objective", "")
         if len(objective) > 120 or any(ord(ch) < 32 for ch in objective):
             raise ValueError("invalid objective filter")
@@ -455,6 +568,45 @@ def handle_get(path, query, db_fn):
                 return 200, {"ok": True, "source": "community", "verified": False,
                              "context": context, "serverType": server_type, "kind": "runs",
                              "rows": _best_runs(rows)}
+            if kind == "bks":
+                split_clauses, split_args = [], []
+                if context != "ALL":
+                    split_clauses.append("context=?"); split_args.append(context)
+                if server_type != "ALL":
+                    split_clauses.append("server_type=?"); split_args.append(server_type)
+                # Partial/failed attempts are eligible because only completed objectives matter.
+                split_rows = _split_select(c, " AND ".join(split_clauses), split_args)
+                required = _required_objectives_from_completed_runs(c, context, server_type)
+                benchmarks = _best_known_split_benchmarks(split_rows, required)
+
+                # Preserve the genuine fastest completed run as a separate WR target. The
+                # composite BKS timeline is not itself a completed player/team run.
+                run_clauses = ["successful=1"]
+                run_args = []
+                if context != "ALL":
+                    run_clauses.append("context=?"); run_args.append(context)
+                if server_type != "ALL":
+                    run_clauses.append("server_type=?"); run_args.append(server_type)
+                world_records = {}
+                for raw_run in _run_select(c, " AND ".join(run_clauses), run_args):
+                    run = _run_row(raw_run)
+                    scope_key = str(run.get("context", "HH")).upper() + "|" + str(run.get("serverType", "STANDARD")).upper()
+                    prior = world_records.get(scope_key)
+                    if prior is None or int(run.get("timeMs") or 0) < int(prior.get("timeMs") or 0):
+                        run["teamMembers"] = _json_members(run.get("teamMembers"))
+                        raw_run_splits = _split_select(c, "submission_id=?", [run["submissionId"]])
+                        run_splits = [_split_dict(item) for item in sorted(raw_run_splits, key=lambda item: int(item[1]))]
+                        run["splits"] = run_splits
+                        world_records[scope_key] = run
+                for benchmark in benchmarks:
+                    scope_key = benchmark["context"] + "|" + benchmark["serverType"]
+                    world_record = world_records.get(scope_key)
+                    benchmark["worldRecord"] = world_record
+                    benchmark["worldRecordTimeMs"] = int(world_record["timeMs"]) if world_record else None
+                rows = [row for benchmark in benchmarks for row in benchmark["rows"]]
+                return 200, {"ok": True, "source": "community", "verified": False,
+                             "context": context, "serverType": server_type, "kind": "bks",
+                             "benchmarks": benchmarks, "rows": rows}
             if kind == "splits":
                 split_clauses, split_args = [], []
                 if context != "ALL":
@@ -476,10 +628,82 @@ def handle_get(path, query, db_fn):
             runs = _run_select(c, " AND ".join(group_clauses), group_args)
             completed = _best_runs([row for row in runs if bool(row[15])])
             splits = _split_select(c, " AND ".join(group_clauses), group_args)
+
+            # The group profile shows global BKS and per-member best sections.
+            global_clauses, global_args = [], []
+            if context != "ALL":
+                global_clauses.append("context=?"); global_args.append(context)
+            if server_type != "ALL":
+                global_clauses.append("server_type=?"); global_args.append(server_type)
+            global_splits = _split_select(c, " AND ".join(global_clauses), global_args)
+            required = _required_objectives_from_completed_runs(c, context, server_type)
+            global_benchmarks = _best_known_split_benchmarks(global_splits, required)
+            global_best_splits = [row for benchmark in global_benchmarks for row in benchmark["rows"]]
+
+            team_members = {}
+            for raw_group_run in runs:
+                group_run = _run_row(raw_group_run)
+                members = _json_members(group_run.get("teamMembers"))
+                for member in members:
+                    member_uuid = str(member.get("uuid", "")).strip().lower()
+                    if member_uuid and member_uuid not in team_members:
+                        team_members[member_uuid] = str(member.get("name", "Unknown"))
+
+            member_best = {}
+            if team_members:
+                clauses = ["(" + " OR ".join(["team_members_json LIKE ?" for _ in team_members]) + ")"]
+                args = ["%" + member_uuid + "%" for member_uuid in team_members]
+                if context != "ALL":
+                    clauses.append("context=?"); args.append(context)
+                if server_type != "ALL":
+                    clauses.append("server_type=?"); args.append(server_type)
+                related_runs = _run_select(c, " AND ".join(clauses), args)
+                roster_ids = set(team_members.keys())
+                for raw_related in related_runs:
+                    related = _run_row(raw_related)
+                    related_members = _json_members(related.get("teamMembers"))
+                    observed_ids = {str(member.get("uuid", "")).strip().lower() for member in related_members}
+                    observed_ids.discard("")
+                    matching_members = roster_ids.intersection(observed_ids)
+                    if not matching_members:
+                        continue
+                    related_splits = _split_select(c, "submission_id=?", [related["submissionId"]])
+                    for raw_member_split in related_splits:
+                        split = _split_dict(raw_member_split)
+                        split["teamMembers"] = _json_members(split.get("teamMembers"))
+                        if int(split.get("splitMs") or 0) <= 0:
+                            continue
+                        key_base = (str(split["context"]).upper(), str(split["serverType"]).upper(),
+                                    str(split["objective"]).casefold())
+                        for member_uuid in matching_members:
+                            key = (member_uuid,) + key_base
+                            candidate = {
+                                "uuid": member_uuid,
+                                "name": team_members.get(member_uuid, "Unknown"),
+                                "context": split["context"],
+                                "serverType": split["serverType"],
+                                "objective": split["objective"],
+                                "splitMs": int(split["splitMs"]),
+                                "elapsedMs": int(split["elapsedMs"]),
+                                "teamSignature": split["teamSignature"],
+                                "runId": split["runId"],
+                                "submissionId": split["submissionId"],
+                                "submittedAt": int(split["submittedAt"]),
+                                "runStatus": split["runStatus"],
+                            }
+                            prior = member_best.get(key)
+                            if prior is None or (candidate["splitMs"], candidate["elapsedMs"], -candidate["submittedAt"]) < (
+                                    int(prior["splitMs"]), int(prior["elapsedMs"]), -int(prior["submittedAt"])):
+                                member_best[key] = candidate
+            member_best_splits = sorted(member_best.values(), key=lambda item: (
+                item["context"], item["serverType"], item["objective"].casefold(), item["name"].casefold()))
+
             return 200, {"ok": True, "source": "community", "verified": False,
                          "context": context, "serverType": server_type, "kind": "group",
                          "run": completed[0] if completed else None,
                          "splits": _best_splits(splits),
+                         "globalBestSplits": global_best_splits,
+                         "memberBestSplits": member_best_splits,
                          "attemptCount": len(runs)}
         finally:
             c.close()
