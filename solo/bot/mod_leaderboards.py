@@ -37,17 +37,23 @@ def _ensure_schema(c):
         kit TEXT NOT NULL DEFAULT 'Unknown',
         stage INTEGER NOT NULL,
         time_ms INTEGER NOT NULL DEFAULT 0,
-        submitted_at INTEGER NOT NULL
+        submitted_at INTEGER NOT NULL,
+        started_at INTEGER NOT NULL DEFAULT 0
     )""")
+    # Backward-compatible migration for Oracle databases created by older releases.
+    columns = {row[1] for row in c.execute("PRAGMA table_info(community_mod_runs)").fetchall()}
+    if "started_at" not in columns:
+        c.execute("ALTER TABLE community_mod_runs ADD COLUMN started_at INTEGER NOT NULL DEFAULT 0")
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_mod_board ON community_mod_runs(context,game,mode,stage DESC,time_ms ASC)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_mod_player ON community_mod_runs(uuid,submitted_at DESC)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_community_mod_start ON community_mod_runs(uuid,context,started_at)")
     c.commit()
 
 
 def _entry(row, context=None, source="community"):
     # Caller selects this stable shape for community and authoritative records.
-    keys = ("uuid", "name", "context", "game", "mode", "pattern", "kit", "stage", "timeMs", "submittedAt")
-    item = dict(zip(keys, row[:10]))
+    keys = ("uuid", "name", "context", "game", "mode", "pattern", "kit", "stage", "timeMs", "submittedAt", "startedAt")
+    item = dict(zip(keys, row[:11]))
     if context is not None:
         item["context"] = context
     item["source"] = source
@@ -105,7 +111,7 @@ def handle_get(path, query, db_fn, allowed_modes):
                             raise ValueError("invalid kit filter")
                         where.append("kit=?")
                         args.append(kit)
-                    sql = """SELECT uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at
+                    sql = """SELECT uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at
                              FROM community_mod_runs WHERE %s
                              ORDER BY stage DESC,time_ms ASC,submitted_at ASC,name COLLATE NOCASE ASC
                              LIMIT 100""" % " AND ".join(where)
@@ -142,7 +148,7 @@ def handle_get(path, query, db_fn, allowed_modes):
                     if kit not in _ALLOWED_KITS - {"Unknown"}:
                         raise ValueError("invalid kit filter")
                     where.append("kit=?"); args.append(kit)
-                rows = c.execute("""SELECT uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at
+                rows = c.execute("""SELECT uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at
                                      FROM community_mod_runs WHERE %s
                                      ORDER BY stage DESC,time_ms ASC,submitted_at DESC LIMIT 500""" % " AND ".join(where),
                                  tuple(args)).fetchall()
@@ -289,6 +295,12 @@ def handle_submit(body, client_ip, db_fn):
             raise ValueError("stage must be between 1 and 500")
         if time_ms < 0 or time_ms > 24 * 60 * 60 * 1000:
             raise ValueError("invalid run time")
+        try:
+            started_at = int(payload.get("startedAt", 0))
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("startedAt must be Unix epoch milliseconds")
+        if isinstance(payload.get("startedAt", 0), bool) or not 0 <= started_at <= 9_999_999_999_999:
+            raise ValueError("startedAt must be between 0 and 9999999999999 milliseconds (0 means not supplied)")
         now = int(time.time() * 1000)
         # Check idempotency before rate limiting: a retry after a lost HTTP response
         # must receive an ACK rather than being stuck behind the per-player throttle.
@@ -312,9 +324,9 @@ def handle_submit(body, client_ip, db_fn):
                     return 429, {"ok": False, "error": "player_rate_limited"}
 
                 c.execute("""INSERT INTO community_mod_runs
-                             (submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at)
-                             VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                          (sid, player_uuid, name, context, game, mode, pattern, kit, stage, time_ms, now))
+                             (submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                          (sid, player_uuid, name, context, game, mode, pattern, kit, stage, time_ms, now, started_at))
                 c.commit()
                 _IP_LAST[client_ip] = monotonic
                 _PLAYER_LAST[player_uuid] = monotonic
