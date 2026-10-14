@@ -38,6 +38,7 @@ class ModLeaderboardTests(unittest.TestCase):
             "submissionId": str(uuid.uuid4()), "uuid": player_uuid, "name": "MazeRunner",
             "context": "MPS", "game": "Monster Maze", "mode": "modern",
             "pattern": 1, "kit": "Jumper", "stage": 27, "timeMs": 183000,
+            "startedAt": 1760000000123,
         }
         status, response = mod_leaderboards.handle_submit(
             json.dumps(payload).encode("utf-8"), "test-ip-community", self.db
@@ -56,6 +57,21 @@ class ModLeaderboardTests(unittest.TestCase):
         self.assertEqual(len(board["rows"]), 1)
         self.assertEqual(board["rows"][0]["stage"], 27)
         self.assertEqual(board["rows"][0]["context"], "MPS")
+        self.assertEqual(board["rows"][0]["startedAt"], 1760000000123)
+
+    def test_legacy_community_schema_is_migrated_with_unknown_start_time(self):
+        c = self.db()
+        c.execute("""CREATE TABLE community_mod_runs (
+            submission_id TEXT PRIMARY KEY, uuid TEXT NOT NULL, name TEXT NOT NULL,
+            context TEXT NOT NULL, game TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'unknown',
+            pattern INTEGER NOT NULL DEFAULT -1, kit TEXT NOT NULL DEFAULT 'Unknown',
+            stage INTEGER NOT NULL, time_ms INTEGER NOT NULL DEFAULT 0, submitted_at INTEGER NOT NULL
+        )""")
+        c.commit()
+        mod_leaderboards._ensure_schema(c)
+        columns = {row[1] for row in c.execute("PRAGMA table_info(community_mod_runs)")}
+        self.assertIn("started_at", columns)
+        c.close()
 
     def test_duplicate_submission_is_acknowledged_before_rate_limit(self):
         player_uuid = str(uuid.uuid4())
