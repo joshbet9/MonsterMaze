@@ -123,6 +123,58 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(board["rows"][0]["timeMs"], 30000)
         self.assertTrue(board["rows"][0]["successful"])
 
+    def test_bks_composite_uses_best_split_per_objective_and_marks_complete(self):
+        first = self.payload()
+        second = self.payload(
+            uuid=self.member2_uuid,
+            name="RunnerB",
+            submissionId=str(uuid.uuid4()),
+            runId=str(uuid.uuid4()),
+            teamSignature="second-quartet-signature",
+            serverNode="HH-2",
+            splits=[
+                {"index": 1, "objective": "Pumpkins", "splitMs": 5000, "elapsedMs": 5000,
+                 "status": "PASSED", "completedAt": 1760000010000},
+                {"index": 2, "objective": "Graveyard", "splitMs": 22000, "elapsedMs": 27000,
+                 "status": "PASSED", "completedAt": 1760000030000},
+            ],
+        )
+        self.assertEqual(self.submit(first, "bks-ip-a")[0], 200)
+        self.assertEqual(self.submit(second, "bks-ip-b")[0], 200)
+        status, response = self.get({"kind": "bks", "context": "HH", "serverType": "STANDARD"})
+        self.assertEqual(status, 200)
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["kind"], "bks")
+        self.assertEqual(len(response["benchmarks"]), 1)
+        benchmark = response["benchmarks"][0]
+        self.assertTrue(benchmark["complete"])
+        self.assertEqual(benchmark["requiredObjectiveCount"], 2)
+        self.assertEqual(benchmark["totalTimeMs"], 25000)
+        self.assertEqual([row["objective"] for row in benchmark["rows"]], ["Pumpkins", "Graveyard"])
+        self.assertEqual(benchmark["rows"][0]["splitMs"], 5000)
+        self.assertEqual(benchmark["rows"][0]["name"], "RunnerB")
+        self.assertEqual(benchmark["rows"][0]["compositeElapsedMs"], 5000)
+        self.assertEqual(benchmark["rows"][1]["compositeElapsedMs"], 25000)
+        self.assertFalse(benchmark["verified"])
+
+    def test_bks_is_partial_when_no_completed_run_establishes_required_route(self):
+        failed = self.payload(
+            successful=False,
+            runStatus="FAILED",
+            finishReason="Failed before finish",
+            splits=[{"index": 1, "objective": "Pumpkins", "splitMs": 4000, "elapsedMs": 4000,
+                     "status": "PASSED", "completedAt": 1760000004000}],
+            splitCount=1,
+        )
+        self.assertEqual(self.submit(failed, "bks-partial-ip")[0], 200)
+        status, response = self.get({"kind": "bks", "context": "HH", "serverType": "STANDARD"})
+        self.assertEqual(status, 200)
+        benchmark = response["benchmarks"][0]
+        self.assertFalse(benchmark["complete"])
+        self.assertIsNone(benchmark["totalTimeMs"])
+        self.assertEqual(benchmark["knownCompositeTimeMs"], 4000)
+        self.assertEqual(benchmark["requiredObjectiveCount"], 0)
+
     def test_failed_run_splits_still_contribute_to_split_board(self):
         successful = self.payload(timeMs=30000, successful=True, runStatus="COMPLETED")
         failed = self.payload(
