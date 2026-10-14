@@ -28,6 +28,9 @@ jobs:
       - name: Test JNP Mod public endpoints and filters
         working-directory: solo/bot
         run: python -m unittest -v test_mod_leaderboards.py
+      - name: Test Halloween Havoc/HHC uploads and community leaderboards
+        working-directory: solo/bot
+        run: python -m unittest -v test_mod_halloween_havoc.py
 
   build-1-8:
     name: Build Minecraft 1.8.8
