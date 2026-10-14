@@ -629,7 +629,7 @@ def handle_get(path, query, db_fn):
             completed = _best_runs([row for row in runs if bool(row[15])])
             splits = _split_select(c, " AND ".join(group_clauses), group_args)
 
-            # The group profile shows which of this team's PB splits are also global BKS.
+            # The group profile shows global BKS and per-member best sections.
             global_clauses, global_args = [], []
             if context != "ALL":
                 global_clauses.append("context=?"); global_args.append(context)
@@ -640,11 +640,70 @@ def handle_get(path, query, db_fn):
             global_benchmarks = _best_known_split_benchmarks(global_splits, required)
             global_best_splits = [row for benchmark in global_benchmarks for row in benchmark["rows"]]
 
+            team_members = {}
+            for raw_group_run in runs:
+                group_run = _run_row(raw_group_run)
+                members = _json_members(group_run.get("teamMembers"))
+                for member in members:
+                    member_uuid = str(member.get("uuid", "")).strip().lower()
+                    if member_uuid and member_uuid not in team_members:
+                        team_members[member_uuid] = str(member.get("name", "Unknown"))
+
+            member_best = {}
+            if team_members:
+                clauses = ["(" + " OR ".join(["team_members_json LIKE ?" for _ in team_members]) + ")"]
+                args = ["%" + member_uuid + "%" for member_uuid in team_members]
+                if context != "ALL":
+                    clauses.append("context=?"); args.append(context)
+                if server_type != "ALL":
+                    clauses.append("server_type=?"); args.append(server_type)
+                related_runs = _run_select(c, " AND ".join(clauses), args)
+                roster_ids = set(team_members.keys())
+                for raw_related in related_runs:
+                    related = _run_row(raw_related)
+                    related_members = _json_members(related.get("teamMembers"))
+                    observed_ids = {str(member.get("uuid", "")).strip().lower() for member in related_members}
+                    observed_ids.discard("")
+                    matching_members = roster_ids.intersection(observed_ids)
+                    if not matching_members:
+                        continue
+                    related_splits = _split_select(c, "submission_id=?", [related["submissionId"]])
+                    for raw_member_split in related_splits:
+                        split = _split_dict(raw_member_split)
+                        split["teamMembers"] = _json_members(split.get("teamMembers"))
+                        if int(split.get("splitMs") or 0) <= 0:
+                            continue
+                        key_base = (str(split["context"]).upper(), str(split["serverType"]).upper(),
+                                    str(split["objective"]).casefold())
+                        for member_uuid in matching_members:
+                            key = (member_uuid,) + key_base
+                            candidate = {
+                                "uuid": member_uuid,
+                                "name": team_members.get(member_uuid, "Unknown"),
+                                "context": split["context"],
+                                "serverType": split["serverType"],
+                                "objective": split["objective"],
+                                "splitMs": int(split["splitMs"]),
+                                "elapsedMs": int(split["elapsedMs"]),
+                                "teamSignature": split["teamSignature"],
+                                "runId": split["runId"],
+                                "submissionId": split["submissionId"],
+                                "submittedAt": int(split["submittedAt"]),
+                                "runStatus": split["runStatus"],
+                            }
+                            prior = member_best.get(key)
+                            if prior is None or (candidate["splitMs"], candidate["elapsedMs"], -candidate["submittedAt"]) < (
+                                    int(prior["splitMs"]), int(prior["elapsedMs"]), -int(prior["submittedAt"])):
+                                member_best[key] = candidate
+            member_best_splits = sorted(member_best.values(), key=lambda item: (
+                item["context"], item["serverType"], item["objective"].casefold(), item["name"].casefold()))
+
             return 200, {"ok": True, "source": "community", "verified": False,
                          "context": context, "serverType": server_type, "kind": "group",
                          "run": completed[0] if completed else None,
                          "splits": _best_splits(splits),
                          "globalBestSplits": global_best_splits,
+                         "memberBestSplits": member_best_splits,
                          "attemptCount": len(runs)}
         finally:
             c.close()

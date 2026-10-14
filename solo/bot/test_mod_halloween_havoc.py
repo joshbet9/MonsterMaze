@@ -224,6 +224,8 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertFalse(best_pumpkin["runSuccessful"])
         self.assertTrue(any(row["objective"] == "Pumpkins" and int(row["splitMs"]) == 3000
                             for row in group["globalBestSplits"]))
+        self.assertTrue(any(row["objective"] == "Pumpkins" and int(row["splitMs"]) == 3000
+                            and row["uuid"] == self.member1_uuid for row in group["memberBestSplits"]))
 
 
     def test_personal_history_returns_all_runs_and_splits_newest_first(self):
