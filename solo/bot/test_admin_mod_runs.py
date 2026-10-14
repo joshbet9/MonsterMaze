@@ -44,7 +44,8 @@ class AdminModRunsTests(unittest.TestCase):
             submission_id TEXT PRIMARY KEY, uuid TEXT NOT NULL, name TEXT NOT NULL,
             context TEXT NOT NULL, game TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'unknown',
             pattern INTEGER NOT NULL DEFAULT -1, kit TEXT NOT NULL DEFAULT 'Unknown',
-            stage INTEGER NOT NULL, time_ms INTEGER NOT NULL DEFAULT 0, submitted_at INTEGER NOT NULL
+            stage INTEGER NOT NULL, time_ms INTEGER NOT NULL DEFAULT 0, submitted_at INTEGER NOT NULL,
+            started_at INTEGER NOT NULL DEFAULT 0
         )""")
         conn.execute("""CREATE TABLE runs (
             platform TEXT NOT NULL, mode TEXT NOT NULL, pattern INTEGER NOT NULL, kit TEXT NOT NULL,
@@ -64,9 +65,9 @@ class AdminModRunsTests(unittest.TestCase):
             "HH-1", members_json, self.hh_player, "Pumpkins", 30000, 30000,
             "PASSED", 1, "COMPLETED", 3000
         ))
-        conn.executemany("INSERT INTO community_mod_runs VALUES(?,?,?,?,?,?,?,?,?,?,?)", [
-            (self.ids[0], self.players[0], "MazeRunner", "MPS", "Monster Maze", "modern", 1, "Jumper", 22, 120000, 1000),
-            (self.ids[1], self.players[1], "OtherRunner", "MIN", "Monster Maze", "speed", 2, "Maverick", 31, 130000, 2000),
+        conn.executemany("INSERT INTO community_mod_runs VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", [
+            (self.ids[0], self.players[0], "MazeRunner", "MPS", "Monster Maze", "modern", 1, "Jumper", 22, 120000, 1000, 1760000000123),
+            (self.ids[1], self.players[1], "OtherRunner", "MIN", "Monster Maze", "speed", 2, "Maverick", 31, 130000, 2000, 1760000010456),
         ])
         conn.commit()
         conn.close()
@@ -78,6 +79,14 @@ class AdminModRunsTests(unittest.TestCase):
         rows = admin.list_entries(self.db_path, {"context": "mps", "name": "mazer"})
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["submission_id"], self.ids[0])
+
+    def test_start_time_is_returned_and_formatted_for_deduplication(self):
+        rows = admin.list_entries(self.db_path, {"context": "mps", "name": "mazer"})
+        self.assertEqual(rows[0]["started_at"], 1760000000123)
+        self.assertIn("UTC", admin.format_run_start(rows[0]["started_at"]))
+        self.assertEqual(admin.format_run_start(0), "unknown")
+        entry = admin.find_entry(self.db_path, self.ids[0])
+        self.assertEqual(entry["started_at"], 1760000000123)
 
     def test_edit_creates_backup_and_audit_record(self):
         before, after, backup = admin.edit_entry(
