@@ -33,6 +33,21 @@ EDITABLE_FIELDS = {
     "uuid": "uuid", "name": "name", "context": "context", "mode": "mode",
     "pattern": "pattern", "kit": "kit", "stage": "stage", "time_ms": "time_ms",
 }
+HH_REQUIRED_COLUMNS = {
+    "submission_id", "run_id", "uuid", "name", "context", "server_type", "server_node",
+    "started_at", "ended_at", "time_ms", "reported_time_ms", "split_count",
+    "team_members_json", "team_signature", "shared_run_key", "finish_reason",
+    "successful", "run_status", "submitted_at",
+}
+HH_SPLIT_REQUIRED_COLUMNS = {
+    "submission_id", "split_index", "run_id", "uuid", "name", "context", "server_type",
+    "server_node", "team_members_json", "team_signature", "objective", "split_ms",
+    "elapsed_ms", "status", "run_successful", "run_status", "submitted_at",
+}
+HH_EDITABLE_FIELDS = {
+    "name", "context", "server_type", "server_node", "time_ms",
+    "reported_time_ms", "successful", "run_status", "finish_reason",
+}
 
 
 class AdminError(Exception):
@@ -335,6 +350,304 @@ def delete_entry(
     finally:
         conn.close()
 
+
+
+
+def connect_hh_db(db_path: str | Path) -> sqlite3.Connection:
+    path = Path(db_path)
+    if not path.is_file():
+        raise AdminError(f"Database file does not exist: {path}; refusing to create a new database")
+    conn = sqlite3.connect(str(path), timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=30000")
+    run_columns = {row["name"] for row in conn.execute("PRAGMA table_info(community_hh_runs)")}
+    split_columns = {row["name"] for row in conn.execute("PRAGMA table_info(community_hh_splits)")}
+    missing_runs = HH_REQUIRED_COLUMNS - run_columns
+    missing_splits = HH_SPLIT_REQUIRED_COLUMNS - split_columns
+    if missing_runs or missing_splits:
+        conn.close()
+        details = []
+        if missing_runs:
+            details.append("community_hh_runs missing: " + ", ".join(sorted(missing_runs)))
+        if missing_splits:
+            details.append("community_hh_splits missing: " + ", ".join(sorted(missing_splits)))
+        raise AdminError("Halloween Havoc community schema is unavailable; " + "; ".join(details))
+    return conn
+
+
+def _hh_run_select(conn: sqlite3.Connection, where: str = "", args: tuple[Any, ...] = ()) -> sqlite3.Row | None:
+    sql = """SELECT submission_id,run_id,uuid,name,context,server_type,server_node,
+                    started_at,ended_at,time_ms,reported_time_ms,split_count,team_members_json,
+                    team_signature,shared_run_key,finish_reason,successful,run_status,submitted_at
+             FROM community_hh_runs"""
+    if where:
+        sql += " WHERE " + where
+    return conn.execute(sql, args).fetchone()
+
+
+def _hh_entry(conn: sqlite3.Connection, submission_id: str) -> dict[str, Any] | None:
+    run = _hh_run_select(conn, "lower(submission_id)=?", (canonical_submission_id(submission_id),))
+    if run is None:
+        return None
+    entry = row_dict(run)
+    try:
+        entry["teamMembers"] = json.loads(entry.pop("team_members_json") or "[]")
+    except (json.JSONDecodeError, TypeError):
+        entry["teamMembers"] = []
+    entry["successful"] = bool(entry["successful"])
+    entry["splits"] = [
+        row_dict(split) for split in conn.execute(
+            """SELECT split_index,objective,split_ms,elapsed_ms,status,run_successful,run_status
+               FROM community_hh_splits WHERE lower(submission_id)=? ORDER BY split_index ASC""",
+            (entry["submission_id"].lower(),),
+        ).fetchall()
+    ]
+    return entry
+
+
+def find_hh_entry(db_path: str | Path, submission_id: str) -> dict[str, Any] | None:
+    canonical_submission_id(submission_id)
+    conn = connect_hh_db(db_path)
+    try:
+        return _hh_entry(conn, submission_id)
+    finally:
+        conn.close()
+
+
+def list_hh_entries(
+    db_path: str | Path,
+    filters: dict[str, Any] | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    if not 1 <= int(limit) <= 500:
+        raise AdminError("limit must be between 1 and 500")
+    if int(offset) < 0:
+        raise AdminError("offset must be zero or greater")
+    filters = filters or {}
+    clauses: list[str] = []
+    args: list[Any] = []
+    if filters.get("submission_id"):
+        clauses.append("lower(submission_id)=?")
+        args.append(canonical_submission_id(filters["submission_id"]))
+    if filters.get("uuid"):
+        clauses.append("lower(uuid)=?")
+        args.append(canonical_uuid(filters["uuid"], "player UUID"))
+    if filters.get("context"):
+        context = str(filters["context"]).strip().upper()
+        if context not in {"HH", "HHC"}:
+            raise AdminError("HH context must be HH or HHC")
+        clauses.append("context=?")
+        args.append(context)
+    if filters.get("server_type"):
+        server_type = str(filters["server_type"]).strip().upper()
+        if server_type not in {"STANDARD", "MPS"}:
+            raise AdminError("server type must be STANDARD or MPS")
+        clauses.append("server_type=?")
+        args.append(server_type)
+    if filters.get("name"):
+        name = str(filters["name"]).strip()
+        if not name:
+            raise AdminError("name filter cannot be blank")
+        escaped = name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        clauses.append("name LIKE ? ESCAPE '\\'")
+        args.append("%" + escaped + "%")
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    conn = connect_hh_db(db_path)
+    try:
+        rows = conn.execute(
+            """SELECT submission_id,run_id,uuid,name,context,server_type,server_node,
+                      time_ms,reported_time_ms,split_count,team_signature,successful,run_status,submitted_at
+               FROM community_hh_runs""" + where +
+            " ORDER BY submitted_at DESC,name COLLATE NOCASE ASC,submission_id ASC LIMIT ? OFFSET ?",
+            tuple(args + [int(limit), int(offset)]),
+        ).fetchall()
+        return [row_dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def normalize_hh_changes(changes: dict[str, Any], existing: dict[str, Any]) -> dict[str, Any]:
+    if not changes:
+        raise AdminError("Specify at least one HH/HHC field to change")
+    unknown = set(changes) - HH_EDITABLE_FIELDS
+    if unknown:
+        raise AdminError("Fields cannot be changed by this tool: " + ", ".join(sorted(unknown)))
+    normalized: dict[str, Any] = {}
+    for field, raw in changes.items():
+        if field == "name":
+            name = str(raw).strip()
+            if not NAME_RE.fullmatch(name):
+                raise AdminError("name must be a Minecraft username containing 1-16 letters, digits, or underscores")
+            normalized[field] = name
+        elif field == "context":
+            context = str(raw).strip().upper()
+            if context not in {"HH", "HHC"}:
+                raise AdminError("context must be HH or HHC")
+            normalized[field] = context
+        elif field == "server_type":
+            server_type = str(raw).strip().upper()
+            if server_type not in {"STANDARD", "MPS"}:
+                raise AdminError("server_type must be STANDARD or MPS")
+            normalized[field] = server_type
+        elif field == "server_node":
+            normalized[field] = _safe_admin_text(raw, "server_node", 80, allow_empty=True)
+        elif field == "finish_reason":
+            normalized[field] = _safe_admin_text(raw, "finish_reason", 240, allow_empty=True)
+        elif field == "time_ms":
+            normalized[field] = _admin_bounded_int(raw, "time_ms", 1, 86_400_000)
+        elif field == "reported_time_ms":
+            normalized[field] = _admin_bounded_int(raw, "reported_time_ms", 0, 86_400_000)
+        elif field == "successful":
+            if isinstance(raw, bool):
+                normalized[field] = raw
+            elif str(raw).strip().lower() in {"true", "1", "yes"}:
+                normalized[field] = True
+            elif str(raw).strip().lower() in {"false", "0", "no"}:
+                normalized[field] = False
+            else:
+                raise AdminError("successful must be true or false")
+        elif field == "run_status":
+            status = str(raw).strip().upper()
+            if status not in {"COMPLETED", "FAILED", "PARTIAL"}:
+                raise AdminError("run_status must be COMPLETED, FAILED, or PARTIAL")
+            normalized[field] = status
+
+    current_success = bool(existing["successful"])
+    current_status = str(existing["run_status"]).upper()
+    success = normalized.get("successful", current_success)
+    status = normalized.get("run_status", current_status)
+    if "successful" in normalized and "run_status" not in normalized:
+        status = "COMPLETED" if success else ("PARTIAL" if current_status == "COMPLETED" else current_status)
+    elif "run_status" in normalized and "successful" not in normalized:
+        success = status == "COMPLETED"
+    if bool(success) != (status == "COMPLETED"):
+        raise AdminError("successful must be true exactly when run_status is COMPLETED")
+    if "successful" in normalized or "run_status" in normalized:
+        normalized["successful"] = bool(success)
+        normalized["run_status"] = status
+    return normalized
+
+
+def _admin_bounded_int(raw: Any, field: str, minimum: int, maximum: int) -> int:
+    try:
+        value = int(raw)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise AdminError(f"{field} must be an integer") from exc
+    if not minimum <= value <= maximum:
+        raise AdminError(f"{field} must be between {minimum} and {maximum}")
+    return value
+
+
+def _safe_admin_text(raw: Any, field: str, maximum: int, allow_empty: bool = False) -> str:
+    value = str(raw).strip()
+    if (not value and not allow_empty) or len(value) > maximum or any(ord(ch) < 32 for ch in value):
+        raise AdminError(f"{field} is empty, too long, or contains control characters")
+    return value
+
+
+def ensure_hh_audit_schema(conn: sqlite3.Connection) -> None:
+    conn.execute("""CREATE TABLE IF NOT EXISTS community_hh_run_admin_audit (
+        audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action TEXT NOT NULL,
+        submission_id TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        occurred_at INTEGER NOT NULL,
+        before_json TEXT NOT NULL,
+        after_json TEXT
+    )""")
+
+
+def _audit_hh_action(conn: sqlite3.Connection, action: str, sid: str, actor: str,
+                     before: dict[str, Any], after: dict[str, Any] | None) -> None:
+    ensure_hh_audit_schema(conn)
+    conn.execute(
+        """INSERT INTO community_hh_run_admin_audit
+           (action,submission_id,actor,occurred_at,before_json,after_json) VALUES(?,?,?,?,?,?)""",
+        (action, sid, actor, int(datetime.now(timezone.utc).timestamp() * 1000),
+         json.dumps(before, sort_keys=True), json.dumps(after, sort_keys=True) if after is not None else None),
+    )
+
+
+def edit_hh_entry(
+    db_path: str | Path, backup_dir: str | Path, submission_id: str, changes: dict[str, Any],
+    *, confirmed: bool = False, actor: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], Path]:
+    if not confirmed:
+        raise AdminError("HH/HHC edit cancelled: explicit confirmation is required")
+    sid = canonical_submission_id(submission_id)
+    conn = connect_hh_db(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        before = _hh_entry(conn, sid)
+        if before is None:
+            raise AdminError(f"No HH/HHC run found with submission ID {sid}")
+        normalized = normalize_hh_changes(changes, before)
+        backup_path = make_backup(db_path, backup_dir, "hh-edit")
+        team_members = before.get("teamMembers", [])
+        if "name" in normalized:
+            for member in team_members:
+                if str(member.get("uuid", "")).lower() == str(before["uuid"]).lower():
+                    member["name"] = normalized["name"]
+            normalized["team_members_json"] = json.dumps(team_members, separators=(",", ":"), ensure_ascii=False)
+        if "successful" in normalized:
+            normalized["successful"] = int(normalized["successful"])
+
+        assignments = ", ".join(f"{field}=?" for field in normalized if field not in {"team_members_json"})
+        fields = [field for field in normalized if field != "team_members_json"]
+        values = [normalized[field] for field in fields] + [sid]
+        conn.execute(f"UPDATE community_hh_runs SET {assignments}{', team_members_json=?' if 'team_members_json' in normalized else ''} WHERE lower(submission_id)=?",
+                     values + ([normalized["team_members_json"]] if "team_members_json" in normalized else []))
+        split_updates = {}
+        for field in ("name", "context", "server_type", "server_node"):
+            if field in normalized:
+                split_updates[field] = normalized[field]
+        if "team_members_json" in normalized:
+            split_updates["team_members_json"] = normalized["team_members_json"]
+        if "successful" in normalized:
+            split_updates["run_successful"] = normalized["successful"]
+            split_updates["run_status"] = normalized["run_status"]
+        elif "run_status" in normalized:
+            split_updates["run_status"] = normalized["run_status"]
+        if split_updates:
+            set_clause = ", ".join(f"{field}=?" for field in split_updates)
+            conn.execute(f"UPDATE community_hh_splits SET {set_clause} WHERE lower(submission_id)=?",
+                         list(split_updates.values()) + [sid])
+        after = _hh_entry(conn, sid)
+        _audit_hh_action(conn, "edit", sid, actor or getpass.getuser(), before, after)
+        conn.commit()
+        return before, after, backup_path
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def delete_hh_entry(
+    db_path: str | Path, backup_dir: str | Path, submission_id: str,
+    *, confirmed: bool = False, actor: str | None = None,
+) -> tuple[dict[str, Any], Path]:
+    if not confirmed:
+        raise AdminError("HH/HHC delete cancelled: explicit confirmation is required")
+    sid = canonical_submission_id(submission_id)
+    conn = connect_hh_db(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        before = _hh_entry(conn, sid)
+        if before is None:
+            raise AdminError(f"No HH/HHC run found with submission ID {sid}")
+        backup_path = make_backup(db_path, backup_dir, "hh-delete")
+        conn.execute("DELETE FROM community_hh_splits WHERE lower(submission_id)=?", (sid,))
+        conn.execute("DELETE FROM community_hh_runs WHERE lower(submission_id)=?", (sid,))
+        _audit_hh_action(conn, "delete", sid, actor or getpass.getuser(), before, None)
+        conn.commit()
+        return before, backup_path
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 def format_time_ms(value: int) -> str:
     minutes, rem = divmod(int(value), 60_000)
