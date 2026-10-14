@@ -99,6 +99,7 @@ def _ensure_schema(c):
         elapsed_ms INTEGER NOT NULL,
         status TEXT NOT NULL DEFAULT 'PASSED',
         run_successful INTEGER NOT NULL DEFAULT 0,
+        run_status TEXT NOT NULL DEFAULT 'PARTIAL',
         submitted_at INTEGER NOT NULL,
         PRIMARY KEY (submission_id, split_index)
     )""")
@@ -284,12 +285,12 @@ def handle_submit(body, client_ip, db_fn):
                 c.execute("""INSERT INTO community_hh_splits (
                     submission_id,split_index,run_id,uuid,name,context,server_type,server_node,
                     team_members_json,team_signature,objective,split_ms,elapsed_ms,status,
-                    run_successful,submitted_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
+                    run_successful,run_status,submitted_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
                     run["submission_id"],split["index"],run["run_id"],run["uuid"],run["name"],
                     run["context"],run["server_type"],run["server_node"],run["team_members_json"],
                     run["team_signature"],split["objective"],split["splitMs"],split["elapsedMs"],
-                    split["status"],run["successful"],run["submitted_at"]
+                    split["status"],run["successful"],run["run_status"],run["submitted_at"]
                 ))
             c.commit()
             _PLAYER_LAST[player_uuid] = now
@@ -319,6 +320,7 @@ def _run_row(row):
             "successful", "runStatus", "submittedAt", "teamMembers")
     data = dict(zip(keys, row))
     data["successful"] = bool(data["successful"])
+    data["isMpsRun"] = str(data["serverType"]).upper() == "MPS"
     data["verified"] = False
     data["source"] = "community"
     return data
@@ -338,9 +340,12 @@ def _run_select(c, where_sql, args):
 def _split_dict(row):
     keys = ("submissionId", "splitIndex", "runId", "uuid", "name", "context", "serverType",
             "serverNode", "teamSignature", "objective", "splitMs", "elapsedMs", "status",
-            "runSuccessful", "submittedAt", "teamMembers")
+            "runSuccessful", "runStatus", "submittedAt", "teamMembers")
     data = dict(zip(keys, row))
     data["runSuccessful"] = bool(data["runSuccessful"])
+    data["successful"] = data["runSuccessful"]
+    data["isMpsRun"] = str(data["serverType"]).upper() == "MPS"
+    data["index"] = data["splitIndex"]
     data["verified"] = False
     data["source"] = "community"
     return data
@@ -349,7 +354,7 @@ def _split_dict(row):
 def _split_select(c, where_sql, args):
     sql = """SELECT submission_id,split_index,run_id,uuid,name,context,server_type,
                      server_node,team_signature,objective,split_ms,elapsed_ms,status,
-                     run_successful,submitted_at,team_members_json
+                     run_successful,run_status,submitted_at,team_members_json
              FROM community_hh_splits"""
     if where_sql:
         sql += " WHERE " + where_sql
