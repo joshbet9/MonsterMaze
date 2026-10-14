@@ -33,6 +33,14 @@ Context should be sent as `MPS` or `MIN` (the backend also accepts `ARCADE`/ `PU
 
 Each upload must have a valid UUID `submissionId`. The client derives a stable UUID from the logical run/player pair and persists pending JSON payloads in a local outbox. The outbox is removed only after the API acknowledges the upload. Retries reuse the same ID, so a lost response cannot create a second row. A local outbox is not proof that the server has received a score.
 
+## Halloween Havoc/HHC community API
+
+The shared Oracle API now has a separate upload route, `POST /api/v1/mod/halloween-havoc/runs`, and read route, `GET /api/v1/mod/halloween-havoc/leaderboard`. The payload includes one HH/HHC run and all passed objective splits. Run attempts are stored in `community_hh_runs`; split rows are stored in `community_hh_splits`. They remain unverified community data and never enter the Monster Maze authoritative PB/MMR tables.
+
+Full-run boards count only `successful: true` / `runStatus: COMPLETED` runs, with the best result per team shown. Objective-split boards intentionally include valid passed splits even when the attempt later failed or was partial. Group profile requests return the team's best completed run and fastest known split for each objective across all its uploads.
+
+The client should delete the matching local HH/HHC run only after the API replies with `ok: true` and `accepted: true`. A timeout or non-acceptance keeps the local run so it can be retried with the same `submissionId`; duplicate retries are acknowledged idempotently. `MM_API_TOKEN` is not sent by the client and must remain server-side.
+
 ## Oracle-only release flow (JNP Mod API)
 
 For changes that should reach only the Oracle-hosted bot/API, use a dedicated tag such as `oracle-v1.3.10`. The `.github/workflows/deploy-oracle-only.yml` workflow accepts only `oracle-vX.Y.Z` tags (or an explicitly supplied tag via manual dispatch), checks that the tagged commit is already contained in `main`, runs the focused JNP Mod leaderboard API unit tests, verifies the Oracle SSH/service prerequisites, and calls the existing Oracle deployment script.
