@@ -106,8 +106,7 @@ def find_entry(db_path: str | Path, submission_id: str) -> dict[str, Any] | None
     conn = connect_db(db_path)
     try:
         return row_dict(conn.execute(
-            "SELECT submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at "
-            "FROM community_mod_runs WHERE lower(submission_id)=?", (sid,)
+            f"SELECT {mod_select_columns(conn)} FROM community_mod_runs WHERE lower(submission_id)=?", (sid,)
         ).fetchone())
     finally:
         conn.close()
@@ -154,14 +153,13 @@ def list_entries(
         args.append("%" + escaped + "%")
 
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-    query = (
-        "SELECT submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at "
-        "FROM community_mod_runs" + where +
-        " ORDER BY submitted_at DESC, name COLLATE NOCASE ASC, submission_id ASC LIMIT ? OFFSET ?"
-    )
     args.extend((int(limit), int(offset)))
     conn = connect_db(db_path)
     try:
+        query = (
+            f"SELECT {mod_select_columns(conn)} FROM community_mod_runs" + where +
+            " ORDER BY submitted_at DESC, name COLLATE NOCASE ASC, submission_id ASC LIMIT ? OFFSET ?"
+        )
         return [row_dict(row) for row in conn.execute(query, args).fetchall()]
     finally:
         conn.close()
