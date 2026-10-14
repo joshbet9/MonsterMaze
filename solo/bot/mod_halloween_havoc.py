@@ -628,10 +628,23 @@ def handle_get(path, query, db_fn):
             runs = _run_select(c, " AND ".join(group_clauses), group_args)
             completed = _best_runs([row for row in runs if bool(row[15])])
             splits = _split_select(c, " AND ".join(group_clauses), group_args)
+
+            # The group profile shows which of this team's PB splits are also global BKS.
+            global_clauses, global_args = [], []
+            if context != "ALL":
+                global_clauses.append("context=?"); global_args.append(context)
+            if server_type != "ALL":
+                global_clauses.append("server_type=?"); global_args.append(server_type)
+            global_splits = _split_select(c, " AND ".join(global_clauses), global_args)
+            required = _required_objectives_from_completed_runs(c, context, server_type)
+            global_benchmarks = _best_known_split_benchmarks(global_splits, required)
+            global_best_splits = [row for benchmark in global_benchmarks for row in benchmark["rows"]]
+
             return 200, {"ok": True, "source": "community", "verified": False,
                          "context": context, "serverType": server_type, "kind": "group",
                          "run": completed[0] if completed else None,
                          "splits": _best_splits(splits),
+                         "globalBestSplits": global_best_splits,
                          "attemptCount": len(runs)}
         finally:
             c.close()
