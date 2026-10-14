@@ -141,6 +141,20 @@ if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/leaderboard?sourc
   rollback
   exit 1
 fi
+# Halloween Havoc has its own unverified dataset; check both independent boards
+# after restart so a release cannot appear healthy when the new routes are absent.
+if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/halloween-havoc/leaderboard?context=HH&kind=runs' \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("source") == "community" and d.get("verified") is False and d.get("kind") == "runs" and isinstance(d.get("rows"), list)'; then
+  echo "Public Halloween Havoc full-run health check failed." >&2
+  rollback
+  exit 1
+fi
+if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/halloween-havoc/leaderboard?context=HH&kind=splits' \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("source") == "community" and d.get("verified") is False and d.get("kind") == "splits" and isinstance(d.get("rows"), list)'; then
+  echo "Public Halloween Havoc objective-split health check failed." >&2
+  rollback
+  exit 1
+fi
 
 echo "Oracle bot deployment successful: $RELEASE_TAG"
 echo "Current release: $(readlink -f "$CURRENT")"

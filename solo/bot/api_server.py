@@ -6,6 +6,7 @@ from urllib.parse import unquote, parse_qs, urlsplit
 import competitive
 import tournament
 import mod_leaderboards
+import mod_halloween_havoc
 
 DB=INSERT_SUBMISSION=UPSERT_RUN=CREATE_COMPETITION=BOARD_ROWS=COMPETITION_ROWS=REFRESH_BOT=POST_FEED=None
 ALLOWED_MODES={"1.8":{"original","modern","speed"},"1.21":{"original","modern","classic"}}
@@ -125,6 +126,9 @@ class Handler(BaseHTTPRequestHandler):
         public_result=mod_leaderboards.handle_get(path,query,DB,ALLOWED_MODES)
         if public_result is not None:
             status,payload=public_result;send_json(self,status,payload);return
+        halloween_result=mod_halloween_havoc.handle_get(path,query,DB)
+        if halloween_result is not None:
+            status,payload=halloween_result;send_json(self,status,payload);return
         if path=="/health":send_json(self,200,{"ok":True,"service":"monstermaze-api"});return
         if not token_ok(self):send_json(self,401,{"ok":False,"error":"unauthorized"});return
         parts=path.strip("/").split("/")
@@ -178,6 +182,15 @@ class Handler(BaseHTTPRequestHandler):
                 send_json(self,status,payload);return
             except Exception as exc:
                 print(f"[mod-api] request failed: {exc}",flush=True);send_json(self,400,{"ok":False,"error":"invalid request"});return
+        if path=="/api/v1/mod/halloween-havoc/runs":
+            try:
+                length=int(self.headers.get("Content-Length","0"))
+                if length<=0:send_json(self,400,{"ok":False,"error":"invalid content length"});return
+                if length>mod_halloween_havoc._MAX_BODY:send_json(self,413,{"ok":False,"error":"payload_too_large"});return
+                status,payload=mod_halloween_havoc.handle_submit(self.rfile.read(length),self.client_address[0],DB)
+                send_json(self,status,payload);return
+            except Exception as exc:
+                print(f"[hh-mod-api] request failed: {exc}",flush=True);send_json(self,400,{"ok":False,"error":"invalid request"});return
         if not token_ok(self):send_json(self,401,{"ok":False,"error":"unauthorized"});return
         try:
             length=int(self.headers.get("Content-Length","0"))
