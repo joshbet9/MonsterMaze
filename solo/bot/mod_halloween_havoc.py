@@ -409,8 +409,8 @@ def handle_get(path, query, db_fn):
         if server_type not in ("STANDARD", "MPS", "ALL"):
             raise ValueError("serverType must be STANDARD, MPS, or ALL")
         kind = _value(query, "kind", "runs").lower()
-        if kind not in ("runs", "splits", "group"):
-            raise ValueError("kind must be runs, splits, or group")
+        if kind not in ("runs", "splits", "group", "history"):
+            raise ValueError("kind must be runs, splits, group, or history")
         objective = _value(query, "objective", "")
         if len(objective) > 120 or any(ord(ch) < 32 for ch in objective):
             raise ValueError("invalid objective filter")
@@ -425,6 +425,30 @@ def handle_get(path, query, db_fn):
                 clauses.append("context=?"); args.append(context)
             if server_type != "ALL":
                 clauses.append("server_type=?"); args.append(server_type)
+            if kind == "history":
+                # History is personal, not a leaderboard aggregate. Return recent records
+                # for this player (including successful, failed, and partial attempts) so
+                # the mod can display runs which were uploaded and acknowledged earlier.
+                player_uuid = _uuid(_value(query, "uuid", ""), "uuid")
+                history_rows = c.execute("""SELECT submission_id,run_id,uuid,name,context,server_type,
+                                                   server_node,started_at,ended_at,time_ms,reported_time_ms,
+                                                   split_count,team_signature,shared_run_key,finish_reason,
+                                                   successful,run_status,submitted_at,team_members_json
+                                            FROM community_hh_runs
+                                            WHERE lower(uuid)=?
+                                            ORDER BY ended_at DESC, submitted_at DESC
+                                            LIMIT 100""", (player_uuid,)).fetchall()
+                history = []
+                for raw_run in history_rows:
+                    run = _run_row(raw_run)
+                    run["teamMembers"] = _json_members(run.get("teamMembers"))
+                    raw_splits = _split_select(c, "submission_id=?", [run["submissionId"]])
+                    splits = [_split_dict(raw_split) for raw_split in raw_splits]
+                    splits.sort(key=lambda item: int(item.get("splitIndex", 0)))
+                    run["splits"] = splits
+                    history.append(run)
+                return 200, {"ok": True, "source": "community", "verified": False,
+                             "kind": "history", "playerUuid": player_uuid, "rows": history}
             if kind == "runs":
                 clauses.append("successful=1")
                 rows = _run_select(c, " AND ".join(clauses), args + [])

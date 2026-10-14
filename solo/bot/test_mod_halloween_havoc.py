@@ -162,6 +162,39 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(best_pumpkin["splitMs"], 3000)
         self.assertFalse(best_pumpkin["runSuccessful"])
 
+
+    def test_personal_history_returns_all_runs_and_splits_newest_first(self):
+        first = self.payload(
+            runId=str(uuid.uuid4()), submissionId=str(uuid.uuid4()),
+            startedAt=1760000000000, endedAt=1760000030000, timeMs=30000,
+        )
+        self.assertEqual(self.submit(first, "history-ip-1")[0], 200)
+
+        # Simulate elapsed time between separate runs; bypass the API's intentional
+        # per-player submission throttle so this test focuses on history retrieval.
+        hh._PLAYER_LAST.clear()
+        hh._IP_LAST.clear()
+        second = self.payload(
+            runId=str(uuid.uuid4()), submissionId=str(uuid.uuid4()),
+            startedAt=1760000100000, endedAt=1760000145000, timeMs=45000,
+            splits=[
+                {"index": 1, "objective": "Pumpkins", "splitMs": 15000, "elapsedMs": 15000, "status": "PASSED", "completedAt": 1760000115000},
+                {"index": 2, "objective": "Graveyard", "splitMs": 30000, "elapsedMs": 45000, "status": "PASSED", "completedAt": 1760000145000},
+            ],
+            splitCount=2,
+        )
+        self.assertEqual(self.submit(second, "history-ip-2")[0], 200)
+
+        status, result = self.get({"kind": ["history"], "uuid": [self.player_uuid]})
+        self.assertEqual(status, 200)
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(result["rows"]), 2)
+        self.assertEqual(result["rows"][0]["runId"], second["runId"])
+        self.assertEqual(result["rows"][1]["runId"], first["runId"])
+        self.assertEqual(result["rows"][0]["uuid"], self.player_uuid)
+        self.assertEqual(len(result["rows"][0]["splits"]), 2)
+        self.assertEqual(result["rows"][0]["splits"][0]["objective"], "Pumpkins")
+
     def test_hhc_is_separate_from_hh(self):
         hh_run = self.payload()
         hhc_run = self.payload(context="HHC", uuid=self.member2_uuid, name="RunnerB")
