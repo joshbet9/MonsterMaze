@@ -578,6 +578,31 @@ def handle_get(path, query, db_fn):
                 split_rows = _split_select(c, " AND ".join(split_clauses), split_args)
                 required = _required_objectives_from_completed_runs(c, context, server_type)
                 benchmarks = _best_known_split_benchmarks(split_rows, required)
+
+                # Preserve the genuine fastest completed run as a separate WR target. The
+                # composite BKS timeline is not itself a completed player/team run.
+                run_clauses = ["successful=1"]
+                run_args = []
+                if context != "ALL":
+                    run_clauses.append("context=?"); run_args.append(context)
+                if server_type != "ALL":
+                    run_clauses.append("server_type=?"); run_args.append(server_type)
+                world_records = {}
+                for raw_run in _run_select(c, " AND ".join(run_clauses), run_args):
+                    run = _run_row(raw_run)
+                    scope_key = str(run.get("context", "HH")).upper() + "|" + str(run.get("serverType", "STANDARD")).upper()
+                    prior = world_records.get(scope_key)
+                    if prior is None or int(run.get("timeMs") or 0) < int(prior.get("timeMs") or 0):
+                        run["teamMembers"] = _json_members(run.get("teamMembers"))
+                        raw_run_splits = _split_select(c, "submission_id=?", [run["submissionId"]])
+                        run_splits = [_split_dict(item) for item in sorted(raw_run_splits, key=lambda item: int(item[1]))]
+                        run["splits"] = run_splits
+                        world_records[scope_key] = run
+                for benchmark in benchmarks:
+                    scope_key = benchmark["context"] + "|" + benchmark["serverType"]
+                    world_record = world_records.get(scope_key)
+                    benchmark["worldRecord"] = world_record
+                    benchmark["worldRecordTimeMs"] = int(world_record["timeMs"]) if world_record else None
                 rows = [row for benchmark in benchmarks for row in benchmark["rows"]]
                 return 200, {"ok": True, "source": "community", "verified": False,
                              "context": context, "serverType": server_type, "kind": "bks",
