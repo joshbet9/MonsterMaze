@@ -88,6 +88,13 @@ def verify_schema(conn: sqlite3.Connection) -> None:
         )
 
 
+def mod_select_columns(conn: sqlite3.Connection) -> str:
+    """Include the game start timestamp when the database has been migrated."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(community_mod_runs)")}
+    start_column = "started_at" if "started_at" in columns else "0 AS started_at"
+    return "submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at," + start_column
+
+
 def row_dict(row: sqlite3.Row | dict[str, Any] | None) -> dict[str, Any] | None:
     if row is None:
         return None
