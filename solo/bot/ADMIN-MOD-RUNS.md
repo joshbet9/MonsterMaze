@@ -1,40 +1,49 @@
 # JNP Mod Community Run Admin Tool
 
-solo/bot/admin_mod_runs.py is an Oracle-host-side CLI for reviewing and correcting client-submitted **Community Mod runs**. It does not edit the authoritative server PB (runs) or server submission (submissions) tables, and it adds no public admin API endpoints.
+`solo/bot/admin_mod_runs.py` is an Oracle-host-side CLI for reviewing, correcting, or deleting client-reported **Monster Maze Community** and **Halloween Havoc/HHC Community** records. It is not a public HTTP admin endpoint. It never modifies the authoritative Monster Maze server PB (`runs`) or server submissions tables.
 
 ## Where it reads data
 
-The default database is /home/ubuntu/monstermaze/data/leaderboard.db, the same persistent SQLite database used by monster-bot.service. It refuses to create a missing database or proceed if the community_mod_runs schema is absent.
+The default database is `/home/ubuntu/monstermaze/data/leaderboard.db`, shared with `monster-bot.service`. The tool refuses to create a missing database and validates that the selected dataset's expected tables/columns exist before modifying anything.
 
-Run it on Oracle as the normal ubuntu service account. From the active release:
+Run it on Oracle as the normal `ubuntu` service account:
 
-    cd /home/ubuntu/monstermaze/current/solo/bot
+```bash
+cd /home/ubuntu/monstermaze/current/solo/bot
 
-    # List newest community entries.
-    python3 admin_mod_runs.py list --limit 50
+# Monster Maze Community records (default dataset).
+python3 admin_mod_runs.py list --limit 50
+python3 admin_mod_runs.py list --name MazeRunner --context MPS
+python3 admin_mod_runs.py show <submission-id>
+python3 admin_mod_runs.py edit <submission-id> --name CorrectName --stage 28 --kit Jumper
+python3 admin_mod_runs.py delete <submission-id>
 
-    # Narrow by Minecraft name, context, mode, or player UUID.
-    python3 admin_mod_runs.py list --name MazeRunner --context MPS
-    python3 admin_mod_runs.py list --mode modern --limit 100 --offset 100
+# Halloween Havoc / Halloween Havoc Challenger uploads.
+python3 admin_mod_runs.py list --dataset hh --context HH --limit 50
+python3 admin_mod_runs.py list --dataset hh --context HHC --server-type MPS
+python3 admin_mod_runs.py show <submission-id> --dataset hh
+python3 admin_mod_runs.py edit <submission-id> --dataset hh --name CorrectName --time-ms 28500
+python3 admin_mod_runs.py edit <submission-id> --dataset hh --successful false
+python3 admin_mod_runs.py delete <submission-id> --dataset hh
+```
 
-    # Inspect one entry before changing or deleting it.
-    python3 admin_mod_runs.py show <submission-id>
+Use the complete `submission_id` returned by `list` or `show`. Options such as `--db` and `--backup-dir` are global arguments and must be placed before the command if overriding the defaults.
 
-    # Correct an entry. The tool displays a before/after preview and asks for YES.
-    python3 admin_mod_runs.py edit <submission-id> --name CorrectName --stage 28 --kit Jumper
-
-    # Remove an entry. The tool displays the selected record and asks for DELETE.
-    python3 admin_mod_runs.py delete <submission-id>
-
-Use the full submission_id value shown by list or show. Global options such as --db and --backup-dir must appear before the subcommand if you need to override the production defaults.
+For MM entries, editable fields include player identity/name, context, mode, pattern, kit, stage, and duration. For HH/HHC, editable fields include name, context, server type/node, duration/reported duration, success/status, and finish reason. HH/HHC edits that affect shared run metadata (name, context, server type, status) propagate to the associated objective-split rows so the full-run and split leaderboards remain consistent. Deleting an HH/HHC run also deletes its linked split rows.
 
 ## Safeguards
 
-- Every confirmed edit or deletion creates a timestamped SQLite backup in /home/ubuntu/monstermaze/backups/ (or the chosen --backup-dir) and validates it using PRAGMA quick_check before changing data.
-- Every successful mutation records the action, operator, timestamp, and before/after JSON in community_mod_run_admin_audit.
-- Interactive confirmation is on by default; --yes can skip it for deliberate, scripted operations.
-- The submission_id and game fields are immutable through this tool. Player UUID/name, context, mode, pattern, kit, stage, and run time may be corrected with validation.
-- Changes are limited to community_mod_runs. Community records remain unverified and never become official server PBs.
-- A backup is kept for recovery; the tool does not automatically prune admin backups.
+- Every confirmed edit or deletion creates a timestamped SQLite snapshot in `/home/ubuntu/monstermaze/backups/` (or the chosen `--backup-dir`) and validates it with `PRAGMA quick_check` before changing data.
+- Every successful mutation records its action, operator, timestamp, and before/after JSON. MM audit entries use `community_mod_run_admin_audit`; HH/HHC entries use `community_hh_run_admin_audit`.
+- Interactive confirmation is enabled by default. `--yes` can skip it only for deliberate scripted use.
+- Submission IDs and immutable run identities are not editable. Validation prevents impossible HH/HHC status combinations; a run is successful exactly when its status is `COMPLETED`.
+- All Community records remain unverified. The tool never promotes them into official Monster Maze PBs/MMR.
+- Backups are retained for recovery; admin-created backups are not automatically pruned.
 
-Before using it on production, run python3 -m unittest -v test_admin_mod_runs.py in the solo/bot directory. The focused tests use a temporary database and include a check that official server PB data is unchanged.
+Run the focused tests before using it on production:
+
+```bash
+python3 -m unittest -v test_admin_mod_runs.py
+```
+
+The tests use a disposable SQLite database, validate backup/audit behavior, ensure HH splits follow edits/deletes, and verify official server PB rows remain unchanged.
