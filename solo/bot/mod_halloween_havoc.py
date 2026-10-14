@@ -103,6 +103,13 @@ def _ensure_schema(c):
         submitted_at INTEGER NOT NULL,
         PRIMARY KEY (submission_id, split_index)
     )""")
+    # Upgrade databases created by an earlier review build that did not yet retain
+    # the outcome status on each split row. SQLite's CREATE IF NOT EXISTS does not
+    # add new columns to an existing table.
+    split_columns = {row[1] for row in c.execute("PRAGMA table_info(community_hh_splits)").fetchall()}
+    if "run_status" not in split_columns:
+        c.execute("ALTER TABLE community_hh_splits ADD COLUMN run_status TEXT NOT NULL DEFAULT 'PARTIAL'")
+
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_hh_runs_board ON community_hh_runs(context,server_type,successful,time_ms,submitted_at)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_hh_runs_player ON community_hh_runs(uuid,submitted_at DESC)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_hh_splits_board ON community_hh_splits(context,server_type,objective,split_ms,submitted_at)")
