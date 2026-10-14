@@ -668,74 +668,140 @@ def print_entry(entry: dict[str, Any]) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Administer client-submitted JNP Mod community runs only.")
+    parser = argparse.ArgumentParser(description="Administer unverified JNP Mod community runs (Monster Maze and HH/HHC).")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB, help=f"SQLite database (default: {DEFAULT_DB})")
     parser.add_argument("--backup-dir", type=Path, default=DEFAULT_BACKUP_DIR,
                         help=f"directory for pre-change database backups (default: {DEFAULT_BACKUP_DIR})")
     sub = parser.add_subparsers(dest="command", required=True)
 
     list_cmd = sub.add_parser("list", help="list community runs")
+    list_cmd.add_argument("--dataset", choices=["mm", "hh"], default="mm", help="community dataset: Monster Maze or HH/HHC")
     list_cmd.add_argument("--name", help="case-insensitive name substring")
     list_cmd.add_argument("--uuid", help="player UUID")
     list_cmd.add_argument("--submission-id", help="exact submission ID")
-    list_cmd.add_argument("--context", choices=["MPS", "MIN", "mps", "min"])
-    list_cmd.add_argument("--mode", choices=sorted(ALLOWED_MODES))
+    list_cmd.add_argument("--context", help="MM: MPS/MIN; HH: HH/HHC")
+    list_cmd.add_argument("--server-type", choices=["STANDARD", "MPS"], help="HH/HHC server type")
+    list_cmd.add_argument("--mode", choices=sorted(ALLOWED_MODES), help="Monster Maze mode")
     list_cmd.add_argument("--limit", type=int, default=50)
     list_cmd.add_argument("--offset", type=int, default=0)
     list_cmd.add_argument("--json", action="store_true", help="emit JSON")
 
     show_cmd = sub.add_parser("show", help="show one community run by submission ID")
     show_cmd.add_argument("submission_id")
+    show_cmd.add_argument("--dataset", choices=["mm", "hh"], default="mm")
 
     edit_cmd = sub.add_parser("edit", help="edit a community run; creates a verified backup and audit record")
     edit_cmd.add_argument("submission_id")
+    edit_cmd.add_argument("--dataset", choices=["mm", "hh"], default="mm")
     edit_cmd.add_argument("--uuid")
     edit_cmd.add_argument("--name")
-    edit_cmd.add_argument("--context", choices=["MPS", "MIN", "mps", "min"])
+    edit_cmd.add_argument("--context", help="MM: MPS/MIN; HH: HH/HHC")
     edit_cmd.add_argument("--mode", choices=sorted(ALLOWED_MODES))
     edit_cmd.add_argument("--pattern", type=int, choices=[-1, 0, 1, 2])
     edit_cmd.add_argument("--kit", choices=sorted(ALLOWED_KITS))
     edit_cmd.add_argument("--stage", type=int)
     edit_cmd.add_argument("--time-ms", type=int, dest="time_ms")
+    edit_cmd.add_argument("--server-type", choices=["STANDARD", "MPS"])
+    edit_cmd.add_argument("--server-node")
+    edit_cmd.add_argument("--reported-time-ms", type=int, dest="reported_time_ms")
+    edit_cmd.add_argument("--successful", choices=["true", "false"])
+    edit_cmd.add_argument("--run-status", choices=["COMPLETED", "FAILED", "PARTIAL"])
+    edit_cmd.add_argument("--finish-reason")
     edit_cmd.add_argument("--yes", action="store_true", help="skip interactive confirmation")
 
-    delete_cmd = sub.add_parser("delete", help="delete a community run; creates a verified backup and audit record")
+    delete_cmd = sub.add_parser("delete", help="delete a community run and its splits if HH/HHC")
     delete_cmd.add_argument("submission_id")
+    delete_cmd.add_argument("--dataset", choices=["mm", "hh"], default="mm")
     delete_cmd.add_argument("--yes", action="store_true", help="skip interactive confirmation")
     return parser
 
 
 def run_cli(args: argparse.Namespace) -> int:
     db_path = args.db
+    dataset = getattr(args, "dataset", "mm")
+
     if args.command == "list":
+        if dataset == "hh":
+            if args.mode:
+                raise AdminError("--mode is only valid for the MM dataset")
+            filters = {key: getattr(args, key) for key in ("name", "uuid", "submission_id", "context", "server_type")}
+            entries = list_hh_entries(db_path, filters, args.limit, args.offset)
+            if args.json:
+                print(json.dumps(entries, indent=2))
+            elif not entries:
+                print("No HH/HHC community runs matched.")
+            else:
+                print(f"{'SUBMISSION ID':36} {'NAME':16} {'CTX':3} {'TYPE':8} {'TIME':10} {'STATUS':9} {'SPLITS':6} SUBMITTED (UTC)")
+                for entry in entries:
+                    print(f"{entry['submission_id']:36} {entry['name'][:16]:16} {entry['context']:3} "
+                          f"{entry['server_type'][:8]:8} {format_time_ms(entry['time_ms']):10} "
+                          f"{entry['run_status'][:9]:9} {entry['split_count']:6} {format_submitted_at(entry['submitted_at'])}")
+            print(f"Showing {len(entries)} HH/HHC run(s); use --offset to page through more.")
+            return 0
+
+        if getattr(args, "server_type", None):
+            raise AdminError("--server-type is only valid for the HH/HHC dataset")
         filters = {key: getattr(args, key) for key in ("name", "uuid", "submission_id", "context", "mode")}
         entries = list_entries(db_path, filters, args.limit, args.offset)
         if args.json:
             print(json.dumps(entries, indent=2))
         elif not entries:
-            print("No community runs matched.")
+            print("No Monster Maze community runs matched.")
         else:
             print(f"{'SUBMISSION ID':36} {'NAME':16} {'CTX':3} {'MODE':8} {'PAT':3} {'KIT':14} {'STAGE':5} {'TIME':10} SUBMITTED (UTC)")
             for entry in entries:
                 print(f"{entry['submission_id']:36} {entry['name'][:16]:16} {entry['context']:3} "
                       f"{entry['mode'][:8]:8} {entry['pattern']:3} {entry['kit'][:14]:14} "
                       f"{entry['stage']:5} {format_time_ms(entry['time_ms']):10} {format_submitted_at(entry['submitted_at'])}")
-            print(f"Showing {len(entries)} run(s); use --offset to page through more.")
+        print(f"Showing {len(entries)} Monster Maze run(s); use --offset to page through more.")
         return 0
 
     if args.command == "show":
-        entry = find_entry(db_path, args.submission_id)
+        entry = find_hh_entry(db_path, args.submission_id) if dataset == "hh" else find_entry(db_path, args.submission_id)
         if entry is None:
-            raise AdminError(f"No community run found with submission ID {args.submission_id}")
+            raise AdminError(f"No {('HH/HHC' if dataset == 'hh' else 'Monster Maze')} community run found with submission ID {args.submission_id}")
         print_entry(entry)
         return 0
 
     if args.command == "edit":
+        if dataset == "hh":
+            if any(getattr(args, field, None) is not None for field in ("uuid", "mode", "pattern", "kit", "stage")):
+                raise AdminError("HH/HHC edits do not support --uuid, --mode, --pattern, --kit, or --stage")
+            raw_changes = {
+                field: getattr(args, field, None)
+                for field in ("name", "context", "server_type", "server_node", "time_ms",
+                              "reported_time_ms", "successful", "run_status", "finish_reason")
+                if getattr(args, field, None) is not None
+            }
+            before = find_hh_entry(db_path, args.submission_id)
+            if before is None:
+                raise AdminError(f"No HH/HHC run found with submission ID {args.submission_id}")
+            normalized = normalize_hh_changes(raw_changes, before)
+            preview = dict(before)
+            preview.update(normalized)
+            print("Current HH/HHC entry:")
+            print_entry(before)
+            print("Proposed HH/HHC entry:")
+            print_entry(preview)
+            if not args.yes:
+                answer = input("Apply this HH/HHC edit? Type YES to continue: ").strip()
+                if answer != "YES":
+                    print("Cancelled; no changes made.")
+                    return 0
+            _, after, backup = edit_hh_entry(
+                db_path, args.backup_dir, args.submission_id, normalized, confirmed=True
+            )
+            print(f"Updated HH/HHC run. Verified pre-change backup: {backup}")
+            print_entry(after)
+            return 0
+
+        if any(getattr(args, field, None) is not None for field in ("server_type", "server_node", "reported_time_ms", "successful", "run_status", "finish_reason")):
+            raise AdminError("HH/HHC edit fields require --dataset hh")
         changes = {field: getattr(args, field) for field in EDITABLE_FIELDS if getattr(args, field, None) is not None}
         normalized = normalize_changes(changes)
         before = find_entry(db_path, args.submission_id)
         if before is None:
-            raise AdminError(f"No community run found with submission ID {args.submission_id}")
+            raise AdminError(f"No Monster Maze community run found with submission ID {args.submission_id}")
         preview = dict(before)
         preview.update(normalized)
         print("Current entry:")
@@ -749,15 +815,30 @@ def run_cli(args: argparse.Namespace) -> int:
                 return 0
         _, after, backup = edit_entry(db_path, args.backup_dir, args.submission_id,
                                       normalized, confirmed=True)
-        print(f"Updated community run. Verified pre-change backup: {backup}")
+        print(f"Updated Monster Maze community run. Verified pre-change backup: {backup}")
         print("Updated entry:")
         print_entry(after)
         return 0
 
     if args.command == "delete":
+        if dataset == "hh":
+            before = find_hh_entry(db_path, args.submission_id)
+            if before is None:
+                raise AdminError(f"No HH/HHC run found with submission ID {args.submission_id}")
+            print("HH/HHC entry selected for deletion (including its objective splits):")
+            print_entry(before)
+            if not args.yes:
+                answer = input("Permanently delete this HH/HHC run and its splits? Type DELETE to continue: ").strip()
+                if answer != "DELETE":
+                    print("Cancelled; no changes made.")
+                    return 0
+            deleted, backup = delete_hh_entry(db_path, args.backup_dir, args.submission_id, confirmed=True)
+            print(f"Deleted HH/HHC run {deleted['submission_id']} ({deleted['name']}) and its splits. Verified pre-change backup: {backup}")
+            return 0
+
         before = find_entry(db_path, args.submission_id)
         if before is None:
-            raise AdminError(f"No community run found with submission ID {args.submission_id}")
+            raise AdminError(f"No Monster Maze community run found with submission ID {args.submission_id}")
         print("Entry selected for deletion:")
         print_entry(before)
         if not args.yes:
