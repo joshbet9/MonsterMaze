@@ -687,7 +687,7 @@ def handle_get(path, query, db_fn):
                         if int(split.get("splitMs") or 0) <= 0:
                             continue
                         key_base = (str(split["context"]).upper(), str(split["serverType"]).upper(),
-                                    str(split["objective"]).casefold())
+                                    int(split.get("splitIndex") or 0), str(split["objective"]).casefold())
                         for member_uuid in matching_members:
                             key = (member_uuid,) + key_base
                             candidate = {
@@ -696,6 +696,8 @@ def handle_get(path, query, db_fn):
                                 "context": split["context"],
                                 "serverType": split["serverType"],
                                 "objective": split["objective"],
+                                "index": int(split.get("splitIndex") or 0),
+                                "splitIndex": int(split.get("splitIndex") or 0),
                                 "splitMs": int(split["splitMs"]),
                                 "elapsedMs": int(split["elapsedMs"]),
                                 "teamSignature": split["teamSignature"],
@@ -709,7 +711,8 @@ def handle_get(path, query, db_fn):
                                     int(prior["splitMs"]), int(prior["elapsedMs"]), -int(prior["submittedAt"])):
                                 member_best[key] = candidate
             member_best_splits = sorted(member_best.values(), key=lambda item: (
-                item["context"], item["serverType"], item["objective"].casefold(), item["name"].casefold()))
+                item["context"], item["serverType"], int(item.get("splitIndex") or 999),
+                item["objective"].casefold(), item["name"].casefold()))
 
             return 200, {"ok": True, "source": "community", "verified": False,
                          "context": context, "serverType": server_type, "kind": "group",
