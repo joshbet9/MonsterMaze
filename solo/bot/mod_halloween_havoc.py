@@ -381,30 +381,31 @@ def _best_runs(rows):
     return result[:100]
 
 
-def _best_splits(rows, objective=None):
+def _best_splits(rows, objective=None, split_index=None):
+    """Return the fastest section at each chronological objective occurrence per group."""
     best = {}
     for row in rows:
         split = _split_dict(row)
         split["teamMembers"] = _json_members(split.get("teamMembers"))
         if objective and split["objective"].casefold() != objective.casefold():
             continue
-        key = (split["context"], split["serverType"], split["teamSignature"] or split["uuid"], split["objective"].casefold())
+        if split_index is not None and int(split.get("splitIndex") or 0) != split_index:
+            continue
+        occurrence = int(split.get("splitIndex") or 0)
+        key = (split["context"], split["serverType"], split["teamSignature"] or split["uuid"],
+               occurrence, split["objective"].casefold())
         existing = best.get(key)
         candidate_key = (int(split["splitMs"]), int(split["elapsedMs"]), -int(split["submittedAt"]))
         if existing is None or candidate_key < (int(existing["splitMs"]), int(existing["elapsedMs"]), -int(existing["submittedAt"])):
             best[key] = split
-    result = sorted(best.values(), key=lambda item: (int(item["splitMs"]), item["objective"].casefold(), item["teamSignature"], item["name"].lower()))
-    return result[:500]
+    return sorted(best.values(), key=lambda item: (
+        int(item.get("splitIndex") or 999), item["objective"].casefold(),
+        int(item["splitMs"]), item["teamSignature"], item["name"].lower()))
 
 
 
 def _best_known_split_benchmarks(rows, required_objectives):
-    """Build composite best-known-split runs, retaining the source group for every objective.
-
-    The fastest section duration is selected independently per objective. A composite is
-    called complete only when a completed community run establishes the required objective
-    list and every objective in that list has an eligible split.
-    """
+    """Build a chronological BKS composite, treating repeated names as separate stages."""
     best = {}
     for row in rows:
         split = _split_dict(row)
@@ -412,10 +413,11 @@ def _best_known_split_benchmarks(rows, required_objectives):
         objective = str(split.get("objective", "")).strip()
         split_ms = int(split.get("splitMs") or 0)
         elapsed_ms = int(split.get("elapsedMs") or 0)
-        if not objective or split_ms <= 0 or elapsed_ms <= 0:
+        split_index = int(split.get("splitIndex") or 0)
+        if not objective or split_ms <= 0 or elapsed_ms <= 0 or split_index <= 0:
             continue
         scope = (str(split["context"]).upper(), str(split["serverType"]).upper())
-        key = scope + (objective.casefold(),)
+        key = scope + (split_index, objective.casefold())
         prior = best.get(key)
         score = (split_ms, elapsed_ms, -int(split.get("submittedAt") or 0))
         prior_score = ((int(prior.get("splitMs") or 0), int(prior.get("elapsedMs") or 0),
@@ -429,29 +431,31 @@ def _best_known_split_benchmarks(rows, required_objectives):
         scope_key = scope[0] + "|" + scope[1]
         required = list(required_objectives.get(scope_key) or [])
         available = [item for key, item in best.items() if key[:2] == scope]
-        by_objective = {str(item["objective"]).casefold(): item for item in available}
+        required_keys = {(index, str(name).casefold()) for index, name in enumerate(required, 1)}
         if required:
-            ordered_names = required
-            # Retain any previously recorded extra objectives after the known complete route.
-            known_keys = {name.casefold() for name in required}
-            extras = [item for item in available if str(item["objective"]).casefold() not in known_keys]
+            ordered_entries = [(index, name, best.get(scope + (index, str(name).casefold())))
+                               for index, name in enumerate(required, 1)]
+            extras = [item for item in available
+                      if (int(item.get("splitIndex") or 0), str(item["objective"]).casefold()) not in required_keys]
             extras.sort(key=lambda item: (int(item.get("splitIndex") or 999), str(item["objective"]).casefold()))
-            ordered_names = required + [str(item["objective"]) for item in extras]
+            ordered_entries.extend((int(item.get("splitIndex") or 999), str(item["objective"]), item) for item in extras)
         else:
-            # Without a completed run, route completeness cannot be proven. Display observed
-            # splits as partial evidence rather than pretending the composite is complete.
             available.sort(key=lambda item: (int(item.get("splitIndex") or 999), str(item["objective"]).casefold()))
-            ordered_names = [str(item["objective"]) for item in available]
+            ordered_entries = [(int(item.get("splitIndex") or position), str(item["objective"]), item)
+                               for position, item in enumerate(available, 1)]
 
         composite_rows = []
         cumulative = 0
         present = set()
-        for index, name in enumerate(ordered_names, 1):
-            split = by_objective.get(name.casefold())
+        missing = []
+        for index, name, split in ordered_entries:
             if split is None:
+                if required and index <= len(required):
+                    missing.append(name)
                 continue
             cumulative += int(split["splitMs"])
-            present.add(name.casefold())
+            identity = (int(split.get("splitIndex") or index), str(split["objective"]).casefold())
+            present.add(identity)
             split["compositeIndex"] = index
             split["compositeSplitMs"] = int(split["splitMs"])
             split["compositeElapsedMs"] = cumulative
@@ -460,7 +464,6 @@ def _best_known_split_benchmarks(rows, required_objectives):
             split["sourceAttemptStatus"] = split.get("runStatus", "UNKNOWN")
             composite_rows.append(split)
 
-        missing = [name for name in required if name.casefold() not in present]
         complete = bool(required) and not missing and len(composite_rows) >= len(required)
         benchmarks.append({
             "context": scope[0],
@@ -470,17 +473,18 @@ def _best_known_split_benchmarks(rows, required_objectives):
             "complete": complete,
             "requiredObjectives": required,
             "requiredObjectiveCount": len(required),
-            "knownObjectiveCount": len(present),
-            "missingObjectives": missing,
+            "knownObjectiveCount": len(composite_rows),
             "knownCompositeTimeMs": cumulative,
             "totalTimeMs": cumulative if complete else None,
+            "missingObjectives": missing,
             "rows": composite_rows,
         })
     return benchmarks
 
 
+
 def _required_objectives_from_completed_runs(c, context, server_type):
-    """Infer the expected objective order from the fullest successful run available."""
+    """Infer the expected objective sequence from the fullest successful run, preserving repeats."""
     clauses = ["successful=1"]
     args = []
     if context != "ALL":
@@ -497,17 +501,15 @@ def _required_objectives_from_completed_runs(c, context, server_type):
         scope_key = scope[0] + "|" + scope[1]
         raw_splits = _split_select(c, "submission_id=?", [run["submissionId"]])
         ordered = []
-        seen = set()
         for raw_split in sorted(raw_splits, key=lambda item: (int(item[1]), str(item[9]).casefold())):
             item = _split_dict(raw_split)
             objective = str(item.get("objective", "")).strip()
-            key = objective.casefold()
-            if objective and key not in seen:
+            if objective:
                 ordered.append(objective)
-                seen.add(key)
         if len(ordered) > len(chosen.get(scope_key, [])):
             chosen[scope_key] = ordered
     return chosen
+
 
 
 def handle_get(path, query, db_fn):
@@ -527,6 +529,15 @@ def handle_get(path, query, db_fn):
         objective = _value(query, "objective", "")
         if len(objective) > 120 or any(ord(ch) < 32 for ch in objective):
             raise ValueError("invalid objective filter")
+        split_index_text = _value(query, "splitIndex", "").strip()
+        split_index = None
+        if split_index_text:
+            try:
+                split_index = int(split_index_text)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("splitIndex must be a positive integer") from exc
+            if split_index < 1 or split_index > 500:
+                raise ValueError("splitIndex must be a positive integer")
         team_signature = _value(query, "teamSignature", "")
         if len(team_signature) > 256:
             raise ValueError("teamSignature is too long")
@@ -621,7 +632,7 @@ def handle_get(path, query, db_fn):
                 rows = _split_select(c, " AND ".join(split_clauses), split_args)
                 return 200, {"ok": True, "source": "community", "verified": False,
                              "context": context, "serverType": server_type, "kind": "splits",
-                             "objective": objective, "rows": _best_splits(rows, objective or None)}
+                             "objective": objective, "splitIndex": split_index, "rows": _best_splits(rows, objective or None, split_index)}
             if not team_signature:
                 raise ValueError("teamSignature is required for group profile")
             group_clauses, group_args = ["team_signature=?"], [team_signature]
@@ -678,7 +689,7 @@ def handle_get(path, query, db_fn):
                         if int(split.get("splitMs") or 0) <= 0:
                             continue
                         key_base = (str(split["context"]).upper(), str(split["serverType"]).upper(),
-                                    str(split["objective"]).casefold())
+                                    int(split.get("splitIndex") or 0), str(split["objective"]).casefold())
                         for member_uuid in matching_members:
                             key = (member_uuid,) + key_base
                             candidate = {
@@ -687,6 +698,8 @@ def handle_get(path, query, db_fn):
                                 "context": split["context"],
                                 "serverType": split["serverType"],
                                 "objective": split["objective"],
+                                "index": int(split.get("splitIndex") or 0),
+                                "splitIndex": int(split.get("splitIndex") or 0),
                                 "splitMs": int(split["splitMs"]),
                                 "elapsedMs": int(split["elapsedMs"]),
                                 "teamSignature": split["teamSignature"],
@@ -700,7 +713,8 @@ def handle_get(path, query, db_fn):
                                     int(prior["splitMs"]), int(prior["elapsedMs"]), -int(prior["submittedAt"])):
                                 member_best[key] = candidate
             member_best_splits = sorted(member_best.values(), key=lambda item: (
-                item["context"], item["serverType"], item["objective"].casefold(), item["name"].casefold()))
+                item["context"], item["serverType"], int(item.get("splitIndex") or 999),
+                item["objective"].casefold(), item["name"].casefold()))
 
             return 200, {"ok": True, "source": "community", "verified": False,
                          "context": context, "serverType": server_type, "kind": "group",

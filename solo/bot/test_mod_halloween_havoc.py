@@ -168,6 +168,51 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertNotIn("worldRecord", benchmark)
         self.assertNotIn("rows", response)
 
+    def test_repeated_objective_names_remain_separate_chronological_splits(self):
+        route = [
+            ("Lobby", 1000), ("Regroup", 2000), ("Push the Minecart", 3000),
+            ("Regroup", 4000), ("Pumpkin King", 5000),
+        ]
+        splits = []
+        elapsed = 0
+        for index, (objective, duration) in enumerate(route, 1):
+            elapsed += duration
+            splits.append({
+                "index": index, "objective": objective, "splitMs": duration,
+                "elapsedMs": elapsed, "status": "PASSED", "completedAt": 1760000000000 + elapsed,
+            })
+        payload = self.payload(timeMs=elapsed, splitCount=len(splits), splits=splits)
+        self.assertEqual(self.submit(payload, "repeat-objective-ip")[0], 200)
+
+        status, bks = self.get({"kind": ["bks"], "context": ["HH"], "serverType": ["STANDARD"]})
+        self.assertEqual(status, 200, bks)
+        benchmark = bks["benchmarks"][0]
+        self.assertTrue(benchmark["complete"])
+        self.assertEqual(benchmark["requiredObjectiveCount"], 5)
+        self.assertEqual([row["objective"] for row in benchmark["rows"]],
+                         ["Lobby", "Regroup", "Push the Minecart", "Regroup", "Pumpkin King"])
+        self.assertEqual([row["index"] for row in benchmark["rows"]], [1, 2, 3, 4, 5])
+
+        status, repeated = self.get({
+            "kind": ["splits"], "context": ["HH"], "serverType": ["STANDARD"], "objective": ["Regroup"]
+        })
+        self.assertEqual(status, 200, repeated)
+        self.assertEqual([row["index"] for row in repeated["rows"]], [2, 4])
+
+        status, one_stage = self.get({
+            "kind": ["splits"], "context": ["HH"], "serverType": ["STANDARD"],
+            "objective": ["Regroup"], "splitIndex": ["4"]
+        })
+        self.assertEqual(status, 200, one_stage)
+        self.assertEqual([row["index"] for row in one_stage["rows"]], [4])
+
+        status, group = self.get({
+            "kind": ["group"], "context": ["HH"], "serverType": ["STANDARD"],
+            "teamSignature": [self.team_signature]
+        })
+        self.assertEqual(status, 200, group)
+        self.assertEqual([row["index"] for row in group["splits"]], [1, 2, 3, 4, 5])
+
     def test_bks_is_partial_when_no_completed_run_establishes_required_route(self):
         failed = self.payload(
             successful=False,
