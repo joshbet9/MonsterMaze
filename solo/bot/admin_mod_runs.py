@@ -301,8 +301,7 @@ def edit_entry(
     try:
         conn.execute("BEGIN IMMEDIATE")
         before = row_dict(conn.execute(
-            "SELECT submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at "
-            "FROM community_mod_runs WHERE lower(submission_id)=?", (sid,)
+            f"SELECT {mod_select_columns(conn)} FROM community_mod_runs WHERE lower(submission_id)=?", (sid,)
         ).fetchone())
         if before is None:
             raise AdminError(f"No community run found with submission ID {sid}")
@@ -311,8 +310,7 @@ def edit_entry(
         values = list(normalized.values()) + [sid]
         conn.execute(f"UPDATE community_mod_runs SET {assignments} WHERE lower(submission_id)=?", values)
         after = row_dict(conn.execute(
-            "SELECT submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at "
-            "FROM community_mod_runs WHERE lower(submission_id)=?", (sid,)
+            f"SELECT {mod_select_columns(conn)} FROM community_mod_runs WHERE lower(submission_id)=?", (sid,)
         ).fetchone())
         audit_action(conn, "edit", sid, actor or getpass.getuser(), before, after)
         conn.commit()
@@ -339,8 +337,7 @@ def delete_entry(
     try:
         conn.execute("BEGIN IMMEDIATE")
         before = row_dict(conn.execute(
-            "SELECT submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at "
-            "FROM community_mod_runs WHERE lower(submission_id)=?", (sid,)
+            f"SELECT {mod_select_columns(conn)} FROM community_mod_runs WHERE lower(submission_id)=?", (sid,)
         ).fetchone())
         if before is None:
             raise AdminError(f"No community run found with submission ID {sid}")
