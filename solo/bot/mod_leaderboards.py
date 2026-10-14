@@ -61,8 +61,60 @@ def _entry(row, context=None, source="community"):
     return item
 
 
+def handle_game_info(query, db_fn):
+    """Return every observed participant result for a nearby, timestamp-anchored MM round."""
+    try:
+        player_uuid = _value(query, "uuid").lower()
+        if not _UUID_RE.match(player_uuid):
+            raise ValueError("a valid anchor player UUID is required")
+        try:
+            started_at = int(_value(query, "startedAt", "0"))
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("startedAt must be Unix epoch milliseconds")
+        if started_at <= 0 or started_at > 9_999_999_999_999:
+            raise ValueError("startedAt must be a positive Unix epoch millisecond timestamp")
+        context = _value(query, "context", "").upper()
+        if context in ("ARCADE", "PUBLIC"):
+            context = "MIN"
+        if context not in ("MPS", "MIN"):
+            raise ValueError("context must be MPS or MIN/ARCADE")
+        c = db_fn()
+        try:
+            _ensure_schema(c)
+            # Require the clicked record itself to exist before showing a round profile.
+            anchor = c.execute(
+                "SELECT 1 FROM community_mod_runs WHERE lower(uuid)=? AND context=? "
+                "AND started_at BETWEEN ? AND ? LIMIT 1",
+                (player_uuid, context, started_at - 30_000, started_at + 30_000),
+            ).fetchone()
+            if not anchor:
+                return 200, {"ok": True, "source": "community", "startedAt": started_at, "rows": []}
+            rows = c.execute(
+                """SELECT uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at
+                   FROM community_mod_runs
+                   WHERE game='Monster Maze' AND context=? AND started_at BETWEEN ? AND ?
+                   ORDER BY started_at ASC, stage DESC, time_ms ASC, name COLLATE NOCASE ASC
+                   LIMIT 100""",
+                (context, started_at - 30_000, started_at + 30_000),
+            ).fetchall()
+            return 200, {
+                "ok": True, "source": "community", "context": context,
+                "startedAt": started_at, "windowMs": 30_000,
+                "verified": False, "rows": [_entry(row) for row in rows],
+            }
+        finally:
+            c.close()
+    except ValueError as exc:
+        return 400, {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        print(f"[mod-api] game-info GET failed: {exc}", flush=True)
+        return 500, {"ok": False, "error": "internal_error"}
+
+
 def handle_get(path, query, db_fn, allowed_modes):
-    """Return (status, payload) for the two public mod routes, or None if unmatched."""
+    """Return (status, payload) for the public mod routes, or None if unmatched."""
+    if path == "/api/v1/mod/game":
+        return handle_game_info(query, db_fn)
     if path not in ("/api/v1/mod/leaderboard", "/api/v1/mod/player"):
         return None
     try:
@@ -313,6 +365,34 @@ def handle_submit(body, client_ip, db_fn):
                 existing = c.execute("SELECT 1 FROM community_mod_runs WHERE submission_id=?", (sid,)).fetchone()
                 if existing:
                     return 200, {"ok": True, "accepted": True, "duplicate": True, "submissionId": sid}
+
+                # Different clients observe the same game independently and create different
+                # submission IDs. Collapse the same participant/context when game-detection
+                # timestamps are within 30 seconds; unknown/legacy timestamps (0) are not guessed.
+                if started_at > 0:
+                    same_round = c.execute(
+                        """SELECT submission_id, kit, pattern, started_at FROM community_mod_runs
+                           WHERE lower(uuid)=? AND context=? AND started_at BETWEEN ? AND ?
+                           ORDER BY ABS(started_at - ?) ASC LIMIT 1""",
+                        (player_uuid, context, started_at - 30_000, started_at + 30_000, started_at),
+                    ).fetchone()
+                    if same_round:
+                        # A second observer may have stronger kit/pattern evidence. Preserve
+                        # the existing row identity but fill metadata that was previously unknown.
+                        updates = {}
+                        if same_round[1] == "Unknown" and kit != "Unknown":
+                            updates["kit"] = kit
+                        if int(same_round[2]) == -1 and pattern in (0, 1, 2):
+                            updates["pattern"] = pattern
+                        if updates:
+                            assignments = ", ".join(field + "=?" for field in updates)
+                            c.execute("UPDATE community_mod_runs SET " + assignments + " WHERE submission_id=?",
+                                      list(updates.values()) + [same_round[0]])
+                            c.commit()
+                        return 200, {
+                            "ok": True, "accepted": True, "duplicate": True, "deduplicated": True,
+                            "submissionId": sid, "matchedSubmissionId": same_round[0],
+                        }
 
                 # Public client reports cannot be verified; throttle obvious spam.
                 monotonic = time.monotonic()
