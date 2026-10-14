@@ -70,6 +70,10 @@ jobs:
         working-directory: solo/bot
         run: python -m unittest -v test_mod_leaderboards.py
 
+      - name: Run Halloween Havoc/HHC community API tests
+        working-directory: solo/bot
+        run: python -m unittest -v test_mod_halloween_havoc.py
+
       - name: Prepare Oracle SSH credentials
         shell: bash
         env:
