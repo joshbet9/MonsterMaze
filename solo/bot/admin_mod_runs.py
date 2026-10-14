@@ -593,11 +593,15 @@ def edit_hh_entry(
         if "successful" in normalized:
             normalized["successful"] = int(normalized["successful"])
 
-        assignments = ", ".join(f"{field}=?" for field in normalized if field not in {"team_members_json"})
         fields = [field for field in normalized if field != "team_members_json"]
-        values = [normalized[field] for field in fields] + [sid]
-        conn.execute(f"UPDATE community_hh_runs SET {assignments}{', team_members_json=?' if 'team_members_json' in normalized else ''} WHERE lower(submission_id)=?",
-                     values + ([normalized["team_members_json"]] if "team_members_json" in normalized else []))
+        assignments = [f"{field}=?" for field in fields]
+        values = [normalized[field] for field in fields]
+        if "team_members_json" in normalized:
+            assignments.append("team_members_json=?")
+            values.append(normalized["team_members_json"])
+        values.append(sid)
+        conn.execute("UPDATE community_hh_runs SET " + ", ".join(assignments)
+                     + " WHERE lower(submission_id)=?", values)
         split_updates = {}
         for field in ("name", "context", "server_type", "server_node"):
             if field in normalized:
