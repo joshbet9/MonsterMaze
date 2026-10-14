@@ -601,12 +601,16 @@ def handle_get(path, query, db_fn):
                 for benchmark in benchmarks:
                     scope_key = benchmark["context"] + "|" + benchmark["serverType"]
                     world_record = world_records.get(scope_key)
-                    benchmark["worldRecord"] = world_record
+                    # Only the completed run's time is needed to compare BKS vs WR.
+                    # Embedding the entire WR run and its splits here duplicates data
+                    # already represented by the BKS objective rows and can push this
+                    # public response beyond the mod client's bounded JSON-read limit.
                     benchmark["worldRecordTimeMs"] = int(world_record["timeMs"]) if world_record else None
-                rows = [row for benchmark in benchmarks for row in benchmark["rows"]]
+                # The per-objective rows are already nested under each benchmark. Avoid
+                # returning a second flattened copy; consumers should read benchmarks[].rows.
                 return 200, {"ok": True, "source": "community", "verified": False,
                              "context": context, "serverType": server_type, "kind": "bks",
-                             "benchmarks": benchmarks, "rows": rows}
+                             "benchmarks": benchmarks}
             if kind == "splits":
                 split_clauses, split_args = [], []
                 if context != "ALL":
