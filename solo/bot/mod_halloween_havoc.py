@@ -481,12 +481,16 @@ def handle_submit(body, client_ip, db_fn):
                 c.execute("""INSERT INTO community_hh_splits (
                     submission_id,split_index,run_id,uuid,name,context,server_type,server_node,
                     team_members_json,team_signature,objective,split_ms,elapsed_ms,status,
-                    run_successful,run_status,submitted_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
+                    run_successful,run_status,submitted_at,checkpoint_id,from_checkpoint_id,
+                    missing_checkpoint_ids_json,boundary_source,schema_version
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
                     run["submission_id"],split["index"],run["run_id"],run["uuid"],run["name"],
                     run["context"],run["server_type"],run["server_node"],run["team_members_json"],
                     run["team_signature"],split["objective"],split["splitMs"],split["elapsedMs"],
-                    split["status"],run["successful"],run["run_status"],run["submitted_at"]
+                    split["status"],run["successful"],run["run_status"],run["submitted_at"],
+                    split["checkpointId"],split["fromCheckpointId"],
+                    json.dumps(split["missingCheckpointIds"], separators=(",", ":")),
+                    split["boundarySource"],split["schemaVersion"]
                 ))
             c.commit()
             _PLAYER_LAST[player_uuid] = now
@@ -536,12 +540,25 @@ def _run_select(c, where_sql, args):
 def _split_dict(row):
     keys = ("submissionId", "splitIndex", "runId", "uuid", "name", "context", "serverType",
             "serverNode", "teamSignature", "objective", "splitMs", "elapsedMs", "status",
-            "runSuccessful", "runStatus", "submittedAt", "teamMembers")
+            "runSuccessful", "runStatus", "submittedAt", "teamMembers", "checkpointId",
+            "fromCheckpointId", "missingCheckpointIdsJson", "boundarySource", "schemaVersion",
+            "runTimeMs", "runRecordSuccessful")
     data = dict(zip(keys, row))
-    data["runSuccessful"] = bool(data["runSuccessful"])
+    data["runSuccessful"] = bool(data.get("runSuccessful"))
+    data["runRecordSuccessful"] = bool(data.get("runRecordSuccessful"))
     data["successful"] = data["runSuccessful"]
-    data["isMpsRun"] = str(data["serverType"]).upper() == "MPS"
-    data["index"] = data["splitIndex"]
+    data["isMpsRun"] = str(data.get("serverType") or "").upper() == "MPS"
+    data["index"] = data.get("splitIndex")
+    try:
+        missing = json.loads(data.get("missingCheckpointIdsJson") or "[]")
+        data["missingCheckpointIds"] = missing if isinstance(missing, list) else []
+    except (json.JSONDecodeError, TypeError):
+        data["missingCheckpointIds"] = []
+    data["checkpointId"] = str(data.get("checkpointId") or "")
+    data["fromCheckpointId"] = str(data.get("fromCheckpointId") or "")
+    data["boundarySource"] = str(data.get("boundarySource") or "OBJECTIVE")
+    data["schemaVersion"] = int(data.get("schemaVersion") or 0)
+    data["runTimeMs"] = int(data.get("runTimeMs") or 0)
     data["verified"] = False
     data["source"] = "community"
     return data
@@ -550,7 +567,11 @@ def _split_dict(row):
 def _split_select(c, where_sql, args):
     sql = """SELECT submission_id,split_index,run_id,uuid,name,context,server_type,
                      server_node,team_signature,objective,split_ms,elapsed_ms,status,
-                     run_successful,run_status,submitted_at,team_members_json
+                     run_successful,run_status,submitted_at,team_members_json,
+                     checkpoint_id,from_checkpoint_id,missing_checkpoint_ids_json,
+                     boundary_source,schema_version,
+                     (SELECT time_ms FROM community_hh_runs r WHERE r.submission_id=community_hh_splits.submission_id),
+                     (SELECT successful FROM community_hh_runs r WHERE r.submission_id=community_hh_splits.submission_id)
              FROM community_hh_splits"""
     if where_sql:
         sql += " WHERE " + where_sql
