@@ -404,8 +404,22 @@ def _normalize_payload(body):
         })
         previous_elapsed = elapsed_ms
         previous_index = index
-    if int(payload.get("splitCount", len(normalized_splits))) != len(normalized_splits):
-        raise ValueError("splitCount does not match submitted splits")
+    # The client keeps the original objective events in "splits" and sends the
+    # current fixed-checkpoint view separately as "canonicalSplits". Derive the
+    # canonical count from the raw events here; never replace the retained event rows
+    # with client-derived checkpoint data.
+    canonical_splits = _canonicalize_one_run(normalized_splits, time_ms, bool(successful))
+    canonical_count = len(canonical_splits)
+    provided_split_count = _bounded_int(
+        payload.get("splitCount", canonical_count), "splitCount", 0, _MAX_SPLITS)
+    # Accept the legacy raw-event splitCount during rollout, but store the public count
+    # using the canonical methodology. This keeps older clients upload-compatible.
+    if provided_split_count not in (len(normalized_splits), canonical_count):
+        raise ValueError("splitCount matches neither raw events nor canonical checkpoints")
+    if "rawSplitCount" in payload:
+        provided_raw_count = _bounded_int(payload.get("rawSplitCount"), "rawSplitCount", 0, _MAX_SPLITS)
+        if provided_raw_count != len(normalized_splits):
+            raise ValueError("rawSplitCount does not match submitted raw events")
 
     submitted_at = int(time.time() * 1000)
     return {
@@ -420,7 +434,7 @@ def _normalize_payload(body):
         "ended_at": ended_at,
         "time_ms": time_ms,
         "reported_time_ms": reported_time_ms,
-        "split_count": len(normalized_splits),
+        "split_count": canonical_count,
         "team_members": normalized_members,
         "team_members_json": json.dumps(normalized_members, separators=(",", ":"), ensure_ascii=False),
         "team_signature": signature,
