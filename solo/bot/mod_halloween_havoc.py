@@ -29,10 +29,14 @@ _MAX_TIME_MS = 24 * 60 * 60 * 1000
 # leaderboard identity is checkpoint_id/order, never a display label or list index.
 _CANONICAL_SPLIT_SCHEMA = 1
 _CANONICAL_CHECKPOINTS = (
-    ("GIANT", "Defeat the Giant", ("defeat the giant", "kill the giant", "giant")),
+    ("GIANT", "Giant", ("defeat the giant", "defeat giant", "the giant", "giant")),
     ("GENDO", "Gendo", ("gendo", "defeat gendo")),
+    ("CLEAR_PATH", "Find a way to clear the path",
+     ("find a way to clear the path", "clear the path")),
     ("CHALLENGES_COMPLETE", "Complete the 4 challenges",
      ("complete the 4 challenges", "complete four challenges")),
+    ("MINECART_LAVA", "Guide the minecart across the lava",
+     ("guide the minecart across the lava", "guide minecart across the lava")),
     ("MAZE_EXIT", "Maze Exit",
      ("find an exit to the maze", "maze exit", "exit to the maze", "exit the maze")),
     ("BOARD_GREEN_SHIP", "Board Green Ship",
