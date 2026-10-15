@@ -27,7 +27,7 @@ _MAX_TIME_MS = 24 * 60 * 60 * 1000
 
 # Stable seven-section Halloween Havoc route. Raw objective labels are aliases;
 # leaderboard identity is checkpoint_id/order, never a display label or list index.
-_CANONICAL_SPLIT_SCHEMA = 1
+_CANONICAL_SPLIT_SCHEMA = 2
 _CANONICAL_CHECKPOINTS = (
     ("GIANT", "Giant", ("defeat the giant", "defeat giant", "the giant", "giant")),
     ("GENDO", "Gendo", ("gendo", "defeat gendo")),
@@ -69,23 +69,43 @@ def _checkpoint_order(objective):
     return -1
 
 
+def _sequence_signature(objectives):
+    """Stable SHA-256 identity for an ordered objective sequence."""
+    normalized = [_normalized_objective(value) for value in objectives]
+    if not normalized:
+        return ""
+    return hashlib.sha256("\n".join(normalized).encode("utf-8")).hexdigest()
+
+
 def _split_has_missing_boundary(split):
     return bool(split.get("missingCheckpointIds") or [])
 
 
 def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
-    """Return canonical intervals for one run, falling back for non-HH test/legacy labels."""
+    """Derive stable intervals and route signatures without hiding route variation."""
     if not raw_splits:
         return []
     ordered = sorted(raw_splits, key=lambda item: (
         int(item.get("splitIndex", item.get("index", 0)) or 0),
         int(item.get("elapsedMs", 0) or 0)))
-    # New submissions already carry canonical IDs and skip-boundary metadata. Preserve
-    # those intervals exactly instead of trying to reconstruct them from their labels.
-    if any(str(item.get("checkpointId") or "") in _CANONICAL_IDS for item in ordered):
-        return ordered
+    raw_objectives = [str(item.get("objective", "") or "") for item in ordered]
+    run_route_signature = _sequence_signature(raw_objectives)
+    run_route_objectives = [_normalized_objective(value) for value in raw_objectives]
 
-    recognized_orders = { _checkpoint_order(item.get("objective", "")) for item in ordered }
+    # Already-canonical data is usable only if it already carries route signatures.
+    # Older canonical-only rows have lost the raw events needed to prove comparability.
+    if any(str(item.get("checkpointId") or "") in _CANONICAL_IDS for item in ordered):
+        result = []
+        for item in ordered:
+            row = dict(item)
+            row.setdefault("routeSignature", "")
+            row.setdefault("routePrefixSignature", "")
+            row.setdefault("runRouteSignature", "")
+            row.setdefault("routeSegmentLabel", "")
+            result.append(row)
+        return result
+
+    recognized_orders = {_checkpoint_order(item.get("objective", "")) for item in ordered}
     recognized_orders.discard(-1)
     # A terminal-only "Pumpkin King" label appears in generic/legacy data; require
     # at least one non-terminal milestone to identify an HH route. This still lets a
@@ -96,12 +116,16 @@ def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
     result = []
     last_elapsed = 0
     last_order = -1
-    for raw in ordered:
+    last_raw_position = -1
+    for position, raw in enumerate(ordered):
         order = _checkpoint_order(raw.get("objective", ""))
         elapsed = int(raw.get("elapsedMs") or 0)
         if order < 0 or order <= last_order or elapsed <= last_elapsed:
             continue
+
         checkpoint_id, label, _aliases = _CANONICAL_CHECKPOINTS[order]
+        segment_objectives = raw_objectives[last_raw_position + 1:position + 1]
+        segment_label = " > ".join(value.strip() for value in segment_objectives if value.strip())
         row = dict(raw)
         row.update({
             "schemaVersion": _CANONICAL_SPLIT_SCHEMA,
@@ -115,16 +139,22 @@ def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
             "status": "PASSED",
             "boundarySource": "OBJECTIVE",
             "missingCheckpointIds": list(_CANONICAL_IDS[last_order + 1:order]),
+            "routeSignature": _sequence_signature(segment_objectives),
+            "routePrefixSignature": _sequence_signature(raw_objectives[:position + 1]),
+            "runRouteSignature": run_route_signature,
+            "routeSegmentLabel": segment_label,
+            "_runRouteObjectives": run_route_objectives,
         })
         result.append(row)
         last_elapsed = elapsed
         last_order = order
+        last_raw_position = position
 
     terminal_order = len(_CANONICAL_CHECKPOINTS) - 1
     if completed and total_elapsed_ms > 0 and total_elapsed_ms > last_elapsed:
         if last_order == terminal_order and result:
-            # A trusted completion can adjust a late/rounded Pumpkin King boundary
-            # without changing the local timer or inventing any prior checkpoint.
+            # Completion confirms the measured terminal timestamp, but must not change
+            # the locally measured run duration.
             prior_elapsed = int(result[-2].get("elapsedMs") or 0) if len(result) > 1 else 0
             result[-1]["elapsedMs"] = int(total_elapsed_ms)
             result[-1]["splitMs"] = int(total_elapsed_ms) - prior_elapsed
@@ -143,9 +173,14 @@ def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
                 "splitMs": int(total_elapsed_ms) - last_elapsed,
                 "status": "PASSED",
                 "boundarySource": "CONFIRMED_RUN_END",
-                # Missing intermediate checkpoints are flagged, but Pumpkin King itself
-                # is known to be the terminal completion boundary.
                 "missingCheckpointIds": list(_CANONICAL_IDS[last_order + 1:terminal_order]),
+                # The game-end timestamp is known, but there is no observed terminal
+                # objective boundary; do not claim this interval is directly comparable.
+                "routeSignature": "",
+                "routePrefixSignature": "",
+                "runRouteSignature": run_route_signature,
+                "routeSegmentLabel": "Confirmed run end (terminal objective boundary not observed)",
+                "_runRouteObjectives": run_route_objectives,
             })
             result.append(row)
     return result
