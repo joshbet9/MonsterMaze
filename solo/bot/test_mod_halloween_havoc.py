@@ -166,7 +166,7 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(
             [(row["index"], row["objective"], row["splitMs"], row["elapsedMs"])
              for row in benchmark["worldRecordSplits"]],
-            [(1, "Start", 5000, 5000), (2, "Regroup", 20000, 25000), (3, "Pumpkin King", 5000, 30000)],
+            [(1, "Pumpkins", 10000, 10000), (2, "Graveyard", 20000, 30000)],
         )
         # The WR remains a separate completed run. Compact split fields support true WR
         # split deltas without returning the full run metadata or treating BKS as WR.
