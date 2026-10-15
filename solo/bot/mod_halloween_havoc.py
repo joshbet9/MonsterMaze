@@ -802,9 +802,20 @@ def handle_get(path, query, db_fn):
             if kind == "runs":
                 clauses.append("successful=1")
                 rows = _run_select(c, " AND ".join(clauses), args + [])
+                best_runs = _best_runs(rows)
+                # The stored split_count may have come from an older client and count raw
+                # objective events. Recompute the public count from canonical intervals on read.
+                for run in best_runs:
+                    raw_split_rows = _split_select(c, "submission_id=?", [run["submissionId"]])
+                    canonical_splits = _canonicalize_split_rows(raw_split_rows)
+                    run["rawSplitCount"] = len(raw_split_rows)
+                    run["splitCount"] = len(canonical_splits)
+                    run["splitSchemaVersion"] = _CANONICAL_SPLIT_SCHEMA if any(
+                        str(item.get("checkpointId") or "") in _CANONICAL_IDS for item in canonical_splits
+                    ) else 0
                 return 200, {"ok": True, "source": "community", "verified": False,
                              "context": context, "serverType": server_type, "kind": "runs",
-                             "rows": _best_runs(rows)}
+                             "rows": best_runs}
             if kind == "bks":
                 split_clauses, split_args = [], []
                 if context != "ALL":
@@ -834,15 +845,25 @@ def handle_get(path, query, db_fn):
                         raw_run_splits = _split_select(c, "submission_id=?", [run["submissionId"]])
                         run_splits = [_split_dict(item) for item in sorted(raw_run_splits, key=lambda item: int(item[1]))]
                         run["splits"] = run_splits
+                        # Keep only the canonical checkpoint rows needed for split deltas.
+                        # This is much smaller than embedding the full WR run and raw history.
+                        run["canonicalSplits"] = [{
+                            "checkpointId": str(item.get("checkpointId") or ""),
+                            "fromCheckpointId": str(item.get("fromCheckpointId") or ""),
+                            "missingCheckpointIds": list(item.get("missingCheckpointIds") or []),
+                            "index": int(item.get("index", item.get("splitIndex", 0)) or 0),
+                            "splitIndex": int(item.get("splitIndex", item.get("index", 0)) or 0),
+                            "objective": str(item.get("objective") or ""),
+                            "splitMs": int(item.get("splitMs") or 0),
+                            "elapsedMs": int(item.get("elapsedMs") or 0),
+                            "schemaVersion": int(item.get("schemaVersion") or 0),
+                        } for item in _canonicalize_split_rows(raw_run_splits)]
                         world_records[scope_key] = run
                 for benchmark in benchmarks:
                     scope_key = benchmark["context"] + "|" + benchmark["serverType"]
                     world_record = world_records.get(scope_key)
-                    # Only the completed run's time is needed to compare BKS vs WR.
-                    # Embedding the entire WR run and its splits here duplicates data
-                    # already represented by the BKS objective rows and can push this
-                    # public response beyond the mod client's bounded JSON-read limit.
                     benchmark["worldRecordTimeMs"] = int(world_record["timeMs"]) if world_record else None
+                    benchmark["worldRecordSplits"] = list(world_record.get("canonicalSplits") or []) if world_record else []
                 # The per-objective rows are already nested under each benchmark. Avoid
                 # returning a second flattened copy; consumers should read benchmarks[].rows.
                 return 200, {"ok": True, "source": "community", "verified": False,
