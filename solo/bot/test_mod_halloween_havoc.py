@@ -365,7 +365,7 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(canonical[2]["fromCheckpointId"], "GENDO")
         self.assertEqual(canonical[2]["splitMs"], sum(d for _, d in labels_and_durations[2:9]))
         self.assertEqual(canonical[5]["fromCheckpointId"], "MAZE_EXIT")
-        self.assertEqual(canonical[5]["splitMs"], sum(d for _, d in labels_and_durations[10:23]))
+        self.assertEqual(canonical[5]["splitMs"], sum(d for _, d in labels_and_durations[11:23]))
         self.assertEqual(sum(row["splitMs"] for row in canonical), elapsed)
         self.assertEqual(canonical[-1]["elapsedMs"], elapsed)
 
