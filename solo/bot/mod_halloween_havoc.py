@@ -589,6 +589,19 @@ def _best_runs(rows):
     return result[:100]
 
 
+def _add_split_counts(c, runs):
+    """Attach canonical checkpoint and retained raw-event counts to run summaries."""
+    for run in runs:
+        raw_split_rows = _split_select(c, "submission_id=?", [run["submissionId"]])
+        canonical_splits = _canonicalize_split_rows(raw_split_rows)
+        run["rawSplitCount"] = len(raw_split_rows)
+        run["splitCount"] = len(canonical_splits)
+        run["splitSchemaVersion"] = _CANONICAL_SPLIT_SCHEMA if any(
+            str(item.get("checkpointId") or "") in _CANONICAL_IDS for item in canonical_splits
+        ) else 0
+    return runs
+
+
 def _best_splits(rows, objective=None, split_index=None):
     """Return fastest clean canonical intervals per group; do not compare merged gaps."""
     best = {}
@@ -802,17 +815,9 @@ def handle_get(path, query, db_fn):
             if kind == "runs":
                 clauses.append("successful=1")
                 rows = _run_select(c, " AND ".join(clauses), args + [])
-                best_runs = _best_runs(rows)
-                # The stored split_count may have come from an older client and count raw
-                # objective events. Recompute the public count from canonical intervals on read.
-                for run in best_runs:
-                    raw_split_rows = _split_select(c, "submission_id=?", [run["submissionId"]])
-                    canonical_splits = _canonicalize_split_rows(raw_split_rows)
-                    run["rawSplitCount"] = len(raw_split_rows)
-                    run["splitCount"] = len(canonical_splits)
-                    run["splitSchemaVersion"] = _CANONICAL_SPLIT_SCHEMA if any(
-                        str(item.get("checkpointId") or "") in _CANONICAL_IDS for item in canonical_splits
-                    ) else 0
+                # Stored split_count may be a legacy raw-event count, so derive the
+                # public count from canonical intervals on every run-summary flow.
+                best_runs = _add_split_counts(c, _best_runs(rows))
                 return 200, {"ok": True, "source": "community", "verified": False,
                              "context": context, "serverType": server_type, "kind": "runs",
                              "rows": best_runs}
@@ -888,7 +893,7 @@ def handle_get(path, query, db_fn):
             if server_type != "ALL":
                 group_clauses.append("server_type=?"); group_args.append(server_type)
             runs = _run_select(c, " AND ".join(group_clauses), group_args)
-            completed = _best_runs([row for row in runs if bool(row[15])])
+            completed = _add_split_counts(c, _best_runs([row for row in runs if bool(row[15])]))
             splits = _split_select(c, " AND ".join(group_clauses), group_args)
 
             # The group profile shows global BKS and per-member best sections.
