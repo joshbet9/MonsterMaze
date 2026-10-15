@@ -122,6 +122,8 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(len(board["rows"]), 1)
         self.assertEqual(board["rows"][0]["timeMs"], 30000)
         self.assertTrue(board["rows"][0]["successful"])
+        self.assertEqual(board["rows"][0]["splitCount"], 2)
+        self.assertEqual(board["rows"][0]["rawSplitCount"], 2)
 
     def test_bks_composite_uses_best_split_per_objective_and_marks_complete(self):
         first = self.payload()
@@ -166,7 +168,59 @@ class HalloweenHavocApiTests(unittest.TestCase):
         # BKS response keeps WR timing separate without duplicating the entire WR run
         # and its splits; the composite's own objective rows retain provenance.
         self.assertNotIn("worldRecord", benchmark)
+        self.assertEqual(len(benchmark["worldRecordSplits"]), 2)
         self.assertNotIn("rows", response)
+
+    def test_canonical_run_views_keep_raw_events_and_publish_eight_wr_delta_rows(self):
+        labels = [
+            "Defeat the Giant",
+            "Regroup",
+            "Defeat Gendo",
+            "Find a way to clear the path",
+            "Complete the 4 challenges",
+            "Guide the minecart across the lava",
+            "Find an exit to the maze",
+            "Board the Green Ship",
+            "Enter the portal on the bottom deck",
+            "Defeat the Pumpkin King's Minions",
+            "Pumpkin King",
+        ]
+        splits = []
+        elapsed = 0
+        for index, objective in enumerate(labels, 1):
+            elapsed += 1000
+            splits.append({
+                "index": index, "objective": objective, "splitMs": 1000,
+                "elapsedMs": elapsed, "status": "PASSED", "completedAt": 1760000000000 + elapsed,
+            })
+        payload = self.payload(timeMs=elapsed, splitCount=len(splits), splits=splits)
+        self.assertEqual(self.submit(payload, "canonical-run-views-ip")[0], 200)
+
+        status, board = self.get({"kind": ["runs"], "context": ["HH"], "serverType": ["STANDARD"]})
+        self.assertEqual(status, 200, board)
+        self.assertEqual(board["rows"][0]["splitCount"], 8)
+        self.assertEqual(board["rows"][0]["rawSplitCount"], len(labels))
+
+        status, history = self.get({"kind": ["history"], "uuid": [self.player_uuid]})
+        self.assertEqual(status, 200, history)
+        run = history["rows"][0]
+        self.assertEqual(run["rawSplitCount"], len(labels))
+        self.assertEqual(run["splitCount"], 8)
+        self.assertEqual(len(run["splits"]), len(labels))
+        self.assertEqual(len(run["canonicalSplits"]), 8)
+        self.assertEqual([row["checkpointId"] for row in run["canonicalSplits"]], list(hh._CANONICAL_IDS))
+
+        status, response = self.get({"kind": ["bks"], "context": ["HH"], "serverType": ["STANDARD"]})
+        self.assertEqual(status, 200, response)
+        benchmark = response["benchmarks"][0]
+        self.assertTrue(benchmark["complete"])
+        self.assertEqual(len(benchmark["rows"]), 8)
+        self.assertEqual(len(benchmark["worldRecordSplits"]), 8)
+        self.assertEqual([row["checkpointId"] for row in benchmark["worldRecordSplits"]], list(hh._CANONICAL_IDS))
+        self.assertTrue(all(set(row.keys()) == {
+            "checkpointId", "fromCheckpointId", "missingCheckpointIds", "index", "splitIndex",
+            "objective", "splitMs", "elapsedMs", "schemaVersion",
+        } for row in benchmark["worldRecordSplits"]))
 
     def test_repeated_objective_names_remain_separate_chronological_splits(self):
         route = [
