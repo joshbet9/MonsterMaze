@@ -87,12 +87,10 @@ def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
 
     recognized_orders = { _checkpoint_order(item.get("objective", "")) for item in ordered }
     recognized_orders.discard(-1)
-    # One isolated "Pumpkin King" row appears in generic regression fixtures and is
-    # not enough evidence to reinterpret an arbitrary legacy split sequence as HH.
-    recognized = len(recognized_orders) >= 2
-    if not recognized:
-        # Keeps unrelated test fixtures and any nonstandard historical payload inspectable;
-        # real HH/HHC runs are converted as soon as a known milestone is present.
+    # A terminal-only "Pumpkin King" label appears in generic/legacy data; require
+    # at least one non-terminal milestone to identify an HH route. This still lets a
+    # short partial run with only the Giant checkpoint use the canonical schema.
+    if not any(order < len(_CANONICAL_CHECKPOINTS) - 1 for order in recognized_orders):
         return ordered
 
     result = []
