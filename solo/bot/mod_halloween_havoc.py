@@ -356,12 +356,15 @@ def _normalize_payload(body):
         raise ValueError("splits must be an array of at most 100 entries")
     normalized_splits = []
     previous_elapsed = 0
+    previous_index = 0
     for position, split in enumerate(splits, start=1):
         if not isinstance(split, dict):
             raise ValueError("split must be an object")
         index = _bounded_int(split.get("index", position), "split index", 1, _MAX_SPLITS)
-        if index != position:
-            raise ValueError("split indexes must be sequential starting at 1")
+        # Canonical route indices are stable checkpoint positions, so an index may be
+        # absent when a checkpoint was skipped. They must remain strictly increasing.
+        if index <= previous_index:
+            raise ValueError("split indexes must be strictly increasing")
         objective = _safe_text(split.get("objective"), "objective", 120)
         split_ms = _bounded_int(split.get("splitMs"), "splitMs", 1, _MAX_TIME_MS)
         elapsed_ms = _bounded_int(split.get("elapsedMs"), "elapsedMs", 1, _MAX_TIME_MS)
@@ -372,12 +375,37 @@ def _normalize_payload(body):
         split_status = str(split.get("status", "PASSED")).strip().upper()
         if split_status != "PASSED":
             raise ValueError("only completed objective splits may be submitted")
+
+        checkpoint_id = _safe_text(split.get("checkpointId", ""), "checkpointId", 40, allow_empty=True)
+        if checkpoint_id and checkpoint_id not in _CANONICAL_IDS:
+            raise ValueError("unknown canonical checkpointId")
+        from_checkpoint_id = _safe_text(split.get("fromCheckpointId", ""), "fromCheckpointId", 40, allow_empty=True)
+        if from_checkpoint_id and from_checkpoint_id != "START" and from_checkpoint_id not in _CANONICAL_IDS:
+            raise ValueError("unknown fromCheckpointId")
+        missing_raw = split.get("missingCheckpointIds", [])
+        if not isinstance(missing_raw, list) or len(missing_raw) > len(_CANONICAL_IDS):
+            raise ValueError("missingCheckpointIds must be a short array")
+        missing_ids = []
+        for missing_id in missing_raw:
+            missing_id = _safe_text(missing_id, "missing checkpoint ID", 40)
+            if missing_id not in _CANONICAL_IDS or missing_id in missing_ids:
+                raise ValueError("invalid or duplicate missingCheckpointIds entry")
+            missing_ids.append(missing_id)
+        boundary_source = _safe_text(split.get("boundarySource", "OBJECTIVE"), "boundarySource", 32)
+        if boundary_source not in ("OBJECTIVE", "CONFIRMED_RUN_END"):
+            raise ValueError("invalid boundarySource")
+        schema_version = _bounded_int(split.get("schemaVersion", 0), "schemaVersion", 0, _CANONICAL_SPLIT_SCHEMA)
+
         normalized_splits.append({
             "index": index, "objective": objective, "splitMs": split_ms,
             "elapsedMs": elapsed_ms, "status": "PASSED",
             "completedAt": _bounded_int(split.get("completedAt", 0), "completedAt", 0, 9_999_999_999_999),
+            "checkpointId": checkpoint_id, "fromCheckpointId": from_checkpoint_id,
+            "missingCheckpointIds": missing_ids, "boundarySource": boundary_source,
+            "schemaVersion": schema_version,
         })
         previous_elapsed = elapsed_ms
+        previous_index = index
     if int(payload.get("splitCount", len(normalized_splits))) != len(normalized_splits):
         raise ValueError("splitCount does not match submitted splits")
 
