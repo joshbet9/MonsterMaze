@@ -612,11 +612,24 @@ def handle_get(path, query, db_fn):
                 for benchmark in benchmarks:
                     scope_key = benchmark["context"] + "|" + benchmark["serverType"]
                     world_record = world_records.get(scope_key)
-                    # Only the completed run's time is needed to compare BKS vs WR.
-                    # Embedding the entire WR run and its splits here duplicates data
-                    # already represented by the BKS objective rows and can push this
-                    # public response beyond the mod client's bounded JSON-read limit.
+                    # Keep the completed WR separate from the theoretical BKS composite.
+                    # Return only comparison-ready fields for its chronological splits;
+                    # duplicating the full run roster/metadata makes the bounded client
+                    # response unnecessarily large, but WR split deltas need the real
+                    # record's split sequence (not the BKS rows as a proxy).
                     benchmark["worldRecordTimeMs"] = int(world_record["timeMs"]) if world_record else None
+                    benchmark["worldRecordSplits"] = [
+                        {
+                            "index": int(split.get("index") or position),
+                            "objective": str(split.get("objective") or ""),
+                            "splitMs": int(split.get("splitMs") or 0),
+                            "elapsedMs": int(split.get("elapsedMs") or 0),
+                        }
+                        for position, split in enumerate(world_record.get("splits", []) if world_record else [], start=1)
+                        if str(split.get("objective") or "").strip()
+                        and int(split.get("splitMs") or 0) > 0
+                        and int(split.get("elapsedMs") or 0) > 0
+                    ]
                 # The per-objective rows are already nested under each benchmark. Avoid
                 # returning a second flattened copy; consumers should read benchmarks[].rows.
                 return 200, {"ok": True, "source": "community", "verified": False,
