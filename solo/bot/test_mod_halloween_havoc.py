@@ -128,6 +128,7 @@ class HalloweenHavocApiTests(unittest.TestCase):
         second = self.payload(
             uuid=self.member2_uuid,
             name="RunnerB",
+            timeMs=40000,
             submissionId=str(uuid.uuid4()),
             runId=str(uuid.uuid4()),
             teamSignature="second-quartet-signature",
@@ -141,8 +142,8 @@ class HalloweenHavocApiTests(unittest.TestCase):
             splits=[
                 {"index": 1, "objective": "Pumpkins", "splitMs": 5000, "elapsedMs": 5000,
                  "status": "PASSED", "completedAt": 1760000010000},
-                {"index": 2, "objective": "Graveyard", "splitMs": 22000, "elapsedMs": 27000,
-                 "status": "PASSED", "completedAt": 1760000030000},
+                {"index": 2, "objective": "Graveyard", "splitMs": 35000, "elapsedMs": 40000,
+                 "status": "PASSED", "completedAt": 1760000040000},
             ],
         )
         self.assertEqual(self.submit(first, "bks-ip-a")[0], 200)
@@ -163,8 +164,19 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(benchmark["rows"][1]["compositeElapsedMs"], 25000)
         self.assertFalse(benchmark["verified"])
         self.assertEqual(benchmark["worldRecordTimeMs"], 30000)
-        # BKS response keeps WR timing separate without duplicating the entire WR run
-        # and its splits; the composite's own objective rows retain provenance.
+        self.assertEqual(benchmark["rows"][0]["runId"], second["runId"])
+        self.assertEqual(benchmark["worldRecordSplits"][0]["objective"], "Pumpkins")
+        self.assertEqual(benchmark["worldRecordSplits"][0]["splitMs"], 10000)
+        # A 40-second run is not the 30-second world record, but its faster 5-second
+        # Pumpkins section must still contribute to both the BKS and split leaderboard.
+        status, split_board = self.get({
+            "kind": ["splits"], "context": ["HH"], "serverType": ["STANDARD"],
+            "objective": ["Pumpkins"], "splitIndex": ["1"]
+        })
+        self.assertEqual(status, 200, split_board)
+        self.assertEqual(len(split_board["rows"]), 1)
+        self.assertEqual(split_board["rows"][0]["name"], "RunnerB")
+        self.assertEqual(split_board["rows"][0]["splitMs"], 5000)
         self.assertNotIn("worldRecord", benchmark)
         self.assertNotIn("rows", response)
 
