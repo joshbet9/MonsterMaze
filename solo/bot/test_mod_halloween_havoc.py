@@ -193,13 +193,31 @@ class HalloweenHavocApiTests(unittest.TestCase):
                 "index": index, "objective": objective, "splitMs": 1000,
                 "elapsedMs": elapsed, "status": "PASSED", "completedAt": 1760000000000 + elapsed,
             })
-        payload = self.payload(timeMs=elapsed, splitCount=len(splits), splits=splits)
+        canonical_input = [{
+            "index": index + 1,
+            "checkpointId": checkpoint_id,
+            "objective": label,
+            "splitMs": 1000,
+            "elapsedMs": (index + 1) * 1000,
+            "schemaVersion": hh._CANONICAL_SPLIT_SCHEMA,
+        } for index, (checkpoint_id, label) in enumerate(zip(
+            hh._CANONICAL_IDS,
+            [entry[1] for entry in hh._CANONICAL_CHECKPOINTS],
+        ))]
+        payload = self.payload(
+            timeMs=elapsed, splitCount=8, rawSplitCount=len(splits),
+            splits=splits, canonicalSplits=canonical_input,
+        )
         self.assertEqual(self.submit(payload, "canonical-run-views-ip")[0], 200)
 
         status, board = self.get({"kind": ["runs"], "context": ["HH"], "serverType": ["STANDARD"]})
         self.assertEqual(status, 200, board)
         self.assertEqual(board["rows"][0]["splitCount"], 8)
         self.assertEqual(board["rows"][0]["rawSplitCount"], len(labels))
+        c = self.db()
+        self.assertEqual(c.execute("SELECT split_count FROM community_hh_runs").fetchone()[0], 8)
+        self.assertEqual(c.execute("SELECT COUNT(*) FROM community_hh_splits").fetchone()[0], len(labels))
+        c.close()
 
         status, history = self.get({"kind": ["history"], "uuid": [self.player_uuid]})
         self.assertEqual(status, 200, history)
@@ -221,6 +239,36 @@ class HalloweenHavocApiTests(unittest.TestCase):
             "checkpointId", "fromCheckpointId", "missingCheckpointIds", "index", "splitIndex",
             "objective", "splitMs", "elapsedMs", "schemaVersion",
         } for row in benchmark["worldRecordSplits"]))
+
+    def test_raw_split_count_mismatch_is_rejected(self):
+        payload = self.payload(rawSplitCount=99)
+        status, response = self.submit(payload, "raw-count-mismatch-ip")
+        self.assertEqual(status, 400)
+        self.assertIn("rawSplitCount", response["error"])
+
+    def test_legacy_raw_event_split_count_remains_accepted(self):
+        labels = [
+            "Defeat the Giant", "Defeat Gendo", "Complete the 4 challenges",
+            "Guide the minecart across the lava", "Find an exit to the maze",
+            "Enter the portal on the bottom deck", "Defeat the Pumpkin King's minions",
+            "Pumpkin King",
+        ]
+        splits = []
+        elapsed = 0
+        for index, objective in enumerate(labels, 1):
+            elapsed += 1000
+            splits.append({
+                "index": index, "objective": objective, "splitMs": 1000,
+                "elapsedMs": elapsed, "status": "PASSED", "completedAt": 1760000000000 + elapsed,
+            })
+        payload = self.payload(
+            timeMs=elapsed, splitCount=len(splits), splits=splits,
+        )
+        status, response = self.submit(payload, "legacy-canonical-count-ip")
+        self.assertEqual(status, 200, response)
+        c = self.db()
+        self.assertEqual(c.execute("SELECT split_count FROM community_hh_runs").fetchone()[0], 8)
+        c.close()
 
     def test_repeated_objective_names_remain_separate_chronological_splits(self):
         route = [
