@@ -245,6 +245,11 @@ def _ensure_schema(c):
         run_successful INTEGER NOT NULL DEFAULT 0,
         run_status TEXT NOT NULL DEFAULT 'PARTIAL',
         submitted_at INTEGER NOT NULL,
+        checkpoint_id TEXT NOT NULL DEFAULT '',
+        from_checkpoint_id TEXT NOT NULL DEFAULT '',
+        missing_checkpoint_ids_json TEXT NOT NULL DEFAULT '[]',
+        boundary_source TEXT NOT NULL DEFAULT 'OBJECTIVE',
+        schema_version INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (submission_id, split_index)
     )""")
     # Upgrade databases created by an earlier review build that did not yet retain
@@ -253,6 +258,18 @@ def _ensure_schema(c):
     split_columns = {row[1] for row in c.execute("PRAGMA table_info(community_hh_splits)").fetchall()}
     if "run_status" not in split_columns:
         c.execute("ALTER TABLE community_hh_splits ADD COLUMN run_status TEXT NOT NULL DEFAULT 'PARTIAL'")
+    # Persist canonical interval identity and skipped-boundary evidence. Defaults make
+    # legacy rows safe to read; their canonical view is derived without rewriting them.
+    migrations = (
+        ("checkpoint_id", "TEXT NOT NULL DEFAULT ''"),
+        ("from_checkpoint_id", "TEXT NOT NULL DEFAULT ''"),
+        ("missing_checkpoint_ids_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("boundary_source", "TEXT NOT NULL DEFAULT 'OBJECTIVE'"),
+        ("schema_version", "INTEGER NOT NULL DEFAULT 0"),
+    )
+    for column, declaration in migrations:
+        if column not in split_columns:
+            c.execute("ALTER TABLE community_hh_splits ADD COLUMN %s %s" % (column, declaration))
 
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_hh_runs_board ON community_hh_runs(context,server_type,successful,time_ms,submitted_at)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_hh_runs_player ON community_hh_runs(uuid,submitted_at DESC)")
