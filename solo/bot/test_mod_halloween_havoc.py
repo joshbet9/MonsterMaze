@@ -163,8 +163,13 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(benchmark["rows"][1]["compositeElapsedMs"], 25000)
         self.assertFalse(benchmark["verified"])
         self.assertEqual(benchmark["worldRecordTimeMs"], 30000)
-        # BKS response keeps WR timing separate without duplicating the entire WR run
-        # and its splits; the composite's own objective rows retain provenance.
+        self.assertEqual(
+            [(row["index"], row["objective"], row["splitMs"], row["elapsedMs"])
+             for row in benchmark["worldRecordSplits"]],
+            [(1, "Start", 5000, 5000), (2, "Regroup", 20000, 25000), (3, "Pumpkin King", 5000, 30000)],
+        )
+        # The WR remains a separate completed run. Compact split fields support true WR
+        # split deltas without returning the full run metadata or treating BKS as WR.
         self.assertNotIn("worldRecord", benchmark)
         self.assertNotIn("rows", response)
 
