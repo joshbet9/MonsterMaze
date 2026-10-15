@@ -143,6 +143,15 @@ class HalloweenHavocApiTests(unittest.TestCase):
         )
         self.assertEqual(self.submit(first, "bks-ip-a")[0], 200)
         self.assertEqual(self.submit(second, "bks-ip-b")[0], 200)
+
+        # The total-run board correctly exposes only the quartet's 30-second best run.
+        # Its split board and BKS must still see the slower attempt's faster Pumpkin section.
+        status, run_board = self.get({"kind": ["runs"], "context": ["HH"], "serverType": ["STANDARD"]})
+        self.assertEqual(status, 200, run_board)
+        self.assertEqual(len(run_board["rows"]), 1)
+        self.assertEqual(run_board["rows"][0]["name"], "RunnerA")
+        self.assertEqual(run_board["rows"][0]["timeMs"], 30000)
+
         status, response = self.get({"kind": ["bks"], "context": ["HH"], "serverType": ["STANDARD"]})
         self.assertEqual(status, 200, response)
         self.assertTrue(response["ok"])
