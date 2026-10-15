@@ -25,22 +25,19 @@ _MAX_BODY = 64 * 1024
 _MAX_SPLITS = 100
 _MAX_TIME_MS = 24 * 60 * 60 * 1000
 
-# Stable seven-section Halloween Havoc route. Raw objective labels are aliases;
-# leaderboard identity is checkpoint_id/order, never a display label or list index.
-_CANONICAL_SPLIT_SCHEMA = 2
+# Stable eight-section HH route. The two route-variable labels ("Find a way to clear the path"
+# and "Board the Green Ship") remain raw events inside adjacent longer intervals.
+# The fixed interval endpoints below appear in all four uploaded reference runs.
+_CANONICAL_SPLIT_SCHEMA = 3
 _CANONICAL_CHECKPOINTS = (
     ("GIANT", "Giant", ("defeat the giant", "defeat giant", "the giant", "giant")),
     ("GENDO", "Gendo", ("gendo", "defeat gendo")),
-    ("CLEAR_PATH", "Find a way to clear the path",
-     ("find a way to clear the path", "clear the path")),
     ("CHALLENGES_COMPLETE", "Complete the 4 challenges",
      ("complete the 4 challenges", "complete four challenges")),
     ("MINECART_LAVA", "Guide the minecart across the lava",
      ("guide the minecart across the lava", "guide minecart across the lava")),
     ("MAZE_EXIT", "Maze Exit",
      ("find an exit to the maze", "maze exit", "exit to the maze", "exit the maze")),
-    ("BOARD_GREEN_SHIP", "Board Green Ship",
-     ("board the green ship", "board green ship")),
     ("BOTTOM_DECK_PORTAL", "Bottom Deck Portal",
      ("enter the portal on the bottom deck", "bottom deck portal")),
     ("PUMPKIN_KING_MINIONS", "Pumpkin King's Minions",
@@ -69,63 +66,30 @@ def _checkpoint_order(objective):
     return -1
 
 
-def _sequence_signature(objectives):
-    """Stable SHA-256 identity for an ordered objective sequence."""
-    normalized = [_normalized_objective(value) for value in objectives]
-    if not normalized:
-        return ""
-    return hashlib.sha256("\n".join(normalized).encode("utf-8")).hexdigest()
-
-
 def _split_has_missing_boundary(split):
     return bool(split.get("missingCheckpointIds") or [])
 
 
 def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
-    """Derive stable intervals and route signatures without hiding route variation."""
+    """Derive the fixed eight-checkpoint view; non-canonical events merge into longer intervals."""
     if not raw_splits:
         return []
     ordered = sorted(raw_splits, key=lambda item: (
         int(item.get("splitIndex", item.get("index", 0)) or 0),
         int(item.get("elapsedMs", 0) or 0)))
-    raw_objectives = [str(item.get("objective", "") or "") for item in ordered]
-    run_route_signature = _sequence_signature(raw_objectives)
-    run_route_objectives = [_normalized_objective(value) for value in raw_objectives]
 
-    # Already-canonical data is usable only if it already carries route signatures.
-    # Older canonical-only rows have lost the raw events needed to prove comparability.
-    if any(str(item.get("checkpointId") or "") in _CANONICAL_IDS for item in ordered):
-        result = []
-        for item in ordered:
-            row = dict(item)
-            row.setdefault("routeSignature", "")
-            row.setdefault("routePrefixSignature", "")
-            row.setdefault("runRouteSignature", "")
-            row.setdefault("routeSegmentLabel", "")
-            result.append(row)
-        return result
-
-    recognized_orders = {_checkpoint_order(item.get("objective", "")) for item in ordered}
-    recognized_orders.discard(-1)
-    # A terminal-only "Pumpkin King" label appears in generic/legacy data; require
-    # at least one non-terminal milestone to identify an HH route. This still lets a
-    # short partial run with only the Giant checkpoint use the canonical schema.
-    if not any(order < len(_CANONICAL_CHECKPOINTS) - 1 for order in recognized_orders):
-        return ordered
-
+    # Re-derive from observed objective labels even if the row also contains old schema
+    # metadata. This prevents ten-checkpoint records from leaking into the eight-point BKS.
     result = []
     last_elapsed = 0
     last_order = -1
-    last_raw_position = -1
-    for position, raw in enumerate(ordered):
+    for raw in ordered:
         order = _checkpoint_order(raw.get("objective", ""))
         elapsed = int(raw.get("elapsedMs") or 0)
         if order < 0 or order <= last_order or elapsed <= last_elapsed:
             continue
 
         checkpoint_id, label, _aliases = _CANONICAL_CHECKPOINTS[order]
-        segment_objectives = raw_objectives[last_raw_position + 1:position + 1]
-        segment_label = " > ".join(value.strip() for value in segment_objectives if value.strip())
         row = dict(raw)
         row.update({
             "schemaVersion": _CANONICAL_SPLIT_SCHEMA,
@@ -139,22 +103,19 @@ def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
             "status": "PASSED",
             "boundarySource": "OBJECTIVE",
             "missingCheckpointIds": list(_CANONICAL_IDS[last_order + 1:order]),
-            "routeSignature": _sequence_signature(segment_objectives),
-            "routePrefixSignature": _sequence_signature(raw_objectives[:position + 1]),
-            "runRouteSignature": run_route_signature,
-            "routeSegmentLabel": segment_label,
-            "_runRouteObjectives": run_route_objectives,
         })
+        # Old route-signature fields are deliberately stripped: route-aware comparisons
+        # are not part of the fixed-checkpoint model.
+        for key in ("routeSignature", "routePrefixSignature", "runRouteSignature", "routeSegmentLabel",
+                    "_runRouteObjectives"):
+            row.pop(key, None)
         result.append(row)
         last_elapsed = elapsed
         last_order = order
-        last_raw_position = position
 
     terminal_order = len(_CANONICAL_CHECKPOINTS) - 1
     if completed and total_elapsed_ms > 0 and total_elapsed_ms > last_elapsed:
         if last_order == terminal_order and result:
-            # Completion confirms the measured terminal timestamp, but must not change
-            # the locally measured run duration.
             prior_elapsed = int(result[-2].get("elapsedMs") or 0) if len(result) > 1 else 0
             result[-1]["elapsedMs"] = int(total_elapsed_ms)
             result[-1]["splitMs"] = int(total_elapsed_ms) - prior_elapsed
@@ -174,14 +135,10 @@ def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
                 "status": "PASSED",
                 "boundarySource": "CONFIRMED_RUN_END",
                 "missingCheckpointIds": list(_CANONICAL_IDS[last_order + 1:terminal_order]),
-                # The game-end timestamp is known, but there is no observed terminal
-                # objective boundary; do not claim this interval is directly comparable.
-                "routeSignature": "",
-                "routePrefixSignature": "",
-                "runRouteSignature": run_route_signature,
-                "routeSegmentLabel": "Confirmed run end (terminal objective boundary not observed)",
-                "_runRouteObjectives": run_route_objectives,
             })
+            for key in ("routeSignature", "routePrefixSignature", "runRouteSignature", "routeSegmentLabel",
+                        "_runRouteObjectives"):
+                row.pop(key, None)
             result.append(row)
     return result
 
@@ -634,15 +591,11 @@ def _best_runs(rows):
 
 
 def _best_splits(rows, objective=None, split_index=None):
-    """Return fastest intervals per group, never mixing different objective routes."""
+    """Return fastest clean canonical intervals per group; do not compare merged gaps."""
     best = {}
     for split in _canonicalize_split_rows(rows):
         split["teamMembers"] = _json_members(split.get("teamMembers"))
         if _split_has_missing_boundary(split):
-            continue
-        route_signature = str(split.get("routeSignature") or "")
-        if not route_signature:
-            # Old canonical-only rows lack enough raw evidence to establish comparability.
             continue
         if objective and split["objective"].casefold() != objective.casefold():
             continue
@@ -650,221 +603,89 @@ def _best_splits(rows, objective=None, split_index=None):
         if split_index is not None and occurrence != split_index:
             continue
         key = (split["context"], split["serverType"], split["teamSignature"] or split["uuid"],
-               occurrence, str(split.get("checkpointId") or split["objective"]).casefold(),
-               route_signature)
+               occurrence, str(split.get("checkpointId") or split["objective"]).casefold())
         existing = best.get(key)
         candidate_key = (int(split["splitMs"]), int(split["elapsedMs"]), -int(split["submittedAt"]))
         if existing is None or candidate_key < (int(existing["splitMs"]), int(existing["elapsedMs"]), -int(existing["submittedAt"])):
             best[key] = split
-    result = sorted(best.values(), key=lambda item: (
+    return sorted(best.values(), key=lambda item: (
         int(item.get("splitIndex", item.get("index", 999)) or 999), item["objective"].casefold(),
-        str(item.get("routeSignature") or ""), int(item["splitMs"]),
-        item["teamSignature"], item["name"].lower()))
-    for item in result:
-        item.pop("_runRouteObjectives", None)
-    return result
+        int(item["splitMs"]), item["teamSignature"], item["name"].lower()))
 
 
 
 def _best_known_split_benchmarks(rows, required_objectives):
-    """Build BKS from directly comparable route segments; keep alternate routes separate."""
-    canonical_rows = _canonicalize_split_rows(rows)
-    benchmarks = []
-    scopes = sorted(set(
-        (str(item.get("context", "HH")).upper(), str(item.get("serverType", "STANDARD")).upper())
-        for item in canonical_rows
-    ))
+    """Build a chronological BKS composite from the fixed canonical checkpoint intervals."""
+    best = {}
+    for split in _canonicalize_split_rows(rows):
+        split["teamMembers"] = _json_members(split.get("teamMembers"))
+        objective = str(split.get("objective", "")).strip()
+        split_ms = int(split.get("splitMs") or 0)
+        elapsed_ms = int(split.get("elapsedMs") or 0)
+        split_index = int(split.get("splitIndex", split.get("index", 0)) or 0)
+        if _split_has_missing_boundary(split):
+            continue
+        if not objective or split_ms <= 0 or elapsed_ms <= 0 or split_index <= 0:
+            continue
+        scope = (str(split["context"]).upper(), str(split["serverType"]).upper())
+        key = scope + (split_index, objective.casefold())
+        prior = best.get(key)
+        score = (split_ms, elapsed_ms, -int(split.get("submittedAt") or 0))
+        prior_score = ((int(prior.get("splitMs") or 0), int(prior.get("elapsedMs") or 0),
+                        -int(prior.get("submittedAt") or 0)) if prior else None)
+        if prior is None or score < prior_score:
+            best[key] = split
 
+    scopes = sorted(set((key[0], key[1]) for key in best))
+    benchmarks = []
     for scope in scopes:
         scope_key = scope[0] + "|" + scope[1]
         required = list(required_objectives.get(scope_key) or [])
-        scope_rows = [
-            item for item in canonical_rows
-            if str(item.get("context", "HH")).upper() == scope[0]
-            and str(item.get("serverType", "STANDARD")).upper() == scope[1]
-        ]
+        available = [item for key, item in best.items() if key[:2] == scope]
+        required_keys = {(index, str(name).casefold()) for index, name in enumerate(required, 1)}
+        if required:
+            ordered_entries = [(index, name, best.get(scope + (index, str(name).casefold())))
+                               for index, name in enumerate(required, 1)]
+            extras = [item for item in available
+                      if (int(item.get("splitIndex") or 0), str(item["objective"]).casefold()) not in required_keys]
+            extras.sort(key=lambda item: (int(item.get("splitIndex") or 999), str(item["objective"]).casefold()))
+            ordered_entries.extend((int(item.get("splitIndex") or 999), str(item["objective"]), item) for item in extras)
+        else:
+            available.sort(key=lambda item: (int(item.get("splitIndex") or 999), str(item["objective"]).casefold()))
+            ordered_entries = [(int(item.get("splitIndex") or position), str(item["objective"]), item)
+                               for position, item in enumerate(available, 1)]
 
-        # Split (SECTION mode) references require the exact sequence of observed
-        # objectives inside that interval to match.
-        section_best = {}
-        # Cumulative (RUN mode) references require an identical objective prefix.
-        prefix_best = {}
-        successful_routes = {}
-        for source in scope_rows:
-            if _split_has_missing_boundary(source):
+        composite_rows = []
+        cumulative = 0
+        missing = []
+        for index, name, split in ordered_entries:
+            if split is None:
+                if required and index <= len(required):
+                    missing.append(name)
                 continue
-            objective = str(source.get("objective", "")).strip()
-            split_ms = int(source.get("splitMs") or 0)
-            elapsed_ms = int(source.get("elapsedMs") or 0)
-            split_index = int(source.get("splitIndex", source.get("index", 0)) or 0)
-            route_signature = str(source.get("routeSignature") or "")
-            prefix_signature = str(source.get("routePrefixSignature") or "")
-            run_signature = str(source.get("runRouteSignature") or "")
-            if not objective or split_ms <= 0 or elapsed_ms <= 0 or split_index <= 0:
-                continue
-            if not route_signature or not prefix_signature or not run_signature:
-                # Fail closed for records where only canonical labels survived.
-                continue
-            source["teamMembers"] = _json_members(source.get("teamMembers"))
+            cumulative += int(split["splitMs"])
+            split["compositeIndex"] = index
+            split["compositeSplitMs"] = int(split["splitMs"])
+            split["compositeElapsedMs"] = cumulative
+            split["sourceRunId"] = split.get("runId", "")
+            split["sourceSubmissionId"] = split.get("submissionId", "")
+            split["sourceAttemptStatus"] = split.get("runStatus", "UNKNOWN")
+            composite_rows.append(split)
 
-            section_key = (split_index, objective.casefold(), route_signature)
-            section_prior = section_best.get(section_key)
-            section_score = (split_ms, elapsed_ms, -int(source.get("submittedAt") or 0))
-            if section_prior is None or section_score < (
-                int(section_prior.get("splitMs") or 0),
-                int(section_prior.get("elapsedMs") or 0),
-                -int(section_prior.get("submittedAt") or 0),
-            ):
-                section_best[section_key] = source
-
-            prefix_key = (split_index, objective.casefold(), prefix_signature)
-            prefix_prior = prefix_best.get(prefix_key)
-            prefix_score = (elapsed_ms, split_ms, -int(source.get("submittedAt") or 0))
-            if prefix_prior is None or prefix_score < (
-                int(prefix_prior.get("elapsedMs") or 0),
-                int(prefix_prior.get("splitMs") or 0),
-                -int(prefix_prior.get("submittedAt") or 0),
-            ):
-                prefix_best[prefix_key] = source
-
-            if source.get("runSuccessful") and run_signature:
-                route = successful_routes.setdefault(run_signature, {
-                    "signature": run_signature,
-                    "objectives": list(source.get("_runRouteObjectives") or []),
-                    "best": {},
-                })
-                # A composite may only take sections from completed runs with the
-                # same full objective sequence, not mix route variants.
-                key = (split_index, objective.casefold())
-                prior = route["best"].get(key)
-                score = (split_ms, elapsed_ms, -int(source.get("submittedAt") or 0))
-                if prior is None or score < (
-                    int(prior.get("splitMs") or 0),
-                    int(prior.get("elapsedMs") or 0),
-                    -int(prior.get("submittedAt") or 0),
-                ):
-                    route["best"][key] = source
-
-        def public_row(source):
-            row = dict(source)
-            row.pop("_runRouteObjectives", None)
-            return row
-
-        section_rows = [public_row(item) for item in section_best.values()]
-        section_rows.sort(key=lambda item: (
-            int(item.get("splitIndex") or item.get("index") or 999),
-            str(item.get("objective") or "").casefold(),
-            str(item.get("routeSignature") or ""),
-            int(item.get("splitMs") or 0),
-        ))
-        prefix_rows = [public_row(item) for item in prefix_best.values()]
-        prefix_rows.sort(key=lambda item: (
-            int(item.get("splitIndex") or item.get("index") or 999),
-            str(item.get("objective") or "").casefold(),
-            str(item.get("routePrefixSignature") or ""),
-            int(item.get("elapsedMs") or 0),
-        ))
-
-        route_sequences = {
-            signature: list(route.get("objectives") or [])
-            for signature, route in successful_routes.items()
-        }
-        label_counts = {}
-        for sequence in route_sequences.values():
-            counts = {}
-            for label in sequence:
-                counts[label] = counts.get(label, 0) + 1
-            for label in set(counts):
-                label_counts.setdefault(label, []).append(counts[label])
-        baseline_counts = {
-            label: min(counts) for label, counts in label_counts.items()
-        }
-
-        route_variants = []
-        for variant_number, signature in enumerate(sorted(successful_routes), start=1):
-            route = successful_routes[signature]
-            variant_best = route["best"]
-            variant_rows = []
-            missing = []
-            cumulative = 0
-            if required:
-                ordered_entries = [(index, name, variant_best.get((index, str(name).casefold())))
-                                   for index, name in enumerate(required, 1)]
-            else:
-                ordered_entries = [
-                    (int(item.get("splitIndex") or 999), str(item.get("objective") or ""), item)
-                    for item in variant_best.values()
-                ]
-                ordered_entries.sort(key=lambda entry: entry[0])
-
-            for index, name, split in ordered_entries:
-                if split is None:
-                    if required:
-                        missing.append(name)
-                    continue
-                row = public_row(split)
-                cumulative += int(row.get("splitMs") or 0)
-                row["compositeIndex"] = index
-                row["compositeSplitMs"] = int(row.get("splitMs") or 0)
-                row["compositeElapsedMs"] = cumulative
-                row["sourceRunId"] = row.get("runId", "")
-                row["sourceSubmissionId"] = row.get("submissionId", "")
-                row["sourceAttemptStatus"] = row.get("runStatus", "UNKNOWN")
-                row["routeVariantSignature"] = signature
-                variant_rows.append(row)
-
-            extra_objectives = []
-            sequence_counts = {}
-            for label in route.get("objectives") or []:
-                sequence_counts[label] = sequence_counts.get(label, 0) + 1
-            for label, count in sequence_counts.items():
-                if count > baseline_counts.get(label, 0):
-                    extra_objectives.append(label)
-            if extra_objectives:
-                route_label = "Includes " + ", ".join(extra_objectives)
-            else:
-                route_label = "Route variant " + signature[:8]
-
-            complete = bool(required) and not missing and len(variant_rows) >= len(required)
-            route_variants.append({
-                "routeVariantId": signature[:8],
-                "routeVariantSignature": signature,
-                "routeVariantLabel": route_label,
-                "complete": complete,
-                "requiredObjectives": required,
-                "requiredObjectiveCount": len(required),
-                "knownObjectiveCount": len(variant_rows),
-                "knownCompositeTimeMs": cumulative,
-                "totalTimeMs": cumulative if complete else None,
-                "missingObjectives": missing,
-                "rows": variant_rows,
-            })
-
-        # One root object per context/server is kept for API compatibility. Where
-        # multiple routes exist there is deliberately no single total BKS composite.
-        single_complete_variant = len(route_variants) == 1 and route_variants[0]["complete"]
-        only_variant = route_variants[0] if single_complete_variant else None
-        root_rows = only_variant["rows"] if only_variant else []
-        root_missing = only_variant["missingObjectives"] if only_variant else []
-        root_known_time = only_variant["knownCompositeTimeMs"] if only_variant else 0
-        root_known_count = only_variant["knownObjectiveCount"] if only_variant else 0
+        complete = bool(required) and not missing and len(composite_rows) >= len(required)
         benchmarks.append({
             "context": scope[0],
             "serverType": scope[1],
             "kind": "bks",
             "verified": False,
-            "complete": bool(single_complete_variant),
-            "routeVariantCount": len(route_variants),
+            "complete": complete,
             "requiredObjectives": required,
             "requiredObjectiveCount": len(required),
-            "knownObjectiveCount": root_known_count,
-            "knownCompositeTimeMs": root_known_time,
-            "totalTimeMs": only_variant["totalTimeMs"] if only_variant else None,
-            "missingObjectives": root_missing,
-            "rows": root_rows,
-            "sectionRows": section_rows,
-            "prefixRows": prefix_rows,
-            "routeVariants": route_variants,
+            "knownObjectiveCount": len(composite_rows),
+            "knownCompositeTimeMs": cumulative,
+            "totalTimeMs": cumulative if complete else None,
+            "missingObjectives": missing,
+            "rows": composite_rows,
         })
     return benchmarks
 
