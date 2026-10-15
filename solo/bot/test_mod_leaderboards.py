@@ -107,6 +107,43 @@ class ModLeaderboardTests(unittest.TestCase):
         c.close()
         self.assertEqual(rows, (1, "Repulsor", 1, 1760000000000))
 
+    def test_late_unknown_duplicate_never_downgrades_known_kit(self):
+        player_uuid = str(uuid.uuid4())
+        first = {
+            "submissionId": str(uuid.uuid4()), "uuid": player_uuid, "name": "MazeRunner",
+            "context": "MIN", "game": "Monster Maze", "mode": "classic",
+            "pattern": 1, "kit": "Body Builder", "stage": 22, "timeMs": 417327,
+            "startedAt": 1760000000000,
+        }
+        # The winner's own upload can arrive after another observer already supplied the
+        # same player's row, but its kit is Unknown. It must not create another score or
+        # erase the known Body Builder observation.
+        late_duplicate = dict(first)
+        late_duplicate["submissionId"] = str(uuid.uuid4())
+        late_duplicate["startedAt"] = 1760000006500
+        late_duplicate["kit"] = "Unknown"
+        late_duplicate["pattern"] = -1
+
+        first_status, first_response = mod_leaderboards.handle_submit(
+            json.dumps(first).encode("utf-8"), "known-kit-first-ip", self.db
+        )
+        duplicate_status, duplicate_response = mod_leaderboards.handle_submit(
+            json.dumps(late_duplicate).encode("utf-8"), "late-unknown-ip", self.db
+        )
+        self.assertEqual(first_status, 200)
+        self.assertTrue(first_response["accepted"])
+        self.assertEqual(duplicate_status, 200)
+        self.assertTrue(duplicate_response["accepted"])
+        self.assertTrue(duplicate_response["deduplicated"])
+
+        c = self.db()
+        rows = c.execute(
+            "SELECT COUNT(*),kit,pattern,stage FROM community_mod_runs WHERE lower(uuid)=?",
+            (player_uuid.lower(),),
+        ).fetchone()
+        c.close()
+        self.assertEqual(rows, (1, "Body Builder", 1, 22))
+
     def test_game_info_returns_all_participant_rows_near_start_timestamp(self):
         anchor_uuid = str(uuid.uuid4())
         other_uuid = str(uuid.uuid4())
