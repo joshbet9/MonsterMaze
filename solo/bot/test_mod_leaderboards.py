@@ -122,6 +122,10 @@ class ModLeaderboardTests(unittest.TestCase):
         late_duplicate["submissionId"] = str(uuid.uuid4())
         late_duplicate["startedAt"] = 1760000006500
         late_duplicate["kit"] = "Unknown"
+        # Deliberately worse timing/stage metadata from the duplicate observer must not
+        # overwrite the already accepted known-kit winner record.
+        late_duplicate["stage"] = 19
+        late_duplicate["timeMs"] = 429921
         late_duplicate["pattern"] = -1
 
         first_status, first_response = mod_leaderboards.handle_submit(
@@ -138,11 +142,11 @@ class ModLeaderboardTests(unittest.TestCase):
 
         c = self.db()
         rows = c.execute(
-            "SELECT COUNT(*),kit,pattern,stage FROM community_mod_runs WHERE lower(uuid)=?",
+            "SELECT COUNT(*),kit,pattern,stage,time_ms FROM community_mod_runs WHERE lower(uuid)=?",
             (player_uuid.lower(),),
         ).fetchone()
         c.close()
-        self.assertEqual(rows, (1, "Body Builder", 1, 22))
+        self.assertEqual(rows, (1, "Body Builder", 1, 22, 417327))
 
     def test_game_info_returns_all_participant_rows_near_start_timestamp(self):
         anchor_uuid = str(uuid.uuid4())
