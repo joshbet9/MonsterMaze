@@ -81,7 +81,11 @@ def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
     if any(str(item.get("checkpointId") or "") in _CANONICAL_IDS for item in ordered):
         return ordered
 
-    recognized = any(_checkpoint_order(item.get("objective", "")) >= 0 for item in ordered)
+    recognized_orders = { _checkpoint_order(item.get("objective", "")) for item in ordered }
+    recognized_orders.discard(-1)
+    # One isolated "Pumpkin King" row appears in generic regression fixtures and is
+    # not enough evidence to reinterpret an arbitrary legacy split sequence as HH.
+    recognized = len(recognized_orders) >= 2
     if not recognized:
         # Keeps unrelated test fixtures and any nonstandard historical payload inspectable;
         # real HH/HHC runs are converted as soon as a known milestone is present.
