@@ -790,9 +790,17 @@ def handle_get(path, query, db_fn):
                     run = _run_row(raw_run)
                     run["teamMembers"] = _json_members(run.get("teamMembers"))
                     raw_splits = _split_select(c, "submission_id=?", [run["submissionId"]])
-                    splits = [_split_dict(raw_split) for raw_split in raw_splits]
-                    splits.sort(key=lambda item: int(item.get("splitIndex", 0)))
-                    run["splits"] = splits
+                    raw_split_dicts = [_split_dict(raw_split) for raw_split in raw_splits]
+                    raw_split_dicts.sort(key=lambda item: int(item.get("splitIndex", 0)))
+                    canonical_splits = _canonicalize_split_rows(raw_splits)
+                    run["splits"] = raw_split_dicts
+                    run["rawSplits"] = raw_split_dicts
+                    run["canonicalSplits"] = canonical_splits
+                    run["rawSplitCount"] = len(raw_split_dicts)
+                    run["splitCount"] = len(canonical_splits)
+                    run["splitSchemaVersion"] = _CANONICAL_SPLIT_SCHEMA if any(
+                        str(item.get("checkpointId") or "") in _CANONICAL_IDS for item in canonical_splits
+                    ) else 0
                     history.append(run)
                 return 200, {"ok": True, "source": "community", "verified": False,
                              "kind": "history", "playerUuid": player_uuid, "rows": history}
@@ -905,11 +913,11 @@ def handle_get(path, query, db_fn):
                     matching_members = roster_ids.intersection(observed_ids)
                     if not matching_members:
                         continue
-                    related_splits = _split_select(c, "submission_id=?", [related["submissionId"]])
-                    for raw_member_split in related_splits:
-                        split = _split_dict(raw_member_split)
+                    related_splits = _canonicalize_split_rows(
+                        _split_select(c, "submission_id=?", [related["submissionId"]]))
+                    for split in related_splits:
                         split["teamMembers"] = _json_members(split.get("teamMembers"))
-                        if int(split.get("splitMs") or 0) <= 0:
+                        if int(split.get("splitMs") or 0) <= 0 or _split_has_missing_boundary(split):
                             continue
                         key_base = (str(split["context"]).upper(), str(split["serverType"]).upper(),
                                     int(split.get("splitIndex") or 0), str(split["objective"]).casefold())
