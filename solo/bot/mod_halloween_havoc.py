@@ -29,6 +29,7 @@ _MAX_TIME_MS = 24 * 60 * 60 * 1000
 # leaderboard identity is checkpoint_id/order, never a display label or list index.
 _CANONICAL_SPLIT_SCHEMA = 1
 _CANONICAL_CHECKPOINTS = (
+    ("GIANT", "Defeat the Giant", ("defeat the giant", "kill the giant", "giant")),
     ("GENDO", "Gendo", ("gendo", "defeat gendo")),
     ("CHALLENGES_COMPLETE", "Complete the 4 challenges",
      ("complete the 4 challenges", "complete four challenges")),
