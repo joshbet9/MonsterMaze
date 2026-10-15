@@ -382,7 +382,7 @@ def _best_runs(rows):
 
 
 def _best_splits(rows, objective=None, split_index=None):
-    """Return the global fastest section at each chronological split position in scope."""
+    """Return each team's fastest section per chronological objective occurrence."""
     best = {}
     for row in rows:
         split = _split_dict(row)
@@ -393,8 +393,10 @@ def _best_splits(rows, objective=None, split_index=None):
             continue
         occurrence = int(split.get("splitIndex") or 0)
         # The board ranks a split, not a group's overall run. A slower total run may own
-        # the fastest section, so never restrict candidates to each team's best full run.
-        key = (split["context"], split["serverType"], occurrence, split["objective"].casefold())
+        # the group's fastest section, so include every submission before choosing the
+        # fastest split for this group and chronological objective occurrence.
+        key = (split["context"], split["serverType"],
+               split["teamSignature"] or split["uuid"], occurrence, split["objective"].casefold())
         existing = best.get(key)
         candidate_key = (int(split["splitMs"]), int(split["elapsedMs"]), -int(split["submittedAt"]))
         if existing is None or candidate_key < (int(existing["splitMs"]), int(existing["elapsedMs"]), -int(existing["submittedAt"])):
