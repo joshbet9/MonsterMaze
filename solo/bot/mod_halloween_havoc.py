@@ -104,11 +104,6 @@ def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
             "boundarySource": "OBJECTIVE",
             "missingCheckpointIds": list(_CANONICAL_IDS[last_order + 1:order]),
         })
-        # Old route-signature fields are deliberately stripped: route-aware comparisons
-        # are not part of the fixed-checkpoint model.
-        for key in ("routeSignature", "routePrefixSignature", "runRouteSignature", "routeSegmentLabel",
-                    "_runRouteObjectives"):
-            row.pop(key, None)
         result.append(row)
         last_elapsed = elapsed
         last_order = order
@@ -136,9 +131,6 @@ def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
                 "boundarySource": "CONFIRMED_RUN_END",
                 "missingCheckpointIds": list(_CANONICAL_IDS[last_order + 1:terminal_order]),
             })
-            for key in ("routeSignature", "routePrefixSignature", "runRouteSignature", "routeSegmentLabel",
-                        "_runRouteObjectives"):
-                row.pop(key, None)
             result.append(row)
     return result
 
@@ -692,7 +684,7 @@ def _best_known_split_benchmarks(rows, required_objectives):
 
 
 def _required_objectives_from_completed_runs(c, context, server_type):
-    """Use the fixed seven-stage HH route when real canonical milestones are present."""
+    """Use the fixed eight-checkpoint HH route when canonical milestones are present."""
     clauses = ["successful=1"]
     args = []
     if context != "ALL":
