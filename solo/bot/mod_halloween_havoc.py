@@ -78,6 +78,13 @@ def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
         int(item.get("splitIndex", item.get("index", 0)) or 0),
         int(item.get("elapsedMs", 0) or 0)))
 
+    # Preserve generic/synthetic legacy objective sequences that are not an HH route.
+    # Real HH partial runs still qualify when at least one non-terminal checkpoint is seen.
+    recognized_orders = {_checkpoint_order(item.get("objective", "")) for item in ordered}
+    recognized_orders.discard(-1)
+    if not any(order < len(_CANONICAL_CHECKPOINTS) - 1 for order in recognized_orders):
+        return ordered
+
     # Re-derive from observed objective labels even if the row also contains old schema
     # metadata. This prevents ten-checkpoint records from leaking into the eight-point BKS.
     result = []
