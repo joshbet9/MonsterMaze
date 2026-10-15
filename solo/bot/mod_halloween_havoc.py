@@ -696,7 +696,7 @@ def _best_known_split_benchmarks(rows, required_objectives):
 
 
 def _required_objectives_from_completed_runs(c, context, server_type):
-    """Infer the expected objective sequence from the fullest successful run, preserving repeats."""
+    """Use the fixed seven-stage HH route when real canonical milestones are present."""
     clauses = ["successful=1"]
     args = []
     if context != "ALL":
@@ -706,22 +706,33 @@ def _required_objectives_from_completed_runs(c, context, server_type):
         clauses.append("server_type=?")
         args.append(server_type)
     completed_rows = _run_select(c, " AND ".join(clauses), args)
-    chosen = {}
+    fallback_sequences = {}
+    canonical_scopes = set()
     for raw_run in completed_rows:
         run = _run_row(raw_run)
         scope = (str(run.get("context", "HH")).upper(), str(run.get("serverType", "STANDARD")).upper())
         scope_key = scope[0] + "|" + scope[1]
         raw_splits = _split_select(c, "submission_id=?", [run["submissionId"]])
+        normalized = _canonicalize_split_rows(raw_splits)
+        has_canonical_route = any(
+            str(item.get("checkpointId") or "") in _CANONICAL_IDS
+            for item in normalized
+        )
+        if has_canonical_route:
+            canonical_scopes.add(scope_key)
+            continue
         ordered = []
-        for raw_split in sorted(raw_splits, key=lambda item: (int(item[1]), str(item[9]).casefold())):
-            item = _split_dict(raw_split)
+        for item in normalized:
             objective = str(item.get("objective", "")).strip()
             if objective:
                 ordered.append(objective)
-        if len(ordered) > len(chosen.get(scope_key, [])):
-            chosen[scope_key] = ordered
-    return chosen
+        if len(ordered) > len(fallback_sequences.get(scope_key, [])):
+            fallback_sequences[scope_key] = ordered
 
+    chosen = dict(fallback_sequences)
+    for scope_key in canonical_scopes:
+        chosen[scope_key] = list(_CANONICAL_LABELS)
+    return chosen
 
 
 def handle_get(path, query, db_fn):
