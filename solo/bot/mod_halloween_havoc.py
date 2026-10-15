@@ -382,7 +382,7 @@ def _best_runs(rows):
 
 
 def _best_splits(rows, objective=None, split_index=None):
-    """Return the fastest section at each chronological objective occurrence per group."""
+    """Return the global fastest section at each chronological split position in scope."""
     best = {}
     for row in rows:
         split = _split_dict(row)
@@ -392,8 +392,9 @@ def _best_splits(rows, objective=None, split_index=None):
         if split_index is not None and int(split.get("splitIndex") or 0) != split_index:
             continue
         occurrence = int(split.get("splitIndex") or 0)
-        key = (split["context"], split["serverType"], split["teamSignature"] or split["uuid"],
-               occurrence, split["objective"].casefold())
+        # The board ranks a split, not a group's overall run. A slower total run may own
+        # the fastest section, so never restrict candidates to each team's best full run.
+        key = (split["context"], split["serverType"], occurrence, split["objective"].casefold())
         existing = best.get(key)
         candidate_key = (int(split["splitMs"]), int(split["elapsedMs"]), -int(split["submittedAt"]))
         if existing is None or candidate_key < (int(existing["splitMs"]), int(existing["elapsedMs"]), -int(existing["submittedAt"])):
@@ -617,6 +618,19 @@ def handle_get(path, query, db_fn):
                     # already represented by the BKS objective rows and can push this
                     # public response beyond the mod client's bounded JSON-read limit.
                     benchmark["worldRecordTimeMs"] = int(world_record["timeMs"]) if world_record else None
+                    # The full WR run is intentionally not embedded in the response, but
+                    # split deltas still need its chronological objective sequence. Keep
+                    # only the small fields used by the client rather than duplicating the
+                    # full participant/run metadata for every split.
+                    benchmark["worldRecordSplits"] = [
+                        {
+                            "index": int(split.get("splitIndex") or split.get("index") or 0),
+                            "objective": str(split.get("objective") or ""),
+                            "splitMs": int(split.get("splitMs") or 0),
+                            "elapsedMs": int(split.get("elapsedMs") or 0),
+                        }
+                        for split in (world_record.get("splits", []) if world_record else [])
+                    ]
                 # The per-objective rows are already nested under each benchmark. Avoid
                 # returning a second flattened copy; consumers should read benchmarks[].rows.
                 return 200, {"ok": True, "source": "community", "verified": False,
