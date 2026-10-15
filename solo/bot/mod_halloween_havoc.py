@@ -592,24 +592,25 @@ def _best_runs(rows):
 
 
 def _best_splits(rows, objective=None, split_index=None):
-    """Return the fastest section at each chronological objective occurrence per group."""
+    """Return fastest clean canonical intervals per group; do not compare merged gaps."""
     best = {}
-    for row in rows:
-        split = _split_dict(row)
+    for split in _canonicalize_split_rows(rows):
         split["teamMembers"] = _json_members(split.get("teamMembers"))
+        if _split_has_missing_boundary(split):
+            continue
         if objective and split["objective"].casefold() != objective.casefold():
             continue
-        if split_index is not None and int(split.get("splitIndex") or 0) != split_index:
+        occurrence = int(split.get("splitIndex", split.get("index", 0)) or 0)
+        if split_index is not None and occurrence != split_index:
             continue
-        occurrence = int(split.get("splitIndex") or 0)
         key = (split["context"], split["serverType"], split["teamSignature"] or split["uuid"],
-               occurrence, split["objective"].casefold())
+               occurrence, str(split.get("checkpointId") or split["objective"]).casefold())
         existing = best.get(key)
         candidate_key = (int(split["splitMs"]), int(split["elapsedMs"]), -int(split["submittedAt"]))
         if existing is None or candidate_key < (int(existing["splitMs"]), int(existing["elapsedMs"]), -int(existing["submittedAt"])):
             best[key] = split
     return sorted(best.values(), key=lambda item: (
-        int(item.get("splitIndex") or 999), item["objective"].casefold(),
+        int(item.get("splitIndex", item.get("index", 999)) or 999), item["objective"].casefold(),
         int(item["splitMs"]), item["teamSignature"], item["name"].lower()))
 
 
@@ -617,13 +618,14 @@ def _best_splits(rows, objective=None, split_index=None):
 def _best_known_split_benchmarks(rows, required_objectives):
     """Build a chronological BKS composite, treating repeated names as separate stages."""
     best = {}
-    for row in rows:
-        split = _split_dict(row)
+    for split in _canonicalize_split_rows(rows):
         split["teamMembers"] = _json_members(split.get("teamMembers"))
         objective = str(split.get("objective", "")).strip()
         split_ms = int(split.get("splitMs") or 0)
         elapsed_ms = int(split.get("elapsedMs") or 0)
-        split_index = int(split.get("splitIndex") or 0)
+        split_index = int(split.get("splitIndex", split.get("index", 0)) or 0)
+        if _split_has_missing_boundary(split):
+            continue
         if not objective or split_ms <= 0 or elapsed_ms <= 0 or split_index <= 0:
             continue
         scope = (str(split["context"]).upper(), str(split["serverType"]).upper())
