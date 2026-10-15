@@ -111,8 +111,171 @@ def handle_game_info(query, db_fn):
         return 500, {"ok": False, "error": "internal_error"}
 
 
+def handle_history(query, db_fn):
+    """Return paginated, chronological community game history from VM-stored records.
+
+    Timestamped participant submissions are grouped into round summaries using the
+    same +/-30-second window as handle_game_info. Legacy submissions without a game
+    start timestamp are retained as individual, clearly marked entries; they cannot
+    be safely combined into a round or opened as participant Game Info.
+    """
+    try:
+        context = _value(query, "context", "ALL").upper()
+        if context in ("ARCADE", "PUBLIC"):
+            context = "MIN"
+        if context not in ("ALL", "MIN", "MPS"):
+            raise ValueError("context must be ALL, MPS, or MIN/ARCADE")
+
+        try:
+            limit = int(_value(query, "limit", "100"))
+            offset = int(_value(query, "offset", "0"))
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("limit and offset must be integers")
+        if limit < 1 or limit > 100:
+            raise ValueError("limit must be between 1 and 100")
+        if offset < 0 or offset > 1_000_000:
+            raise ValueError("offset must be between 0 and 1000000")
+
+        c = db_fn()
+        try:
+            _ensure_schema(c)
+            clauses = ["game='Monster Maze'"]
+            args = []
+            if context != "ALL":
+                clauses.append("context=?")
+                args.append(context)
+            where = " AND ".join(clauses)
+            columns = ("uuid,name,context,game,mode,pattern,kit,stage,time_ms,"
+                       "submitted_at,started_at,submission_id")
+            timed = c.execute(
+                "SELECT " + columns + " FROM community_mod_runs WHERE " + where
+                + " AND started_at>0 ORDER BY started_at ASC,context ASC,"
+                  "submitted_at ASC,stage DESC,time_ms ASC,name COLLATE NOCASE ASC",
+                tuple(args),
+            ).fetchall()
+            legacy = c.execute(
+                "SELECT " + columns + " FROM community_mod_runs WHERE " + where
+                + " AND started_at<=0 ORDER BY submitted_at ASC,context ASC,"
+                  "stage DESC,time_ms ASC,name COLLATE NOCASE ASC",
+                tuple(args),
+            ).fetchall()
+
+            history = []
+            latest_by_context = {}
+            for raw in timed:
+                item = _entry(raw, source="community")
+                started_at = int(item.get("startedAt") or 0)
+                row_context = str(item.get("context") or "").upper()
+                group = latest_by_context.get(row_context)
+                if group is None or started_at - group["startedAt"] > 30_000:
+                    group = {
+                        "uuid": item["uuid"],
+                        "name": item["name"],
+                        "context": row_context,
+                        "game": "Monster Maze",
+                        "mode": item["mode"],
+                        "pattern": item["pattern"],
+                        "kit": item["kit"],
+                        "stage": item["stage"],
+                        "maxStage": item["stage"],
+                        "timeMs": item["timeMs"],
+                        "submittedAt": item["submittedAt"],
+                        "startedAt": started_at,
+                        "historyTimestamp": started_at,
+                        "timestampSource": "startedAt",
+                        "gameInfoAvailable": True,
+                        "legacyUnknownStart": False,
+                        "participantCount": 0,
+                        "recordCount": 0,
+                        "source": "community",
+                        "verified": False,
+                        "_players": set(),
+                    }
+                    history.append(group)
+                    latest_by_context[row_context] = group
+                player_key = str(item.get("uuid") or "").lower()
+                if player_key and player_key not in group["_players"]:
+                    group["_players"].add(player_key)
+                    group["participantCount"] += 1
+                group["recordCount"] += 1
+                group["submittedAt"] = max(int(group["submittedAt"]), int(item.get("submittedAt") or 0))
+                # Use the strongest stage for the visible round summary while keeping
+                # the UUID/start-time anchor from a real row for the Game Info request.
+                try:
+                    stage = int(item.get("stage") or 0)
+                except (TypeError, ValueError, OverflowError):
+                    stage = 0
+                if stage > int(group["maxStage"]):
+                    group["maxStage"] = stage
+                    group["stage"] = stage
+                    group["name"] = item["name"]
+                    group["kit"] = item["kit"]
+                    group["pattern"] = item["pattern"]
+                    group["mode"] = item["mode"]
+                    group["timeMs"] = item["timeMs"]
+
+            for raw in legacy:
+                item = _entry(raw, source="community")
+                submitted_at = int(item.get("submittedAt") or 0)
+                history.append({
+                    "uuid": item["uuid"],
+                    "name": item["name"],
+                    "context": str(item.get("context") or "").upper(),
+                    "game": "Monster Maze",
+                    "mode": item["mode"],
+                    "pattern": item["pattern"],
+                    "kit": item["kit"],
+                    "stage": item["stage"],
+                    "maxStage": item["stage"],
+                    "timeMs": item["timeMs"],
+                    "submittedAt": submitted_at,
+                    "startedAt": 0,
+                    "historyTimestamp": submitted_at,
+                    "timestampSource": "submittedAt",
+                    "gameInfoAvailable": False,
+                    "legacyUnknownStart": True,
+                    "participantCount": 1,
+                    "recordCount": 1,
+                    "source": "community",
+                    "verified": False,
+                })
+
+            # Oldest first is chronological. Rows without a start time appear at their
+            # submission time and are explicitly marked as legacy/unknown-start entries.
+            history.sort(key=lambda row: (
+                int(row.get("historyTimestamp") or 0),
+                str(row.get("context") or ""),
+                str(row.get("name") or "").lower(),
+            ))
+            total = len(history)
+            page = history[offset:offset + limit]
+            for item in page:
+                item.pop("_players", None)
+            return 200, {
+                "ok": True,
+                "source": "community",
+                "verified": False,
+                "context": context,
+                "chronological": "oldest-first",
+                "limit": limit,
+                "offset": offset,
+                "total": total,
+                "hasMore": offset + len(page) < total,
+                "rows": page,
+            }
+        finally:
+            c.close()
+    except ValueError as exc:
+        return 400, {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        print(f"[mod-api] game-history GET failed: {exc}", flush=True)
+        return 500, {"ok": False, "error": "internal_error"}
+
+
 def handle_get(path, query, db_fn, allowed_modes):
     """Return (status, payload) for the public mod routes, or None if unmatched."""
+    if path == "/api/v1/mod/history":
+        return handle_history(query, db_fn)
     if path == "/api/v1/mod/game":
         return handle_game_info(query, db_fn)
     if path not in ("/api/v1/mod/leaderboard", "/api/v1/mod/player"):
