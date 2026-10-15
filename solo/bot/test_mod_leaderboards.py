@@ -139,6 +139,76 @@ class ModLeaderboardTests(unittest.TestCase):
         self.assertEqual({row["name"] for row in game["rows"]}, {"AnchorRunner", "OtherRunner"})
         self.assertEqual(game["windowMs"], 30000)
 
+    def test_game_history_is_chronological_grouped_and_paginated(self):
+        round_one = 1760000000000
+        round_two = round_one + 90_000
+        uploads = [
+            ("HistoryAnchor", str(uuid.uuid4()), "MPS", round_one, 24, True),
+            ("HistoryPartner", str(uuid.uuid4()), "MPS", round_one + 5_000, 30, True),
+            ("HistoryNextRound", str(uuid.uuid4()), "MIN", round_two, 19, True),
+            # Older client builds have no start time. Preserve the row as an
+            # explicitly unanchored history entry instead of inventing a round.
+            ("HistoryLegacy", str(uuid.uuid4()), "MPS", None, 12, False),
+        ]
+        for index, (name, player_uuid, context, started_at, stage, has_start) in enumerate(uploads):
+            payload = {
+                "submissionId": str(uuid.uuid4()), "uuid": player_uuid, "name": name,
+                "context": context, "game": "Monster Maze", "mode": "original",
+                "pattern": 0, "kit": "Maverick", "stage": stage, "timeMs": 90_000,
+            }
+            if has_start:
+                payload["startedAt"] = started_at
+            status, response = mod_leaderboards.handle_submit(
+                json.dumps(payload).encode("utf-8"), "history-" + str(index), self.db
+            )
+            self.assertEqual(status, 200)
+            self.assertTrue(response["accepted"])
+
+        status, page_one = mod_leaderboards.handle_get(
+            "/api/v1/mod/history",
+            {"context": ["ALL"], "limit": ["1"], "offset": ["0"]},
+            self.db, {"1.8": {"original", "modern", "speed"}, "1.21": {"original", "modern", "classic"}}
+        )
+        self.assertEqual(status, 200)
+        self.assertFalse(page_one["verified"])
+        self.assertEqual(page_one["chronological"], "oldest-first")
+        self.assertEqual(page_one["total"], 3)
+        self.assertTrue(page_one["hasMore"])
+        first_game = page_one["rows"][0]
+        self.assertEqual(first_game["startedAt"], round_one)
+        self.assertEqual(first_game["participantCount"], 2)
+        self.assertEqual(first_game["maxStage"], 30)
+        self.assertTrue(first_game["gameInfoAvailable"])
+
+        status, page_two = mod_leaderboards.handle_get(
+            "/api/v1/mod/history",
+            {"context": ["ALL"], "limit": ["1"], "offset": ["1"]},
+            self.db, {"1.8": {"original", "modern", "speed"}, "1.21": {"original", "modern", "classic"}}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(page_two["rows"][0]["startedAt"], round_two)
+        self.assertEqual(page_two["rows"][0]["context"], "MIN")
+
+        status, legacy_page = mod_leaderboards.handle_get(
+            "/api/v1/mod/history",
+            {"context": ["MPS"], "limit": ["10"], "offset": ["0"]},
+            self.db, {"1.8": {"original", "modern", "speed"}, "1.21": {"original", "modern", "classic"}}
+        )
+        self.assertEqual(status, 200)
+        legacy_rows = [row for row in legacy_page["rows"] if row["legacyUnknownStart"]]
+        self.assertEqual(len(legacy_rows), 1)
+        self.assertFalse(legacy_rows[0]["gameInfoAvailable"])
+        self.assertEqual(legacy_rows[0]["startedAt"], 0)
+
+    def test_game_history_rejects_invalid_pagination(self):
+        status, response = mod_leaderboards.handle_get(
+            "/api/v1/mod/history",
+            {"limit": ["101"], "offset": ["0"]},
+            self.db, {"1.8": {"original", "modern", "speed"}, "1.21": {"original", "modern", "classic"}}
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("limit", response["error"])
+
     def test_duplicate_submission_is_acknowledged_before_rate_limit(self):
         player_uuid = str(uuid.uuid4())
         submission_id = str(uuid.uuid4())
