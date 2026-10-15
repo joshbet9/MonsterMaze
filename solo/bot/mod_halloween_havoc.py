@@ -25,6 +25,150 @@ _MAX_BODY = 64 * 1024
 _MAX_SPLITS = 100
 _MAX_TIME_MS = 24 * 60 * 60 * 1000
 
+# Stable seven-section Halloween Havoc route. Raw objective labels are aliases;
+# leaderboard identity is checkpoint_id/order, never a display label or list index.
+_CANONICAL_SPLIT_SCHEMA = 1
+_CANONICAL_CHECKPOINTS = (
+    ("GENDO", "Gendo", ("gendo", "defeat gendo")),
+    ("CHALLENGES_COMPLETE", "Complete the 4 challenges",
+     ("complete the 4 challenges", "complete four challenges")),
+    ("MAZE_EXIT", "Maze Exit",
+     ("find an exit to the maze", "maze exit", "exit to the maze", "exit the maze")),
+    ("BOARD_GREEN_SHIP", "Board Green Ship",
+     ("board the green ship", "board green ship")),
+    ("BOTTOM_DECK_PORTAL", "Bottom Deck Portal",
+     ("enter the portal on the bottom deck", "bottom deck portal")),
+    ("PUMPKIN_KING_MINIONS", "Pumpkin King's Minions",
+     ("defeat the pumpkin king's minions", "defeat pumpkin king's minions",
+      "pumpkin king's minions", "pumpkin kings minions", "pumpkin king minions")),
+    ("PUMPKIN_KING", "Pumpkin King",
+     ("pumpkin king", "defeat the pumpkin king")),
+)
+_CANONICAL_IDS = tuple(item[0] for item in _CANONICAL_CHECKPOINTS)
+_CANONICAL_LABELS = tuple(item[1] for item in _CANONICAL_CHECKPOINTS)
+
+
+def _normalized_objective(value):
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold().replace("’", "'")).strip()
+
+
+def _checkpoint_order(objective):
+    normalized = _normalized_objective(objective)
+    if not normalized:
+        return -1
+    for order, (checkpoint_id, _label, aliases) in enumerate(_CANONICAL_CHECKPOINTS):
+        for alias in aliases:
+            candidate = _normalized_objective(alias)
+            if normalized == candidate or normalized.endswith(" " + candidate):
+                return order
+    return -1
+
+
+def _split_has_missing_boundary(split):
+    return bool(split.get("missingCheckpointIds") or [])
+
+
+def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
+    """Return canonical intervals for one run, falling back for non-HH test/legacy labels."""
+    if not raw_splits:
+        return []
+    ordered = sorted(raw_splits, key=lambda item: (
+        int(item.get("splitIndex", item.get("index", 0)) or 0),
+        int(item.get("elapsedMs", 0) or 0)))
+    # New submissions already carry canonical IDs and skip-boundary metadata. Preserve
+    # those intervals exactly instead of trying to reconstruct them from their labels.
+    if any(str(item.get("checkpointId") or "") in _CANONICAL_IDS for item in ordered):
+        return ordered
+
+    recognized = any(_checkpoint_order(item.get("objective", "")) >= 0 for item in ordered)
+    if not recognized:
+        # Keeps unrelated test fixtures and any nonstandard historical payload inspectable;
+        # real HH/HHC runs are converted as soon as a known milestone is present.
+        return ordered
+
+    result = []
+    last_elapsed = 0
+    last_order = -1
+    for raw in ordered:
+        order = _checkpoint_order(raw.get("objective", ""))
+        elapsed = int(raw.get("elapsedMs") or 0)
+        if order < 0 or order <= last_order or elapsed <= last_elapsed:
+            continue
+        checkpoint_id, label, _aliases = _CANONICAL_CHECKPOINTS[order]
+        row = dict(raw)
+        row.update({
+            "schemaVersion": _CANONICAL_SPLIT_SCHEMA,
+            "index": order + 1,
+            "splitIndex": order + 1,
+            "checkpointId": checkpoint_id,
+            "fromCheckpointId": "START" if last_order < 0 else _CANONICAL_IDS[last_order],
+            "objective": label,
+            "elapsedMs": elapsed,
+            "splitMs": elapsed - last_elapsed,
+            "status": "PASSED",
+            "boundarySource": "OBJECTIVE",
+            "missingCheckpointIds": list(_CANONICAL_IDS[last_order + 1:order]),
+        })
+        result.append(row)
+        last_elapsed = elapsed
+        last_order = order
+
+    terminal_order = len(_CANONICAL_CHECKPOINTS) - 1
+    if completed and total_elapsed_ms > 0 and total_elapsed_ms > last_elapsed:
+        if last_order == terminal_order and result:
+            # A trusted completion can adjust a late/rounded Pumpkin King boundary
+            # without changing the local timer or inventing any prior checkpoint.
+            prior_elapsed = int(result[-2].get("elapsedMs") or 0) if len(result) > 1 else 0
+            result[-1]["elapsedMs"] = int(total_elapsed_ms)
+            result[-1]["splitMs"] = int(total_elapsed_ms) - prior_elapsed
+            result[-1]["boundarySource"] = "CONFIRMED_RUN_END"
+        else:
+            checkpoint_id, label, _aliases = _CANONICAL_CHECKPOINTS[terminal_order]
+            row = dict(ordered[-1])
+            row.update({
+                "schemaVersion": _CANONICAL_SPLIT_SCHEMA,
+                "index": terminal_order + 1,
+                "splitIndex": terminal_order + 1,
+                "checkpointId": checkpoint_id,
+                "fromCheckpointId": "START" if last_order < 0 else _CANONICAL_IDS[last_order],
+                "objective": label,
+                "elapsedMs": int(total_elapsed_ms),
+                "splitMs": int(total_elapsed_ms) - last_elapsed,
+                "status": "PASSED",
+                "boundarySource": "CONFIRMED_RUN_END",
+                # Missing intermediate checkpoints are flagged, but Pumpkin King itself
+                # is known to be the terminal completion boundary.
+                "missingCheckpointIds": list(_CANONICAL_IDS[last_order + 1:terminal_order]),
+            })
+            result.append(row)
+    return result
+
+
+def _canonicalize_split_rows(rows):
+    """Canonicalize split DB rows in per-submission groups, including legacy submissions."""
+    groups = {}
+    order = []
+    for raw in rows:
+        item = _split_dict(raw) if not isinstance(raw, dict) else dict(raw)
+        key = str(item.get("submissionId") or item.get("runId") or item.get("teamSignature") or "unknown")
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(item)
+
+    out = []
+    for key in order:
+        items = groups[key]
+        first = items[0]
+        completed = bool(first.get("runSuccessful") or first.get("runRecordSuccessful"))
+        duration = max([int(item.get("runTimeMs") or 0) for item in items] + [0])
+        out.extend(_canonicalize_one_run(items, duration, completed))
+    return sorted(out, key=lambda item: (
+        str(item.get("context") or ""), str(item.get("serverType") or ""),
+        int(item.get("splitIndex", item.get("index", 999)) or 999),
+        str(item.get("objective") or "").casefold(),
+        int(item.get("submittedAt") or 0)))
+
 
 def _value(query, name, default=""):
     values = query.get(name, [])
