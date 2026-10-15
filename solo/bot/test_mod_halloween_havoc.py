@@ -352,6 +352,88 @@ class HalloweenHavocApiTests(unittest.TestCase):
         columns = {row[1] for row in old.execute("PRAGMA table_info(community_hh_splits)").fetchall()}
         old.close()
         self.assertIn("run_status", columns)
+        self.assertIn("checkpoint_id", columns)
+        self.assertIn("from_checkpoint_id", columns)
+        self.assertIn("missing_checkpoint_ids_json", columns)
+        self.assertIn("boundary_source", columns)
+        self.assertIn("schema_version", columns)
+
+    def test_canonical_eight_checkpoint_route_preserves_total_time(self):
+        route = [
+            ("Defeat the Giant", 8000),
+            ("Defeat Gendo", 11000),
+            ("Complete the 4 challenges", 15000),
+            ("Find an exit to the maze", 9000),
+            ("Board the Green Ship", 13000),
+            ("Enter the portal on the bottom deck", 10000),
+            ("Defeat the Pumpkin King's Minions", 7000),
+            ("Pumpkin King", 9000),
+        ]
+        elapsed = 0
+        raw_splits = []
+        for index, (objective, duration) in enumerate(route, 1):
+            elapsed += duration
+            raw_splits.append({
+                "index": index, "splitIndex": index, "objective": objective,
+                "splitMs": duration, "elapsedMs": elapsed, "status": "PASSED",
+                "submittedAt": 1760000000000 + elapsed,
+            })
+
+        canonical = hh._canonicalize_one_run(raw_splits, elapsed, True)
+        self.assertEqual([row["checkpointId"] for row in canonical], [
+            "GIANT", "GENDO", "CHALLENGES_COMPLETE", "MAZE_EXIT",
+            "BOARD_GREEN_SHIP", "BOTTOM_DECK_PORTAL",
+            "PUMPKIN_KING_MINIONS", "PUMPKIN_KING",
+        ])
+        self.assertEqual([row["splitIndex"] for row in canonical], list(range(1, 9)))
+        self.assertEqual(sum(row["splitMs"] for row in canonical), elapsed)
+        self.assertEqual(canonical[-1]["elapsedMs"], elapsed)
+        self.assertTrue(all(not row["missingCheckpointIds"] for row in canonical))
+
+    def test_missing_canonical_checkpoint_is_flagged_and_not_comparable(self):
+        route = [
+            ("Defeat the Giant", 8000),
+            ("Defeat Gendo", 11000),
+            # The four-challenges milestone is intentionally absent.
+            ("Find an exit to the maze", 24000),
+            ("Board the Green Ship", 13000),
+            ("Enter the portal on the bottom deck", 10000),
+            ("Defeat the Pumpkin King's Minions", 7000),
+            ("Pumpkin King", 9000),
+        ]
+        elapsed = 0
+        raw_splits = []
+        for index, (objective, duration) in enumerate(route, 1):
+            elapsed += duration
+            raw_splits.append({
+                "index": index, "splitIndex": index, "objective": objective,
+                "splitMs": duration, "elapsedMs": elapsed, "status": "PASSED",
+                "submittedAt": 1760000000000 + elapsed,
+            })
+
+        canonical = hh._canonicalize_one_run(raw_splits, elapsed, True)
+        maze_exit = next(row for row in canonical if row["checkpointId"] == "MAZE_EXIT")
+        self.assertEqual(maze_exit["missingCheckpointIds"], ["CHALLENGES_COMPLETE"])
+        self.assertTrue(hh._split_has_missing_boundary(maze_exit))
+        self.assertEqual(sum(row["splitMs"] for row in canonical), elapsed)
+        self.assertEqual(canonical[-1]["elapsedMs"], elapsed)
+
+    def test_canonical_route_is_fixed_for_bks_when_multiple_milestones_are_known(self):
+        rows = [
+            {"objective": "Defeat the Giant", "elapsedMs": 8000, "splitMs": 8000, "index": 1},
+            {"objective": "Defeat Gendo", "elapsedMs": 19000, "splitMs": 11000, "index": 2},
+            {"objective": "Find an exit to the maze", "elapsedMs": 43000, "splitMs": 24000, "index": 3},
+            {"objective": "Board the Green Ship", "elapsedMs": 56000, "splitMs": 13000, "index": 4},
+        ]
+        canonical = hh._canonicalize_one_run(rows, 56000, False)
+        self.assertEqual([row["objective"] for row in canonical], [
+            "Defeat the Giant", "Gendo", "Maze Exit", "Board Green Ship"
+        ])
+        self.assertEqual(canonical[2]["missingCheckpointIds"], ["CHALLENGES_COMPLETE"])
+        self.assertEqual(canonical[3]["missingCheckpointIds"], ["CHALLENGES_COMPLETE", "MAZE_EXIT"])
+        self.assertFalse(hh._split_has_missing_boundary(canonical[1]))
+        self.assertTrue(hh._split_has_missing_boundary(canonical[2]))
+        self.assertTrue(hh._split_has_missing_boundary(canonical[3]))
 
     def test_unknown_route_returns_none(self):
         self.assertIsNone(hh.handle_get("/api/v1/mod/other", {}, self.db))
