@@ -208,6 +208,10 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual([row["objective"] for row in benchmark["rows"]],
                          ["Lobby", "Regroup", "Push the Minecart", "Regroup", "Pumpkin King"])
         self.assertEqual([row["index"] for row in benchmark["rows"]], [1, 2, 3, 4, 5])
+        self.assertEqual(
+            [row["index"] for row in benchmark["worldRecordSplits"] if row["objective"] == "Regroup"],
+            [2, 4],
+        )
 
         status, repeated = self.get({
             "kind": ["splits"], "context": ["HH"], "serverType": ["STANDARD"], "objective": ["Regroup"]
