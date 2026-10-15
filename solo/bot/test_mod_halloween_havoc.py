@@ -307,6 +307,44 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(len(result["rows"][0]["splits"]), 2)
         self.assertEqual(result["rows"][0]["splits"][0]["objective"], "Pumpkins")
 
+    def test_canonical_hh_route_has_ten_stable_checkpoints(self):
+        expected = [
+            "GIANT", "GENDO", "CLEAR_PATH", "CHALLENGES_COMPLETE", "MINECART_LAVA",
+            "MAZE_EXIT", "BOARD_GREEN_SHIP", "BOTTOM_DECK_PORTAL",
+            "PUMPKIN_KING_MINIONS", "PUMPKIN_KING",
+        ]
+        self.assertEqual(list(hh._CANONICAL_IDS), expected)
+        self.assertEqual(len(hh._CANONICAL_CHECKPOINTS), 10)
+
+    def test_canonicalization_keeps_known_skips_as_merged_non_comparable_interval(self):
+        raw = [
+            {"index": 1, "objective": "Defeat the giant", "splitMs": 30000, "elapsedMs": 30000, "status": "PASSED"},
+            {"index": 2, "objective": "Defeat Gendo", "splitMs": 40000, "elapsedMs": 70000, "status": "PASSED"},
+            # Known unreliable "Secure the mine entrance" / "Defeat the Molten Snake"
+            # objectives are deliberately not canonical boundaries.
+            {"index": 3, "objective": "Find a way to clear the path", "splitMs": 80000, "elapsedMs": 150000, "status": "PASSED"},
+            {"index": 4, "objective": "Complete the 4 challenges", "splitMs": 60000, "elapsedMs": 210000, "status": "PASSED"},
+            {"index": 5, "objective": "Guide the minecart across the lava", "splitMs": 25000, "elapsedMs": 235000, "status": "PASSED"},
+            {"index": 6, "objective": "Find an exit to the maze", "splitMs": 50000, "elapsedMs": 285000, "status": "PASSED"},
+            {"index": 7, "objective": "Board the Green Ship", "splitMs": 40000, "elapsedMs": 325000, "status": "PASSED"},
+            {"index": 8, "objective": "Enter the portal on the bottom deck", "splitMs": 30000, "elapsedMs": 355000, "status": "PASSED"},
+            {"index": 9, "objective": "Defeat the Pumpkin King's minions", "splitMs": 60000, "elapsedMs": 415000, "status": "PASSED"},
+        ]
+        result = hh._canonicalize_one_run(raw, total_elapsed_ms=450000, completed=True)
+        self.assertEqual([item["checkpointId"] for item in result], list(hh._CANONICAL_IDS))
+        self.assertEqual(result[-1]["boundarySource"], "CONFIRMED_RUN_END")
+        self.assertEqual(result[-1]["elapsedMs"], 450000)
+        self.assertEqual(sum(item["splitMs"] for item in result), 450000)
+        # If an intermediate checkpoint really is absent, the interval is retained,
+        # but BKS excludes it rather than claiming an exact segment time.
+        skipped = hh._canonicalize_one_run([
+            raw[0], raw[1], raw[3], raw[4], raw[5], raw[6], raw[7], raw[8]
+        ], total_elapsed_ms=450000, completed=True)
+        merged = next(item for item in skipped if item["checkpointId"] == "CHALLENGES_COMPLETE")
+        self.assertEqual(merged["missingCheckpointIds"], ["CLEAR_PATH"])
+        self.assertTrue(hh._split_has_missing_boundary(merged))
+        self.assertNotEqual(merged["checkpointId"], "CLEAR_PATH")
+
     def test_hhc_is_separate_from_hh(self):
         hh_run = self.payload()
         hhc_run = self.payload(context="HHC", uuid=self.member2_uuid, name="RunnerB")
