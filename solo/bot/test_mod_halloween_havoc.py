@@ -550,6 +550,23 @@ class HalloweenHavocApiTests(unittest.TestCase):
             self.assertEqual(len(board["rows"]), 1)
             self.assertEqual(board["rows"][0]["context"], context)
 
+            status, split_board = self.get({"context": [context], "kind": ["splits"]})
+            self.assertEqual(status, 200, split_board)
+            self.assertEqual(split_board["context"], context)
+            self.assertTrue(split_board["rows"])
+            self.assertTrue(all(row["context"] == context for row in split_board["rows"]))
+
+            status, group = self.get({
+                "context": [context], "serverType": ["STANDARD"], "kind": ["group"],
+                "teamSignature": [self.team_signature],
+            })
+            self.assertEqual(status, 200, group)
+            self.assertEqual(group["context"], context)
+            self.assertEqual(group["attemptCount"], 1)
+            self.assertEqual(group["run"]["context"], context)
+            self.assertTrue(all(row["context"] == context for row in group["splits"]))
+            self.assertTrue(all(row["context"] == context for row in group["globalBestSplits"]))
+
         status, all_rows = self.get({"context": ["ALL"], "kind": ["runs"]})
         self.assertEqual(status, 200, all_rows)
         self.assertEqual({row["context"] for row in all_rows["rows"]}, {"HH", "HHC", "HHI"})
