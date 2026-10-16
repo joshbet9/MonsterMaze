@@ -389,7 +389,7 @@ class ModLeaderboardTests(unittest.TestCase):
         duplicate_payload = {
             "submissionId": str(uuid.uuid4()), "uuid": candidates[2][0], "name": "FastRunnerA",
             "context": "MIN", "game": "Monster Maze", "mode": "speed",
-            "pattern": 2, "kit": "Jumper", "stage": 29, "timeMs": 250000,
+            "pattern": 2, "kit": "Jumper", "stage": 30, "timeMs": 75000,
         }
         status, response = mod_leaderboards.handle_submit(
             json.dumps(duplicate_payload).encode("utf-8"), "placement-community-duplicate-ip", self.db
@@ -407,7 +407,9 @@ class ModLeaderboardTests(unittest.TestCase):
         row = profile["rows"][0]
         self.assertEqual((row["context"], row["mode"], row["pattern"], row["kit"], row["stage"]),
                          ("MIN", "speed", 2, "Jumper", 30))
-        self.assertEqual(row["placement"], 5)
+        # The public category board lists individual run rows, including valid repeat attempts.
+        # FastRunnerA's additional 75-second Stage 30 run appears before this 95-second row.
+        self.assertEqual(row["placement"], 6)
 
     def test_server_player_profile_includes_global_category_placement(self):
         player_uuid = str(uuid.uuid4())
