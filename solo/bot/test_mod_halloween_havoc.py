@@ -581,6 +581,11 @@ class HalloweenHavocApiTests(unittest.TestCase):
             serverNode="HH-1", teamSignature="same-route-hh",
             timeMs=10000, splitCount=8, rawSplitCount=8, splits=splits,
         )
+        hhc_payload = self.payload(
+            context="HHC", uuid=self.member2_uuid, name="RunnerB",
+            serverNode="HHC-1", teamSignature="same-route-hhc",
+            timeMs=10000, splitCount=8, rawSplitCount=8, splits=splits,
+        )
         hhi_payload = self.payload(
             context="HHI", uuid=self.member4_uuid, name="RunnerD",
             serverNode="HHI-1", teamSignature="same-route-hhi",
@@ -588,11 +593,15 @@ class HalloweenHavocApiTests(unittest.TestCase):
         )
         status, response = self.submit(hh_payload, "hhi-shared-schema-hh-ip")
         self.assertEqual(status, 200, response)
+        status, response = self.submit(hhc_payload, "hhi-shared-schema-hhc-ip")
+        self.assertEqual(status, 200, response)
         status, response = self.submit(hhi_payload, "hhi-shared-schema-hhi-ip")
         self.assertEqual(status, 200, response)
 
         histories = {}
-        for player_uuid, context in ((self.member3_uuid, "HH"), (self.member4_uuid, "HHI")):
+        for player_uuid, context in (
+            (self.member3_uuid, "HH"), (self.member2_uuid, "HHC"), (self.member4_uuid, "HHI")
+        ):
             status, history = self.get({"kind": ["history"], "uuid": [player_uuid]})
             self.assertEqual(status, 200, history)
             run = next(row for row in history["rows"] if row["context"] == context)
@@ -603,10 +612,9 @@ class HalloweenHavocApiTests(unittest.TestCase):
             self.assertEqual(run["splitSchemaVersion"], 3)
             histories[context] = canonical
 
-        self.assertEqual(
-            [row["checkpointId"] for row in histories["HH"]],
-            [row["checkpointId"] for row in histories["HHI"]],
-        )
+        shared_checkpoint_ids = [row["checkpointId"] for row in histories["HH"]]
+        self.assertEqual(shared_checkpoint_ids, [row["checkpointId"] for row in histories["HHC"]])
+        self.assertEqual(shared_checkpoint_ids, [row["checkpointId"] for row in histories["HHI"]])
 
         status, bks = self.get({"context": ["HHI"], "serverType": ["STANDARD"], "kind": ["bks"]})
         self.assertEqual(status, 200, bks)
