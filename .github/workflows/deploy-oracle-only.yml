@@ -70,7 +70,7 @@ jobs:
         working-directory: solo/bot
         run: python -m unittest -v test_mod_leaderboards.py
 
-      - name: Run Halloween Havoc/HHC community API tests
+      - name: Run Halloween Havoc/HHC/HHI community API tests
         working-directory: solo/bot
         run: python -m unittest -v test_mod_halloween_havoc.py
 
