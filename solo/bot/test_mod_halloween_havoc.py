@@ -562,7 +562,11 @@ class HalloweenHavocApiTests(unittest.TestCase):
             serverNode="HHI-2",
             teamSignature="hhi-dynamic-objective-team",
             timeMs=30000,
-            splitCount=2,
+            # Legacy clients may set splitCount from their local canonical view.
+            # The backend validates/derives the HHI count from observed objective events.
+            splitCount=1,
+            canonicalSplits=[{"index": 1, "checkpointId": "GIANT", "objective": "Local client view"}],
+            rawSplitCount=2,
             splits=[
                 {"index": 1, "objective": "Defeat the Giant", "splitMs": 10000, "elapsedMs": 10000,
                  "status": "PASSED", "checkpointId": "GIANT", "fromCheckpointId": "START",
