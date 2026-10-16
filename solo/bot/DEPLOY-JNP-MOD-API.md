@@ -77,7 +77,7 @@ Full-run boards count only `successful: true` / `runStatus: COMPLETED` runs, wit
 
 The client should delete the matching local run only after the API replies with `ok: true` and `accepted: true`. A timeout or non-acceptance keeps the local run so it can be retried with the same `submissionId`; duplicate retries are acknowledged idempotently. `MM_API_TOKEN` is not sent by the client and must remain server-side.
 
-HH keeps its known eight-checkpoint canonical split schema. HHI is stored and benchmarked independently using the submitted objective labels and sequence; the API does not assign HH checkpoint IDs to HHI events without an established HHI route schema. HHI BKS required objectives are inferred from completed HHI runs and scoped by HHI context and server type.
+HH, HHC and HHI use the same eight-checkpoint canonical objective schema. The API derives canonical checkpoint IDs from the server-observed objective labels for each context, while full runs, splits, group profiles and BKS remain isolated by context and server type.
 
 ## Oracle-only release flow (JNP Mod API)
 
