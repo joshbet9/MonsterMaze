@@ -530,6 +530,25 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(len(board["rows"]), 1)
         self.assertEqual(board["rows"][0]["context"], "HHC")
 
+    def test_hhi_is_separate_from_hh_and_hhc(self):
+        hh_run = self.payload(context="HH", uuid=self.player_uuid, name="RunnerA", serverNode="HH-1")
+        hhc_run = self.payload(context="HHC", uuid=self.member2_uuid, name="RunnerB", serverNode="HHC-1")
+        hhi_run = self.payload(context="HHI", uuid=self.member3_uuid, name="RunnerC", serverNode="HHI-1")
+        self.assertEqual(self.submit(hh_run, "ip-hh")[0], 200)
+        self.assertEqual(self.submit(hhc_run, "ip-hhc")[0], 200)
+        self.assertEqual(self.submit(hhi_run, "ip-hhi")[0], 200)
+
+        for context, expected_name in (("HH", "RunnerA"), ("HHC", "RunnerB"), ("HHI", "RunnerC")):
+            status, board = self.get({"context": [context], "kind": ["runs"]})
+            self.assertEqual(status, 200)
+            self.assertEqual(len(board["rows"]), 1)
+            self.assertEqual(board["rows"][0]["context"], context)
+            self.assertEqual(board["rows"][0]["name"], expected_name)
+
+        status, all_rows = self.get({"context": ["ALL"], "kind": ["runs"]})
+        self.assertEqual(status, 200)
+        self.assertEqual({row["context"] for row in all_rows["rows"]}, {"HH", "HHC", "HHI"})
+
     def test_rejects_invalid_context_and_inconsistent_splits(self):
         bad_context = self.payload(context="ALL")
         self.assertEqual(self.submit(bad_context)[0], 400)
