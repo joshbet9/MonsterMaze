@@ -25,6 +25,148 @@ _MAX_BODY = 64 * 1024
 _MAX_SPLITS = 100
 _MAX_TIME_MS = 24 * 60 * 60 * 1000
 
+# Stable eight-section HH route. The two route-variable labels ("Find a way to clear the path"
+# and "Board the Green Ship") remain raw events inside adjacent longer intervals.
+# The fixed interval endpoints below appear in all four uploaded reference runs.
+_CANONICAL_SPLIT_SCHEMA = 3
+_CANONICAL_CHECKPOINTS = (
+    ("GIANT", "Giant", ("defeat the giant", "defeat giant", "the giant", "giant")),
+    ("GENDO", "Gendo", ("gendo", "defeat gendo")),
+    ("CHALLENGES_COMPLETE", "Complete the 4 challenges",
+     ("complete the 4 challenges", "complete four challenges")),
+    ("MINECART_LAVA", "Guide the minecart across the lava",
+     ("guide the minecart across the lava", "guide minecart across the lava")),
+    ("MAZE_EXIT", "Maze Exit",
+     ("find an exit to the maze", "maze exit", "exit to the maze", "exit the maze")),
+    ("BOTTOM_DECK_PORTAL", "Bottom Deck Portal",
+     ("enter the portal on the bottom deck", "bottom deck portal")),
+    ("PUMPKIN_KING_MINIONS", "Pumpkin King's Minions",
+     ("defeat the pumpkin king's minions", "defeat pumpkin king's minions",
+      "pumpkin king's minions", "pumpkin kings minions", "pumpkin king minions")),
+    ("PUMPKIN_KING", "Pumpkin King",
+     ("pumpkin king", "defeat the pumpkin king")),
+)
+_CANONICAL_IDS = tuple(item[0] for item in _CANONICAL_CHECKPOINTS)
+_CANONICAL_LABELS = tuple(item[1] for item in _CANONICAL_CHECKPOINTS)
+
+
+def _normalized_objective(value):
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold().replace("’", "'")).strip()
+
+
+def _checkpoint_order(objective):
+    normalized = _normalized_objective(objective)
+    if not normalized:
+        return -1
+    for order, (checkpoint_id, _label, aliases) in enumerate(_CANONICAL_CHECKPOINTS):
+        for alias in aliases:
+            candidate = _normalized_objective(alias)
+            if normalized == candidate or normalized.endswith(" " + candidate):
+                return order
+    return -1
+
+
+def _split_has_missing_boundary(split):
+    return bool(split.get("missingCheckpointIds") or [])
+
+
+def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
+    """Derive the fixed eight-checkpoint view; non-canonical events merge into longer intervals."""
+    if not raw_splits:
+        return []
+    ordered = sorted(raw_splits, key=lambda item: (
+        int(item.get("splitIndex", item.get("index", 0)) or 0),
+        int(item.get("elapsedMs", 0) or 0)))
+
+    # Preserve generic/synthetic legacy objective sequences that are not an HH route.
+    # Real HH partial runs still qualify when at least one non-terminal checkpoint is seen.
+    recognized_orders = {_checkpoint_order(item.get("objective", "")) for item in ordered}
+    recognized_orders.discard(-1)
+    if not any(order < len(_CANONICAL_CHECKPOINTS) - 1 for order in recognized_orders):
+        return ordered
+
+    # Re-derive from observed objective labels even if the row also contains old schema
+    # metadata. This prevents ten-checkpoint records from leaking into the eight-point BKS.
+    result = []
+    last_elapsed = 0
+    last_order = -1
+    for raw in ordered:
+        order = _checkpoint_order(raw.get("objective", ""))
+        elapsed = int(raw.get("elapsedMs") or 0)
+        if order < 0 or order <= last_order or elapsed <= last_elapsed:
+            continue
+
+        checkpoint_id, label, _aliases = _CANONICAL_CHECKPOINTS[order]
+        row = dict(raw)
+        row.update({
+            "schemaVersion": _CANONICAL_SPLIT_SCHEMA,
+            "index": order + 1,
+            "splitIndex": order + 1,
+            "checkpointId": checkpoint_id,
+            "fromCheckpointId": "START" if last_order < 0 else _CANONICAL_IDS[last_order],
+            "objective": label,
+            "elapsedMs": elapsed,
+            "splitMs": elapsed - last_elapsed,
+            "status": "PASSED",
+            "boundarySource": "OBJECTIVE",
+            "missingCheckpointIds": list(_CANONICAL_IDS[last_order + 1:order]),
+        })
+        result.append(row)
+        last_elapsed = elapsed
+        last_order = order
+
+    terminal_order = len(_CANONICAL_CHECKPOINTS) - 1
+    if completed and total_elapsed_ms > 0 and total_elapsed_ms > last_elapsed:
+        if last_order == terminal_order and result:
+            prior_elapsed = int(result[-2].get("elapsedMs") or 0) if len(result) > 1 else 0
+            result[-1]["elapsedMs"] = int(total_elapsed_ms)
+            result[-1]["splitMs"] = int(total_elapsed_ms) - prior_elapsed
+            result[-1]["boundarySource"] = "CONFIRMED_RUN_END"
+        else:
+            checkpoint_id, label, _aliases = _CANONICAL_CHECKPOINTS[terminal_order]
+            row = dict(ordered[-1])
+            row.update({
+                "schemaVersion": _CANONICAL_SPLIT_SCHEMA,
+                "index": terminal_order + 1,
+                "splitIndex": terminal_order + 1,
+                "checkpointId": checkpoint_id,
+                "fromCheckpointId": "START" if last_order < 0 else _CANONICAL_IDS[last_order],
+                "objective": label,
+                "elapsedMs": int(total_elapsed_ms),
+                "splitMs": int(total_elapsed_ms) - last_elapsed,
+                "status": "PASSED",
+                "boundarySource": "CONFIRMED_RUN_END",
+                "missingCheckpointIds": list(_CANONICAL_IDS[last_order + 1:terminal_order]),
+            })
+            result.append(row)
+    return result
+
+
+def _canonicalize_split_rows(rows):
+    """Canonicalize split DB rows in per-submission groups, including legacy submissions."""
+    groups = {}
+    order = []
+    for raw in rows:
+        item = _split_dict(raw) if not isinstance(raw, dict) else dict(raw)
+        key = str(item.get("submissionId") or item.get("runId") or item.get("teamSignature") or "unknown")
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(item)
+
+    out = []
+    for key in order:
+        items = groups[key]
+        first = items[0]
+        completed = bool(first.get("runSuccessful") or first.get("runRecordSuccessful"))
+        duration = max([int(item.get("runTimeMs") or 0) for item in items] + [0])
+        out.extend(_canonicalize_one_run(items, duration, completed))
+    return sorted(out, key=lambda item: (
+        str(item.get("context") or ""), str(item.get("serverType") or ""),
+        int(item.get("splitIndex", item.get("index", 999)) or 999),
+        str(item.get("objective") or "").casefold(),
+        int(item.get("submittedAt") or 0)))
+
 
 def _value(query, name, default=""):
     values = query.get(name, [])
@@ -101,6 +243,11 @@ def _ensure_schema(c):
         run_successful INTEGER NOT NULL DEFAULT 0,
         run_status TEXT NOT NULL DEFAULT 'PARTIAL',
         submitted_at INTEGER NOT NULL,
+        checkpoint_id TEXT NOT NULL DEFAULT '',
+        from_checkpoint_id TEXT NOT NULL DEFAULT '',
+        missing_checkpoint_ids_json TEXT NOT NULL DEFAULT '[]',
+        boundary_source TEXT NOT NULL DEFAULT 'OBJECTIVE',
+        schema_version INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (submission_id, split_index)
     )""")
     # Upgrade databases created by an earlier review build that did not yet retain
@@ -109,6 +256,18 @@ def _ensure_schema(c):
     split_columns = {row[1] for row in c.execute("PRAGMA table_info(community_hh_splits)").fetchall()}
     if "run_status" not in split_columns:
         c.execute("ALTER TABLE community_hh_splits ADD COLUMN run_status TEXT NOT NULL DEFAULT 'PARTIAL'")
+    # Persist canonical interval identity and skipped-boundary evidence. Defaults make
+    # legacy rows safe to read; their canonical view is derived without rewriting them.
+    migrations = (
+        ("checkpoint_id", "TEXT NOT NULL DEFAULT ''"),
+        ("from_checkpoint_id", "TEXT NOT NULL DEFAULT ''"),
+        ("missing_checkpoint_ids_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("boundary_source", "TEXT NOT NULL DEFAULT 'OBJECTIVE'"),
+        ("schema_version", "INTEGER NOT NULL DEFAULT 0"),
+    )
+    for column, declaration in migrations:
+        if column not in split_columns:
+            c.execute("ALTER TABLE community_hh_splits ADD COLUMN %s %s" % (column, declaration))
 
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_hh_runs_board ON community_hh_runs(context,server_type,successful,time_ms,submitted_at)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_hh_runs_player ON community_hh_runs(uuid,submitted_at DESC)")
@@ -195,12 +354,15 @@ def _normalize_payload(body):
         raise ValueError("splits must be an array of at most 100 entries")
     normalized_splits = []
     previous_elapsed = 0
+    previous_index = 0
     for position, split in enumerate(splits, start=1):
         if not isinstance(split, dict):
             raise ValueError("split must be an object")
         index = _bounded_int(split.get("index", position), "split index", 1, _MAX_SPLITS)
-        if index != position:
-            raise ValueError("split indexes must be sequential starting at 1")
+        # Canonical route indices are stable checkpoint positions, so an index may be
+        # absent when a checkpoint was skipped. They must remain strictly increasing.
+        if index <= previous_index:
+            raise ValueError("split indexes must be strictly increasing")
         objective = _safe_text(split.get("objective"), "objective", 120)
         split_ms = _bounded_int(split.get("splitMs"), "splitMs", 1, _MAX_TIME_MS)
         elapsed_ms = _bounded_int(split.get("elapsedMs"), "elapsedMs", 1, _MAX_TIME_MS)
@@ -211,14 +373,53 @@ def _normalize_payload(body):
         split_status = str(split.get("status", "PASSED")).strip().upper()
         if split_status != "PASSED":
             raise ValueError("only completed objective splits may be submitted")
+
+        checkpoint_id = _safe_text(split.get("checkpointId", ""), "checkpointId", 40, allow_empty=True)
+        if checkpoint_id and checkpoint_id not in _CANONICAL_IDS:
+            raise ValueError("unknown canonical checkpointId")
+        from_checkpoint_id = _safe_text(split.get("fromCheckpointId", ""), "fromCheckpointId", 40, allow_empty=True)
+        if from_checkpoint_id and from_checkpoint_id != "START" and from_checkpoint_id not in _CANONICAL_IDS:
+            raise ValueError("unknown fromCheckpointId")
+        missing_raw = split.get("missingCheckpointIds", [])
+        if not isinstance(missing_raw, list) or len(missing_raw) > len(_CANONICAL_IDS):
+            raise ValueError("missingCheckpointIds must be a short array")
+        missing_ids = []
+        for missing_id in missing_raw:
+            missing_id = _safe_text(missing_id, "missing checkpoint ID", 40)
+            if missing_id not in _CANONICAL_IDS or missing_id in missing_ids:
+                raise ValueError("invalid or duplicate missingCheckpointIds entry")
+            missing_ids.append(missing_id)
+        boundary_source = _safe_text(split.get("boundarySource", "OBJECTIVE"), "boundarySource", 32)
+        if boundary_source not in ("OBJECTIVE", "CONFIRMED_RUN_END"):
+            raise ValueError("invalid boundarySource")
+        schema_version = _bounded_int(split.get("schemaVersion", 0), "schemaVersion", 0, _CANONICAL_SPLIT_SCHEMA)
+
         normalized_splits.append({
             "index": index, "objective": objective, "splitMs": split_ms,
             "elapsedMs": elapsed_ms, "status": "PASSED",
             "completedAt": _bounded_int(split.get("completedAt", 0), "completedAt", 0, 9_999_999_999_999),
+            "checkpointId": checkpoint_id, "fromCheckpointId": from_checkpoint_id,
+            "missingCheckpointIds": missing_ids, "boundarySource": boundary_source,
+            "schemaVersion": schema_version,
         })
         previous_elapsed = elapsed_ms
-    if int(payload.get("splitCount", len(normalized_splits))) != len(normalized_splits):
-        raise ValueError("splitCount does not match submitted splits")
+        previous_index = index
+    # The client keeps the original objective events in "splits" and sends the
+    # current fixed-checkpoint view separately as "canonicalSplits". Derive the
+    # canonical count from the raw events here; never replace the retained event rows
+    # with client-derived checkpoint data.
+    canonical_splits = _canonicalize_one_run(normalized_splits, time_ms, bool(successful))
+    canonical_count = len(canonical_splits)
+    provided_split_count = _bounded_int(
+        payload.get("splitCount", canonical_count), "splitCount", 0, _MAX_SPLITS)
+    # Accept the legacy raw-event splitCount during rollout, but store the public count
+    # using the canonical methodology. This keeps older clients upload-compatible.
+    if provided_split_count not in (len(normalized_splits), canonical_count):
+        raise ValueError("splitCount matches neither raw events nor canonical checkpoints")
+    if "rawSplitCount" in payload:
+        provided_raw_count = _bounded_int(payload.get("rawSplitCount"), "rawSplitCount", 0, _MAX_SPLITS)
+        if provided_raw_count != len(normalized_splits):
+            raise ValueError("rawSplitCount does not match submitted raw events")
 
     submitted_at = int(time.time() * 1000)
     return {
@@ -233,7 +434,7 @@ def _normalize_payload(body):
         "ended_at": ended_at,
         "time_ms": time_ms,
         "reported_time_ms": reported_time_ms,
-        "split_count": len(normalized_splits),
+        "split_count": canonical_count,
         "team_members": normalized_members,
         "team_members_json": json.dumps(normalized_members, separators=(",", ":"), ensure_ascii=False),
         "team_signature": signature,
@@ -292,12 +493,16 @@ def handle_submit(body, client_ip, db_fn):
                 c.execute("""INSERT INTO community_hh_splits (
                     submission_id,split_index,run_id,uuid,name,context,server_type,server_node,
                     team_members_json,team_signature,objective,split_ms,elapsed_ms,status,
-                    run_successful,run_status,submitted_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
+                    run_successful,run_status,submitted_at,checkpoint_id,from_checkpoint_id,
+                    missing_checkpoint_ids_json,boundary_source,schema_version
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
                     run["submission_id"],split["index"],run["run_id"],run["uuid"],run["name"],
                     run["context"],run["server_type"],run["server_node"],run["team_members_json"],
                     run["team_signature"],split["objective"],split["splitMs"],split["elapsedMs"],
-                    split["status"],run["successful"],run["run_status"],run["submitted_at"]
+                    split["status"],run["successful"],run["run_status"],run["submitted_at"],
+                    split["checkpointId"],split["fromCheckpointId"],
+                    json.dumps(split["missingCheckpointIds"], separators=(",", ":")),
+                    split["boundarySource"],split["schemaVersion"]
                 ))
             c.commit()
             _PLAYER_LAST[player_uuid] = now
@@ -347,12 +552,25 @@ def _run_select(c, where_sql, args):
 def _split_dict(row):
     keys = ("submissionId", "splitIndex", "runId", "uuid", "name", "context", "serverType",
             "serverNode", "teamSignature", "objective", "splitMs", "elapsedMs", "status",
-            "runSuccessful", "runStatus", "submittedAt", "teamMembers")
+            "runSuccessful", "runStatus", "submittedAt", "teamMembers", "checkpointId",
+            "fromCheckpointId", "missingCheckpointIdsJson", "boundarySource", "schemaVersion",
+            "runTimeMs", "runRecordSuccessful")
     data = dict(zip(keys, row))
-    data["runSuccessful"] = bool(data["runSuccessful"])
+    data["runSuccessful"] = bool(data.get("runSuccessful"))
+    data["runRecordSuccessful"] = bool(data.get("runRecordSuccessful"))
     data["successful"] = data["runSuccessful"]
-    data["isMpsRun"] = str(data["serverType"]).upper() == "MPS"
-    data["index"] = data["splitIndex"]
+    data["isMpsRun"] = str(data.get("serverType") or "").upper() == "MPS"
+    data["index"] = data.get("splitIndex")
+    try:
+        missing = json.loads(data.get("missingCheckpointIdsJson") or "[]")
+        data["missingCheckpointIds"] = missing if isinstance(missing, list) else []
+    except (json.JSONDecodeError, TypeError):
+        data["missingCheckpointIds"] = []
+    data["checkpointId"] = str(data.get("checkpointId") or "")
+    data["fromCheckpointId"] = str(data.get("fromCheckpointId") or "")
+    data["boundarySource"] = str(data.get("boundarySource") or "OBJECTIVE")
+    data["schemaVersion"] = int(data.get("schemaVersion") or 0)
+    data["runTimeMs"] = int(data.get("runTimeMs") or 0)
     data["verified"] = False
     data["source"] = "community"
     return data
@@ -361,7 +579,11 @@ def _split_dict(row):
 def _split_select(c, where_sql, args):
     sql = """SELECT submission_id,split_index,run_id,uuid,name,context,server_type,
                      server_node,team_signature,objective,split_ms,elapsed_ms,status,
-                     run_successful,run_status,submitted_at,team_members_json
+                     run_successful,run_status,submitted_at,team_members_json,
+                     checkpoint_id,from_checkpoint_id,missing_checkpoint_ids_json,
+                     boundary_source,schema_version,
+                     (SELECT time_ms FROM community_hh_runs r WHERE r.submission_id=community_hh_splits.submission_id),
+                     (SELECT successful FROM community_hh_runs r WHERE r.submission_id=community_hh_splits.submission_id)
              FROM community_hh_splits"""
     if where_sql:
         sql += " WHERE " + where_sql
@@ -381,39 +603,54 @@ def _best_runs(rows):
     return result[:100]
 
 
+def _add_split_counts(c, runs):
+    """Attach canonical checkpoint and retained raw-event counts to run summaries."""
+    for run in runs:
+        raw_split_rows = _split_select(c, "submission_id=?", [run["submissionId"]])
+        canonical_splits = _canonicalize_split_rows(raw_split_rows)
+        run["rawSplitCount"] = len(raw_split_rows)
+        run["splitCount"] = len(canonical_splits)
+        run["splitSchemaVersion"] = _CANONICAL_SPLIT_SCHEMA if any(
+            str(item.get("checkpointId") or "") in _CANONICAL_IDS for item in canonical_splits
+        ) else 0
+    return runs
+
+
 def _best_splits(rows, objective=None, split_index=None):
-    """Return the fastest section at each chronological objective occurrence per group."""
+    """Return fastest clean canonical intervals per group; do not compare merged gaps."""
     best = {}
-    for row in rows:
-        split = _split_dict(row)
+    for split in _canonicalize_split_rows(rows):
         split["teamMembers"] = _json_members(split.get("teamMembers"))
+        if _split_has_missing_boundary(split):
+            continue
         if objective and split["objective"].casefold() != objective.casefold():
             continue
-        if split_index is not None and int(split.get("splitIndex") or 0) != split_index:
+        occurrence = int(split.get("splitIndex", split.get("index", 0)) or 0)
+        if split_index is not None and occurrence != split_index:
             continue
-        occurrence = int(split.get("splitIndex") or 0)
         key = (split["context"], split["serverType"], split["teamSignature"] or split["uuid"],
-               occurrence, split["objective"].casefold())
+               occurrence, str(split.get("checkpointId") or split["objective"]).casefold())
         existing = best.get(key)
         candidate_key = (int(split["splitMs"]), int(split["elapsedMs"]), -int(split["submittedAt"]))
         if existing is None or candidate_key < (int(existing["splitMs"]), int(existing["elapsedMs"]), -int(existing["submittedAt"])):
             best[key] = split
     return sorted(best.values(), key=lambda item: (
-        int(item.get("splitIndex") or 999), item["objective"].casefold(),
+        int(item.get("splitIndex", item.get("index", 999)) or 999), item["objective"].casefold(),
         int(item["splitMs"]), item["teamSignature"], item["name"].lower()))
 
 
 
 def _best_known_split_benchmarks(rows, required_objectives):
-    """Build a chronological BKS composite, treating repeated names as separate stages."""
+    """Build a chronological BKS composite from the fixed canonical checkpoint intervals."""
     best = {}
-    for row in rows:
-        split = _split_dict(row)
+    for split in _canonicalize_split_rows(rows):
         split["teamMembers"] = _json_members(split.get("teamMembers"))
         objective = str(split.get("objective", "")).strip()
         split_ms = int(split.get("splitMs") or 0)
         elapsed_ms = int(split.get("elapsedMs") or 0)
-        split_index = int(split.get("splitIndex") or 0)
+        split_index = int(split.get("splitIndex", split.get("index", 0)) or 0)
+        if _split_has_missing_boundary(split):
+            continue
         if not objective or split_ms <= 0 or elapsed_ms <= 0 or split_index <= 0:
             continue
         scope = (str(split["context"]).upper(), str(split["serverType"]).upper())
@@ -446,7 +683,6 @@ def _best_known_split_benchmarks(rows, required_objectives):
 
         composite_rows = []
         cumulative = 0
-        present = set()
         missing = []
         for index, name, split in ordered_entries:
             if split is None:
@@ -454,8 +690,6 @@ def _best_known_split_benchmarks(rows, required_objectives):
                     missing.append(name)
                 continue
             cumulative += int(split["splitMs"])
-            identity = (int(split.get("splitIndex") or index), str(split["objective"]).casefold())
-            present.add(identity)
             split["compositeIndex"] = index
             split["compositeSplitMs"] = int(split["splitMs"])
             split["compositeElapsedMs"] = cumulative
@@ -484,7 +718,7 @@ def _best_known_split_benchmarks(rows, required_objectives):
 
 
 def _required_objectives_from_completed_runs(c, context, server_type):
-    """Infer the expected objective sequence from the fullest successful run, preserving repeats."""
+    """Use the fixed eight-checkpoint HH route when canonical milestones are present."""
     clauses = ["successful=1"]
     args = []
     if context != "ALL":
@@ -494,22 +728,33 @@ def _required_objectives_from_completed_runs(c, context, server_type):
         clauses.append("server_type=?")
         args.append(server_type)
     completed_rows = _run_select(c, " AND ".join(clauses), args)
-    chosen = {}
+    fallback_sequences = {}
+    canonical_scopes = set()
     for raw_run in completed_rows:
         run = _run_row(raw_run)
         scope = (str(run.get("context", "HH")).upper(), str(run.get("serverType", "STANDARD")).upper())
         scope_key = scope[0] + "|" + scope[1]
         raw_splits = _split_select(c, "submission_id=?", [run["submissionId"]])
+        normalized = _canonicalize_split_rows(raw_splits)
+        has_canonical_route = any(
+            str(item.get("checkpointId") or "") in _CANONICAL_IDS
+            for item in normalized
+        )
+        if has_canonical_route:
+            canonical_scopes.add(scope_key)
+            continue
         ordered = []
-        for raw_split in sorted(raw_splits, key=lambda item: (int(item[1]), str(item[9]).casefold())):
-            item = _split_dict(raw_split)
+        for item in normalized:
             objective = str(item.get("objective", "")).strip()
             if objective:
                 ordered.append(objective)
-        if len(ordered) > len(chosen.get(scope_key, [])):
-            chosen[scope_key] = ordered
-    return chosen
+        if len(ordered) > len(fallback_sequences.get(scope_key, [])):
+            fallback_sequences[scope_key] = ordered
 
+    chosen = dict(fallback_sequences)
+    for scope_key in canonical_scopes:
+        chosen[scope_key] = list(_CANONICAL_LABELS)
+    return chosen
 
 
 def handle_get(path, query, db_fn):
@@ -567,18 +812,29 @@ def handle_get(path, query, db_fn):
                     run = _run_row(raw_run)
                     run["teamMembers"] = _json_members(run.get("teamMembers"))
                     raw_splits = _split_select(c, "submission_id=?", [run["submissionId"]])
-                    splits = [_split_dict(raw_split) for raw_split in raw_splits]
-                    splits.sort(key=lambda item: int(item.get("splitIndex", 0)))
-                    run["splits"] = splits
+                    raw_split_dicts = [_split_dict(raw_split) for raw_split in raw_splits]
+                    raw_split_dicts.sort(key=lambda item: int(item.get("splitIndex", 0)))
+                    canonical_splits = _canonicalize_split_rows(raw_splits)
+                    run["splits"] = raw_split_dicts
+                    run["rawSplits"] = raw_split_dicts
+                    run["canonicalSplits"] = canonical_splits
+                    run["rawSplitCount"] = len(raw_split_dicts)
+                    run["splitCount"] = len(canonical_splits)
+                    run["splitSchemaVersion"] = _CANONICAL_SPLIT_SCHEMA if any(
+                        str(item.get("checkpointId") or "") in _CANONICAL_IDS for item in canonical_splits
+                    ) else 0
                     history.append(run)
                 return 200, {"ok": True, "source": "community", "verified": False,
                              "kind": "history", "playerUuid": player_uuid, "rows": history}
             if kind == "runs":
                 clauses.append("successful=1")
                 rows = _run_select(c, " AND ".join(clauses), args + [])
+                # Stored split_count may be a legacy raw-event count, so derive the
+                # public count from canonical intervals on every run-summary flow.
+                best_runs = _add_split_counts(c, _best_runs(rows))
                 return 200, {"ok": True, "source": "community", "verified": False,
                              "context": context, "serverType": server_type, "kind": "runs",
-                             "rows": _best_runs(rows)}
+                             "rows": best_runs}
             if kind == "bks":
                 split_clauses, split_args = [], []
                 if context != "ALL":
@@ -608,28 +864,25 @@ def handle_get(path, query, db_fn):
                         raw_run_splits = _split_select(c, "submission_id=?", [run["submissionId"]])
                         run_splits = [_split_dict(item) for item in sorted(raw_run_splits, key=lambda item: int(item[1]))]
                         run["splits"] = run_splits
+                        # Keep only the canonical checkpoint rows needed for split deltas.
+                        # This is much smaller than embedding the full WR run and raw history.
+                        run["canonicalSplits"] = [{
+                            "checkpointId": str(item.get("checkpointId") or ""),
+                            "fromCheckpointId": str(item.get("fromCheckpointId") or ""),
+                            "missingCheckpointIds": list(item.get("missingCheckpointIds") or []),
+                            "index": int(item.get("index", item.get("splitIndex", 0)) or 0),
+                            "splitIndex": int(item.get("splitIndex", item.get("index", 0)) or 0),
+                            "objective": str(item.get("objective") or ""),
+                            "splitMs": int(item.get("splitMs") or 0),
+                            "elapsedMs": int(item.get("elapsedMs") or 0),
+                            "schemaVersion": int(item.get("schemaVersion") or 0),
+                        } for item in _canonicalize_split_rows(raw_run_splits)]
                         world_records[scope_key] = run
                 for benchmark in benchmarks:
                     scope_key = benchmark["context"] + "|" + benchmark["serverType"]
                     world_record = world_records.get(scope_key)
-                    # Keep the completed WR separate from the theoretical BKS composite.
-                    # Return only comparison-ready fields for its chronological splits;
-                    # duplicating the full run roster/metadata makes the bounded client
-                    # response unnecessarily large, but WR split deltas need the real
-                    # record's split sequence (not the BKS rows as a proxy).
                     benchmark["worldRecordTimeMs"] = int(world_record["timeMs"]) if world_record else None
-                    benchmark["worldRecordSplits"] = [
-                        {
-                            "index": int(split.get("index") or position),
-                            "objective": str(split.get("objective") or ""),
-                            "splitMs": int(split.get("splitMs") or 0),
-                            "elapsedMs": int(split.get("elapsedMs") or 0),
-                        }
-                        for position, split in enumerate(world_record.get("splits", []) if world_record else [], start=1)
-                        if str(split.get("objective") or "").strip()
-                        and int(split.get("splitMs") or 0) > 0
-                        and int(split.get("elapsedMs") or 0) > 0
-                    ]
+                    benchmark["worldRecordSplits"] = list(world_record.get("canonicalSplits") or []) if world_record else []
                 # The per-objective rows are already nested under each benchmark. Avoid
                 # returning a second flattened copy; consumers should read benchmarks[].rows.
                 return 200, {"ok": True, "source": "community", "verified": False,
@@ -654,7 +907,7 @@ def handle_get(path, query, db_fn):
             if server_type != "ALL":
                 group_clauses.append("server_type=?"); group_args.append(server_type)
             runs = _run_select(c, " AND ".join(group_clauses), group_args)
-            completed = _best_runs([row for row in runs if bool(row[15])])
+            completed = _add_split_counts(c, _best_runs([row for row in runs if bool(row[15])]))
             splits = _split_select(c, " AND ".join(group_clauses), group_args)
 
             # The group profile shows global BKS and per-member best sections.
@@ -695,11 +948,11 @@ def handle_get(path, query, db_fn):
                     matching_members = roster_ids.intersection(observed_ids)
                     if not matching_members:
                         continue
-                    related_splits = _split_select(c, "submission_id=?", [related["submissionId"]])
-                    for raw_member_split in related_splits:
-                        split = _split_dict(raw_member_split)
+                    related_splits = _canonicalize_split_rows(
+                        _split_select(c, "submission_id=?", [related["submissionId"]]))
+                    for split in related_splits:
                         split["teamMembers"] = _json_members(split.get("teamMembers"))
-                        if int(split.get("splitMs") or 0) <= 0:
+                        if int(split.get("splitMs") or 0) <= 0 or _split_has_missing_boundary(split):
                             continue
                         key_base = (str(split["context"]).upper(), str(split["serverType"]).upper(),
                                     int(split.get("splitIndex") or 0), str(split["objective"]).casefold())

@@ -122,6 +122,8 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(len(board["rows"]), 1)
         self.assertEqual(board["rows"][0]["timeMs"], 30000)
         self.assertTrue(board["rows"][0]["successful"])
+        self.assertEqual(board["rows"][0]["splitCount"], 2)
+        self.assertEqual(board["rows"][0]["rawSplitCount"], 2)
 
     def test_bks_composite_uses_best_split_per_objective_and_marks_complete(self):
         first = self.payload()
@@ -163,15 +165,110 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(benchmark["rows"][1]["compositeElapsedMs"], 25000)
         self.assertFalse(benchmark["verified"])
         self.assertEqual(benchmark["worldRecordTimeMs"], 30000)
-        self.assertEqual(
-            [(row["index"], row["objective"], row["splitMs"], row["elapsedMs"])
-             for row in benchmark["worldRecordSplits"]],
-            [(1, "Pumpkins", 10000, 10000), (2, "Graveyard", 20000, 30000)],
-        )
-        # The WR remains a separate completed run. Compact split fields support true WR
-        # split deltas without returning the full run metadata or treating BKS as WR.
+        # BKS response keeps WR timing separate without duplicating the entire WR run
+        # and its splits; the composite's own objective rows retain provenance.
         self.assertNotIn("worldRecord", benchmark)
+        self.assertEqual(len(benchmark["worldRecordSplits"]), 2)
         self.assertNotIn("rows", response)
+
+    def test_canonical_run_views_keep_raw_events_and_publish_eight_wr_delta_rows(self):
+        labels = [
+            "Defeat the Giant",
+            "Regroup",
+            "Defeat Gendo",
+            "Find a way to clear the path",
+            "Complete the 4 challenges",
+            "Guide the minecart across the lava",
+            "Find an exit to the maze",
+            "Board the Green Ship",
+            "Enter the portal on the bottom deck",
+            "Defeat the Pumpkin King's Minions",
+            "Pumpkin King",
+        ]
+        splits = []
+        elapsed = 0
+        for index, objective in enumerate(labels, 1):
+            elapsed += 1000
+            splits.append({
+                "index": index, "objective": objective, "splitMs": 1000,
+                "elapsedMs": elapsed, "status": "PASSED", "completedAt": 1760000000000 + elapsed,
+            })
+        canonical_input = [{
+            "index": index + 1,
+            "checkpointId": checkpoint_id,
+            "objective": label,
+            "splitMs": 1000,
+            "elapsedMs": (index + 1) * 1000,
+            "schemaVersion": hh._CANONICAL_SPLIT_SCHEMA,
+        } for index, (checkpoint_id, label) in enumerate(zip(
+            hh._CANONICAL_IDS,
+            [entry[1] for entry in hh._CANONICAL_CHECKPOINTS],
+        ))]
+        payload = self.payload(
+            timeMs=elapsed, splitCount=8, rawSplitCount=len(splits),
+            splits=splits, canonicalSplits=canonical_input,
+        )
+        self.assertEqual(self.submit(payload, "canonical-run-views-ip")[0], 200)
+
+        status, board = self.get({"kind": ["runs"], "context": ["HH"], "serverType": ["STANDARD"]})
+        self.assertEqual(status, 200, board)
+        self.assertEqual(board["rows"][0]["splitCount"], 8)
+        self.assertEqual(board["rows"][0]["rawSplitCount"], len(labels))
+        c = self.db()
+        self.assertEqual(c.execute("SELECT split_count FROM community_hh_runs").fetchone()[0], 8)
+        self.assertEqual(c.execute("SELECT COUNT(*) FROM community_hh_splits").fetchone()[0], len(labels))
+        c.close()
+
+        status, history = self.get({"kind": ["history"], "uuid": [self.player_uuid]})
+        self.assertEqual(status, 200, history)
+        run = history["rows"][0]
+        self.assertEqual(run["rawSplitCount"], len(labels))
+        self.assertEqual(run["splitCount"], 8)
+        self.assertEqual(len(run["splits"]), len(labels))
+        self.assertEqual(len(run["canonicalSplits"]), 8)
+        self.assertEqual([row["checkpointId"] for row in run["canonicalSplits"]], list(hh._CANONICAL_IDS))
+
+        status, response = self.get({"kind": ["bks"], "context": ["HH"], "serverType": ["STANDARD"]})
+        self.assertEqual(status, 200, response)
+        benchmark = response["benchmarks"][0]
+        self.assertTrue(benchmark["complete"])
+        self.assertEqual(len(benchmark["rows"]), 8)
+        self.assertEqual(len(benchmark["worldRecordSplits"]), 8)
+        self.assertEqual([row["checkpointId"] for row in benchmark["worldRecordSplits"]], list(hh._CANONICAL_IDS))
+        self.assertTrue(all(set(row.keys()) == {
+            "checkpointId", "fromCheckpointId", "missingCheckpointIds", "index", "splitIndex",
+            "objective", "splitMs", "elapsedMs", "schemaVersion",
+        } for row in benchmark["worldRecordSplits"]))
+
+    def test_raw_split_count_mismatch_is_rejected(self):
+        payload = self.payload(rawSplitCount=99)
+        status, response = self.submit(payload, "raw-count-mismatch-ip")
+        self.assertEqual(status, 400)
+        self.assertIn("rawSplitCount", response["error"])
+
+    def test_legacy_raw_event_split_count_remains_accepted(self):
+        labels = [
+            "Defeat the Giant", "Defeat Gendo", "Complete the 4 challenges",
+            "Guide the minecart across the lava", "Find an exit to the maze",
+            "Enter the portal on the bottom deck", "Defeat the Pumpkin King's minions",
+            "Pumpkin King",
+        ]
+        splits = []
+        elapsed = 0
+        for index, objective in enumerate(labels, 1):
+            elapsed += 1000
+            splits.append({
+                "index": index, "objective": objective, "splitMs": 1000,
+                "elapsedMs": elapsed, "status": "PASSED", "completedAt": 1760000000000 + elapsed,
+            })
+        payload = self.payload(
+            timeMs=elapsed, splitCount=len(splits), splits=splits,
+        )
+        status, response = self.submit(payload, "legacy-canonical-count-ip")
+        self.assertEqual(status, 200, response)
+        c = self.db()
+        self.assertEqual(c.execute("SELECT split_count FROM community_hh_runs").fetchone()[0], 8)
+        c.close()
 
     def test_repeated_objective_names_remain_separate_chronological_splits(self):
         route = [
@@ -312,6 +409,117 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(len(result["rows"][0]["splits"]), 2)
         self.assertEqual(result["rows"][0]["splits"][0]["objective"], "Pumpkins")
 
+    def test_canonical_hh_route_has_eight_stable_checkpoints(self):
+        expected = [
+            "GIANT", "GENDO", "CHALLENGES_COMPLETE", "MINECART_LAVA",
+            "MAZE_EXIT", "BOTTOM_DECK_PORTAL", "PUMPKIN_KING_MINIONS", "PUMPKIN_KING",
+        ]
+        self.assertEqual(list(hh._CANONICAL_IDS), expected)
+        self.assertEqual(len(hh._CANONICAL_CHECKPOINTS), 8)
+
+    def test_optional_objectives_are_absorbed_into_longer_canonical_intervals(self):
+        labels_and_durations = [
+            ("Defeat the Giant", 8000),
+            ("Defeat Gendo", 11000),
+            ("Regroup", 5000),
+            ("Follow the Molten Snake", 12000),
+            ("Secure the mine entrance", 36000),
+            ("Push the minecart", 6000),
+            ("Find a way to clear the path", 12000),
+            ("Continue to push the minecart", 15000),
+            ("Complete the 4 challenges", 20000),
+            ("Guide the minecart across the lava", 18000),
+            ("Find an exit to the maze", 30000),
+            ("Push the minecart", 20000),
+            ("Push the minecart up the tower", 15000),
+            ("Regroup", 3000),
+            ("Climb out of the hole!", 60000),
+            ("Defeat the Molten Snake", 4200),
+            ("Board the ship", 15000),
+            ("Board the Green Ship", 8000),
+            ("Look for hay bales in the hull", 16000),
+            ("Return to the top deck", 8000),
+            ("Board the Gray Ship", 25000),
+            ("Regroup", 8000),
+            ("Enter the portal on the bottom deck", 24000),
+            ("Defeat the Pumpkin King's minions", 60000),
+            ("Regroup", 17000),
+            ("Prepare for battle", 15000),
+            ("Pumpkin King", 40000),
+        ]
+        elapsed = 0
+        raw = []
+        for index, (objective, duration) in enumerate(labels_and_durations, 1):
+            elapsed += duration
+            raw.append({
+                "index": index, "splitIndex": index, "objective": objective,
+                "splitMs": duration, "elapsedMs": elapsed, "status": "PASSED",
+            })
+
+        canonical = hh._canonicalize_one_run(raw, elapsed, True)
+        expected = [
+            "GIANT", "GENDO", "CHALLENGES_COMPLETE", "MINECART_LAVA",
+            "MAZE_EXIT", "BOTTOM_DECK_PORTAL", "PUMPKIN_KING_MINIONS", "PUMPKIN_KING",
+        ]
+        self.assertEqual([row["checkpointId"] for row in canonical], expected)
+        self.assertEqual([row["splitIndex"] for row in canonical], list(range(1, 9)))
+        # Both non-canonical objective strings are part of their adjacent, longer intervals.
+        self.assertEqual(canonical[2]["fromCheckpointId"], "GENDO")
+        self.assertEqual(canonical[2]["splitMs"], sum(d for _, d in labels_and_durations[2:9]))
+        self.assertEqual(canonical[5]["fromCheckpointId"], "MAZE_EXIT")
+        self.assertEqual(canonical[5]["splitMs"], sum(d for _, d in labels_and_durations[11:23]))
+        self.assertEqual(sum(row["splitMs"] for row in canonical), elapsed)
+        self.assertEqual(canonical[-1]["elapsedMs"], elapsed)
+
+    def test_missing_selected_checkpoint_is_flagged_and_not_comparable(self):
+        route = [
+            ("Defeat the Giant", 8000),
+            ("Defeat Gendo", 11000),
+            # Non-canonical Clear Path / Green Ship events do not create boundaries.
+            ("Find a way to clear the path", 12000),
+            ("Guide the minecart across the lava", 24000),
+            ("Find an exit to the maze", 13000),
+            ("Enter the portal on the bottom deck", 10000),
+            ("Defeat the Pumpkin King's Minions", 7000),
+            ("Pumpkin King", 9000),
+        ]
+        elapsed = 0
+        raw_splits = []
+        for index, (objective, duration) in enumerate(route, 1):
+            elapsed += duration
+            raw_splits.append({
+                "index": index, "splitIndex": index, "objective": objective,
+                "splitMs": duration, "elapsedMs": elapsed, "status": "PASSED",
+                "submittedAt": 1760000000000 + elapsed,
+            })
+
+        canonical = hh._canonicalize_one_run(raw_splits, elapsed, True)
+        lava = next(row for row in canonical if row["checkpointId"] == "MINECART_LAVA")
+        self.assertEqual(lava["missingCheckpointIds"], ["CHALLENGES_COMPLETE"])
+        self.assertTrue(hh._split_has_missing_boundary(lava))
+        self.assertEqual(sum(row["splitMs"] for row in canonical), elapsed)
+        self.assertEqual(canonical[-1]["elapsedMs"], elapsed)
+
+    def test_canonical_bks_indexes_are_fixed_for_the_eight_checkpoints(self):
+        rows = [
+            {"objective": "Defeat the Giant", "elapsedMs": 8000, "splitMs": 8000, "index": 1},
+            {"objective": "Defeat Gendo", "elapsedMs": 19000, "splitMs": 11000, "index": 2},
+            {"objective": "Find an exit to the maze", "elapsedMs": 43000, "splitMs": 24000, "index": 3},
+            {"objective": "Enter the portal on the bottom deck", "elapsedMs": 56000, "splitMs": 13000, "index": 4},
+        ]
+        canonical = hh._canonicalize_one_run(rows, 56000, False)
+        self.assertEqual([row["checkpointId"] for row in canonical], [
+            "GIANT", "GENDO", "MAZE_EXIT", "BOTTOM_DECK_PORTAL"
+        ])
+        self.assertEqual([row["splitIndex"] for row in canonical], [1, 2, 5, 6])
+        self.assertEqual(canonical[2]["missingCheckpointIds"], [
+            "CHALLENGES_COMPLETE", "MINECART_LAVA"
+        ])
+        self.assertEqual(canonical[3]["missingCheckpointIds"], [])
+        self.assertFalse(hh._split_has_missing_boundary(canonical[1]))
+        self.assertTrue(hh._split_has_missing_boundary(canonical[2]))
+        self.assertFalse(hh._split_has_missing_boundary(canonical[3]))
+
     def test_hhc_is_separate_from_hh(self):
         hh_run = self.payload()
         hhc_run = self.payload(context="HHC", uuid=self.member2_uuid, name="RunnerB")
@@ -357,6 +565,11 @@ class HalloweenHavocApiTests(unittest.TestCase):
         columns = {row[1] for row in old.execute("PRAGMA table_info(community_hh_splits)").fetchall()}
         old.close()
         self.assertIn("run_status", columns)
+        self.assertIn("checkpoint_id", columns)
+        self.assertIn("from_checkpoint_id", columns)
+        self.assertIn("missing_checkpoint_ids_json", columns)
+        self.assertIn("boundary_source", columns)
+        self.assertIn("schema_version", columns)
 
     def test_unknown_route_returns_none(self):
         self.assertIsNone(hh.handle_get("/api/v1/mod/other", {}, self.db))
