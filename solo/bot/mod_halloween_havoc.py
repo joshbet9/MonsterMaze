@@ -18,7 +18,7 @@ _PLAYER_LAST = {}
 _RATE_SECONDS = 5.0
 _NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,16}$")
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-_CONTEXTS = {"HH", "HHC"}
+_CONTEXTS = {"HH", "HHC", "HHI"}
 _SERVER_TYPES = {"STANDARD", "MPS"}
 _RUN_STATUSES = {"COMPLETED", "FAILED", "PARTIAL"}
 _MAX_BODY = 64 * 1024
@@ -70,13 +70,31 @@ def _split_has_missing_boundary(split):
     return bool(split.get("missingCheckpointIds") or [])
 
 
-def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
-    """Derive the fixed eight-checkpoint view; non-canonical events merge into longer intervals."""
+def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False, context="HH"):
+    """Canonicalize HH's known route; preserve HHI as its own dynamic objective sequence."""
     if not raw_splits:
         return []
     ordered = sorted(raw_splits, key=lambda item: (
         int(item.get("splitIndex", item.get("index", 0)) or 0),
         int(item.get("elapsedMs", 0) or 0)))
+
+    # HHI is a separate game context. Do not apply HH's fixed eight-checkpoint
+    # route unless a route schema is explicitly established for HHI. Retain the
+    # server-observed objective labels/indexes so BKS is computed from HHI runs only,
+    # and ignore any client-supplied HH checkpoint metadata.
+    if str(context or "HH").strip().upper() == "HHI":
+        generic = []
+        for raw in ordered:
+            row = dict(raw)
+            row.update({
+                "checkpointId": "",
+                "fromCheckpointId": "",
+                "missingCheckpointIds": [],
+                "boundarySource": "OBJECTIVE",
+                "schemaVersion": 0,
+            })
+            generic.append(row)
+        return generic
 
     # Preserve generic/synthetic legacy objective sequences that are not an HH route.
     # Real HH partial runs still qualify when at least one non-terminal checkpoint is seen.
@@ -160,7 +178,8 @@ def _canonicalize_split_rows(rows):
         first = items[0]
         completed = bool(first.get("runSuccessful") or first.get("runRecordSuccessful"))
         duration = max([int(item.get("runTimeMs") or 0) for item in items] + [0])
-        out.extend(_canonicalize_one_run(items, duration, completed))
+        context = str(first.get("context") or "HH").strip().upper()
+        out.extend(_canonicalize_one_run(items, duration, completed, context=context))
     return sorted(out, key=lambda item: (
         str(item.get("context") or ""), str(item.get("serverType") or ""),
         int(item.get("splitIndex", item.get("index", 999)) or 999),
@@ -294,7 +313,7 @@ def _normalize_payload(body):
         raise ValueError("name must be a Minecraft username")
     context = str(payload.get("context", "")).strip().upper()
     if context not in _CONTEXTS:
-        raise ValueError("context must be HH or HHC")
+        raise ValueError("context must be HH, HHC, or HHI")
     server_type = str(payload.get("serverType", "STANDARD")).strip().upper()
     if server_type not in _SERVER_TYPES:
         raise ValueError("serverType must be STANDARD or MPS")
@@ -394,13 +413,16 @@ def _normalize_payload(body):
             raise ValueError("invalid boundarySource")
         schema_version = _bounded_int(split.get("schemaVersion", 0), "schemaVersion", 0, _CANONICAL_SPLIT_SCHEMA)
 
+        is_hhi = context == "HHI"
         normalized_splits.append({
             "index": index, "objective": objective, "splitMs": split_ms,
             "elapsedMs": elapsed_ms, "status": "PASSED",
             "completedAt": _bounded_int(split.get("completedAt", 0), "completedAt", 0, 9_999_999_999_999),
-            "checkpointId": checkpoint_id, "fromCheckpointId": from_checkpoint_id,
-            "missingCheckpointIds": missing_ids, "boundarySource": boundary_source,
-            "schemaVersion": schema_version,
+            "checkpointId": "" if is_hhi else checkpoint_id,
+            "fromCheckpointId": "" if is_hhi else from_checkpoint_id,
+            "missingCheckpointIds": [] if is_hhi else missing_ids,
+            "boundarySource": "OBJECTIVE" if is_hhi else boundary_source,
+            "schemaVersion": 0 if is_hhi else schema_version,
         })
         previous_elapsed = elapsed_ms
         previous_index = index
@@ -408,14 +430,21 @@ def _normalize_payload(body):
     # current fixed-checkpoint view separately as "canonicalSplits". Derive the
     # canonical count from the raw events here; never replace the retained event rows
     # with client-derived checkpoint data.
-    canonical_splits = _canonicalize_one_run(normalized_splits, time_ms, bool(successful))
+    canonical_splits = _canonicalize_one_run(
+        normalized_splits, time_ms, bool(successful), context=context)
     canonical_count = len(canonical_splits)
     provided_split_count = _bounded_int(
         payload.get("splitCount", canonical_count), "splitCount", 0, _MAX_SPLITS)
     # Accept the legacy raw-event splitCount during rollout, but store the public count
-    # using the canonical methodology. This keeps older clients upload-compatible.
-    if provided_split_count not in (len(normalized_splits), canonical_count):
-        raise ValueError("splitCount matches neither raw events nor canonical checkpoints")
+    # using the context-aware server calculation. HHI's objective stream is dynamic, so
+    # older clients may still send the count of their separate client-side checkpoint view.
+    accepted_split_counts = {len(normalized_splits), canonical_count}
+    client_canonical = payload.get("canonicalSplits")
+    if (context == "HHI" and isinstance(client_canonical, list)
+            and 1 <= len(client_canonical) <= _MAX_SPLITS):
+        accepted_split_counts.add(len(client_canonical))
+    if provided_split_count not in accepted_split_counts:
+        raise ValueError("splitCount matches neither raw events nor server-derived objective count")
     if "rawSplitCount" in payload:
         provided_raw_count = _bounded_int(payload.get("rawSplitCount"), "rawSplitCount", 0, _MAX_SPLITS)
         if provided_raw_count != len(normalized_splits):
@@ -718,7 +747,7 @@ def _best_known_split_benchmarks(rows, required_objectives):
 
 
 def _required_objectives_from_completed_runs(c, context, server_type):
-    """Use the fixed eight-checkpoint HH route when canonical milestones are present."""
+    """Use HH's fixed route schema; infer HHI's required objective order from completed runs."""
     clauses = ["successful=1"]
     args = []
     if context != "ALL":
@@ -758,13 +787,13 @@ def _required_objectives_from_completed_runs(c, context, server_type):
 
 
 def handle_get(path, query, db_fn):
-    """Return (status, payload) for HH/HHC community boards and group profiles."""
+    """Return (status, payload) for HH/HHC/HHI community boards and group profiles."""
     if path != "/api/v1/mod/halloween-havoc/leaderboard":
         return None
     try:
         context = _value(query, "context", "HH").upper()
-        if context not in ("HH", "HHC", "ALL"):
-            raise ValueError("context must be HH, HHC, or ALL")
+        if context not in ("HH", "HHC", "HHI", "ALL"):
+            raise ValueError("context must be HH, HHC, HHI, or ALL")
         server_type = _value(query, "serverType", "ALL").upper()
         if server_type not in ("STANDARD", "MPS", "ALL"):
             raise ValueError("serverType must be STANDARD, MPS, or ALL")
