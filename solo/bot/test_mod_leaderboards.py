@@ -384,6 +384,18 @@ class ModLeaderboardTests(unittest.TestCase):
             self.assertEqual(status, 200, response)
             self.assertTrue(response["accepted"])
 
+        # A worse duplicate attempt must not push another player's category rank down;
+        # profiles and leaderboards rank each participant's best result, not every attempt.
+        duplicate_payload = {
+            "submissionId": str(uuid.uuid4()), "uuid": candidates[2][0], "name": "FastRunnerA",
+            "context": "MIN", "game": "Monster Maze", "mode": "speed",
+            "pattern": 2, "kit": "Jumper", "stage": 29, "timeMs": 250000,
+        }
+        status, response = mod_leaderboards.handle_submit(
+            json.dumps(duplicate_payload).encode("utf-8"), "placement-community-duplicate-ip", self.db
+        )
+        self.assertEqual(status, 200, response)
+
         status, profile = mod_leaderboards.handle_get(
             "/api/v1/mod/player",
             {"source": ["community"], "uuid": [player_uuid], "context": ["MIN"],
