@@ -71,7 +71,7 @@ def _community_profile_placements(c, player_uuid):
         ),
         ranked AS (
             SELECT lower(r.uuid) AS uuid, r.context, lower(r.mode) AS mode,
-                   r.pattern, r.kit, r.stage, r.time_ms, r.submitted_at,
+                   r.pattern, r.kit, r.stage, r.time_ms, r.submitted_at, r.submission_id,
                    ROW_NUMBER() OVER (
                        PARTITION BY r.context, lower(r.mode), r.pattern, r.kit
                        ORDER BY r.stage DESC, r.time_ms ASC, r.submitted_at ASC,
@@ -85,12 +85,12 @@ def _community_profile_placements(c, player_uuid):
                     AND cat.pattern=r.pattern AND cat.kit=r.kit
               )
         )
-        SELECT context, mode, pattern, kit, stage, time_ms, submitted_at, placement
+        SELECT context, mode, pattern, kit, stage, time_ms, submitted_at, placement, submission_id
         FROM ranked WHERE uuid=?
     """, (player_uuid, player_uuid)).fetchall()
     return {
         (str(row[0]), str(row[1]).lower(), int(row[2]), str(row[3]),
-         int(row[4]), int(row[5]), int(row[6])): int(row[7])
+         int(row[4]), int(row[5]), int(row[6]), str(row[8])): int(row[7])
         for row in rows
     }
 
@@ -439,7 +439,7 @@ def handle_get(path, query, db_fn, allowed_modes):
                     if kit not in _ALLOWED_KITS - {"Unknown"}:
                         raise ValueError("invalid kit filter")
                     where.append("kit=?"); args.append(kit)
-                rows = c.execute("""SELECT uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at
+                rows = c.execute("""SELECT uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at,submission_id
                                      FROM community_mod_runs WHERE %s
                                      ORDER BY stage DESC,time_ms ASC,submitted_at DESC LIMIT 500""" % " AND ".join(where),
                                  tuple(args)).fetchall()
@@ -457,7 +457,7 @@ def handle_get(path, query, db_fn, allowed_modes):
                 for row in profile_rows[:100]:
                     item = _entry(row)
                     placement_key = (str(row[2]), str(row[4]).lower(), int(row[5]), str(row[6]),
-                                     int(row[7]), int(row[8]), int(row[9]))
+                                     int(row[7]), int(row[8]), int(row[9]), str(row[11]))
                     item["placement"] = placements.get(placement_key)
                     response_rows.append(item)
                 return 200, {"ok": True, "source": "community",
