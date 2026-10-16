@@ -1,4 +1,4 @@
-"""Public, rate-limited Halloween Havoc/HHC community run uploads and leaderboards.
+"""Public, rate-limited Halloween Havoc/Challenger/Insanity community run uploads and leaderboards.
 
 All submitted values are client-reported and unverified. This data is kept in
 its own tables; it is never part of authoritative Monster Maze PB/MMR records.
@@ -18,7 +18,7 @@ _PLAYER_LAST = {}
 _RATE_SECONDS = 5.0
 _NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,16}$")
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-_CONTEXTS = {"HH", "HHC"}
+_CONTEXTS = {"HH", "HHC", "HHI"}
 _SERVER_TYPES = {"STANDARD", "MPS"}
 _RUN_STATUSES = {"COMPLETED", "FAILED", "PARTIAL"}
 _MAX_BODY = 64 * 1024
@@ -294,7 +294,7 @@ def _normalize_payload(body):
         raise ValueError("name must be a Minecraft username")
     context = str(payload.get("context", "")).strip().upper()
     if context not in _CONTEXTS:
-        raise ValueError("context must be HH or HHC")
+        raise ValueError("context must be HH, HHC, or HHI")
     server_type = str(payload.get("serverType", "STANDARD")).strip().upper()
     if server_type not in _SERVER_TYPES:
         raise ValueError("serverType must be STANDARD or MPS")
@@ -758,13 +758,13 @@ def _required_objectives_from_completed_runs(c, context, server_type):
 
 
 def handle_get(path, query, db_fn):
-    """Return (status, payload) for HH/HHC community boards and group profiles."""
+    """Return (status, payload) for HH/HHC/HHI community boards and group profiles."""
     if path != "/api/v1/mod/halloween-havoc/leaderboard":
         return None
     try:
         context = _value(query, "context", "HH").upper()
-        if context not in ("HH", "HHC", "ALL"):
-            raise ValueError("context must be HH, HHC, or ALL")
+        if context not in ("HH", "HHC", "HHI", "ALL"):
+            raise ValueError("context must be HH, HHC, HHI, or ALL")
         server_type = _value(query, "serverType", "ALL").upper()
         if server_type not in ("STANDARD", "MPS", "ALL"):
             raise ValueError("serverType must be STANDARD, MPS, or ALL")
