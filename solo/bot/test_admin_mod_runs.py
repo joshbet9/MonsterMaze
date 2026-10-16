@@ -180,6 +180,31 @@ class AdminModRunsTests(unittest.TestCase):
         self.assertEqual(official, 44)
         self.assertEqual(admin.find_hh_entry(self.db_path, self.hh_id)["name"], "HavocCorrected")
 
+    def test_hhi_context_filter_and_edit_are_supported(self):
+        before = admin.find_hh_entry(self.db_path, self.hh_id)
+        self.assertIsNotNone(before)
+        self.assertEqual(before["context"], "HH")
+
+        before, after, backup = admin.edit_hh_entry(
+            self.db_path, self.backup_dir, self.hh_id, {"context": "HHI"},
+            confirmed=True, actor="hhi-admin-test",
+        )
+        self.assertEqual(after["context"], "HHI")
+        self.assertTrue(backup.is_file())
+        rows = admin.list_hh_entries(self.db_path, {"context": "HHI"})
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["submission_id"], self.hh_id)
+        self.assertEqual(rows[0]["context"], "HHI")
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            split_context = conn.execute(
+                "SELECT context FROM community_hh_splits WHERE submission_id=?", (self.hh_id,)
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(split_context, "HHI")
+
     def test_hh_delete_cascades_splits_with_backup_and_audit(self):
         with self.assertRaises(admin.AdminError):
             admin.delete_hh_entry(self.db_path, self.backup_dir, self.hh_id)
