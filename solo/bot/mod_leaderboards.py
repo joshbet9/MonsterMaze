@@ -96,26 +96,36 @@ def _community_profile_placements(c, player_uuid):
 
 
 def _server_profile_placements(c, player_uuid):
-    """Return one-based category ranks for a player's authoritative PB records."""
+    """Rank each player's best authoritative PB once within the exact server category."""
     rows = c.execute("""
         WITH categories AS (
             SELECT DISTINCT platform, lower(mode) AS mode, pattern, kit
             FROM runs WHERE lower(uuid)=?
         ),
-        ranked AS (
-            SELECT lower(r.uuid) AS uuid, r.platform, lower(r.mode) AS mode,
-                   r.pattern, r.kit, r.stage, r.time_ms,
+        personal_bests AS (
+            SELECT r.*,
                    ROW_NUMBER() OVER (
-                       PARTITION BY r.platform, lower(r.mode), r.pattern, r.kit
+                       PARTITION BY lower(r.uuid), r.platform, lower(r.mode), r.pattern, r.kit
                        ORDER BY r.stage DESC, r.time_ms ASC,
                                 r.name COLLATE NOCASE ASC, lower(r.uuid) ASC
-                   ) AS placement
+                   ) AS personal_best_order
             FROM runs AS r
             WHERE EXISTS (
                 SELECT 1 FROM categories AS cat
                 WHERE cat.platform=r.platform AND cat.mode=lower(r.mode)
                   AND cat.pattern=r.pattern AND cat.kit=r.kit
             )
+        ),
+        ranked AS (
+            SELECT lower(uuid) AS uuid, platform, lower(mode) AS mode,
+                   pattern, kit, stage, time_ms,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY platform, lower(mode), pattern, kit
+                       ORDER BY stage DESC, time_ms ASC,
+                                name COLLATE NOCASE ASC, lower(uuid) ASC
+                   ) AS placement
+            FROM personal_bests
+            WHERE personal_best_order=1
         )
         SELECT platform, mode, pattern, kit, stage, time_ms, placement
         FROM ranked WHERE uuid=?
@@ -394,7 +404,7 @@ def handle_get(path, query, db_fn, allowed_modes):
                         args.append(kit)
                     sql = """SELECT uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at
                              FROM community_mod_runs WHERE %s
-                             ORDER BY stage DESC,time_ms ASC,submitted_at ASC,name COLLATE NOCASE ASC
+                             ORDER BY stage DESC,time_ms ASC,submitted_at ASC,name COLLATE NOCASE ASC,submission_id ASC
                              LIMIT 100""" % " AND ".join(where)
                     rows = c.execute(sql, tuple(args)).fetchall()
                     return 200, {"ok": True, "source": "community", "verified": False,
@@ -484,7 +494,7 @@ def handle_get(path, query, db_fn, allowed_modes):
                                FROM runs WHERE %s
                              )
                              SELECT uuid,name,platform,mode,pattern,kit,stage,time_ms
-                             FROM ranked WHERE rn=1 ORDER BY stage DESC,time_ms ASC,name COLLATE NOCASE ASC LIMIT 100""" % " AND ".join(where)
+                             FROM ranked WHERE rn=1 ORDER BY stage DESC,time_ms ASC,name COLLATE NOCASE ASC,lower(uuid) ASC LIMIT 100""" % " AND ".join(where)
                     rows = c.execute(sql, tuple(args)).fetchall()
                     result = []
                     for r in rows:
