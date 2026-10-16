@@ -43,10 +43,16 @@ $Base = "https://monstermaze.duckdns.org"
 # Check public HTTPS + API health.
 Invoke-RestMethod "$Base/health" | ConvertTo-Json -Depth 5
 
-# These HH routes require this HH/HHC backend release to be deployed first.
+# HH, HHC and HHI are separate community contexts after the HHI-enabled release.
 Invoke-RestMethod "$Base/api/v1/mod/halloween-havoc/leaderboard?context=HH&kind=runs" |
     ConvertTo-Json -Depth 8
 Invoke-RestMethod "$Base/api/v1/mod/halloween-havoc/leaderboard?context=HH&kind=splits" |
+    ConvertTo-Json -Depth 8
+Invoke-RestMethod "$Base/api/v1/mod/halloween-havoc/leaderboard?context=HHI&kind=runs" |
+    ConvertTo-Json -Depth 8
+Invoke-RestMethod "$Base/api/v1/mod/halloween-havoc/leaderboard?context=HHI&kind=splits" |
+    ConvertTo-Json -Depth 8
+Invoke-RestMethod "$Base/api/v1/mod/halloween-havoc/leaderboard?context=HHI&serverType=ALL&kind=bks" |
     ConvertTo-Json -Depth 8
 ```
 
@@ -63,13 +69,15 @@ sudo grep -R -nE 'monstermaze\.duckdns\.org|127\.0\.0\.1:8090|reverse_proxy' /et
 
 Look for a Caddy site for `monstermaze.duckdns.org` that proxies HTTPS requests to the local API listener on port 8090. Do not paste environment files, API tokens, SSH secrets, or private-key material into a ticket/chat. If Caddy's current file is at a different path, use `sudo systemctl cat caddy` to see the service's configured file path without printing the API environment.
 
-## Halloween Havoc/HHC community API
+## Halloween Havoc, Challenger and Insanity community API
 
-The shared Oracle API now has a separate upload route, `POST /api/v1/mod/halloween-havoc/runs`, and read route, `GET /api/v1/mod/halloween-havoc/leaderboard`. The payload includes one HH/HHC run and all passed objective splits. Run attempts are stored in `community_hh_runs`; split rows are stored in `community_hh_splits`. They remain unverified community data and never enter the Monster Maze authoritative PB/MMR tables.
+The shared Oracle API has a separate upload route, `POST /api/v1/mod/halloween-havoc/runs`, and read route, `GET /api/v1/mod/halloween-havoc/leaderboard`. The payload includes one HH, HHC or HHI run and its passed objective splits. Run attempts are stored in `community_hh_runs`; split rows are stored in `community_hh_splits`. They remain unverified community data and never enter the Monster Maze authoritative PB/MMR tables. Queries and uploads preserve context isolation between HH, HHC and HHI.
 
 Full-run boards count only `successful: true` / `runStatus: COMPLETED` runs, with the best result per team shown. Objective-split boards intentionally include valid passed splits even when the attempt later failed or was partial. Group profile requests return the team's best completed run and fastest known split for each objective across all its uploads.
 
-The client should delete the matching local HH/HHC run only after the API replies with `ok: true` and `accepted: true`. A timeout or non-acceptance keeps the local run so it can be retried with the same `submissionId`; duplicate retries are acknowledged idempotently. `MM_API_TOKEN` is not sent by the client and must remain server-side.
+The client should delete the matching local run only after the API replies with `ok: true` and `accepted: true`. A timeout or non-acceptance keeps the local run so it can be retried with the same `submissionId`; duplicate retries are acknowledged idempotently. `MM_API_TOKEN` is not sent by the client and must remain server-side.
+
+HH keeps its known eight-checkpoint canonical split schema. HHI is stored and benchmarked independently using the submitted objective labels and sequence; the API does not assign HH checkpoint IDs to HHI events without an established HHI route schema. HHI BKS required objectives are inferred from completed HHI runs and scoped by HHI context and server type.
 
 ## Oracle-only release flow (JNP Mod API)
 
@@ -77,7 +85,7 @@ For changes that should reach only the Oracle-hosted bot/API, use a dedicated ta
 
 This tag namespace is intentionally different from the standard `vX.Y.Z` tags used by `.github/workflows/release.yml`. Do not use a normal `vX.Y.Z` tag for an Oracle-only update: the normal release flow also builds and deploys other targets, including Fly production and Hyper-V integration servers. The Oracle-only workflow has no Fly or Hyper-V credentials or deployment steps.
 
-The Oracle-only flow deploys backend source into the existing Oracle release directory, backs up and validates the current SQLite database, switches the active release, restarts `monster-bot.service`, and runs local API smoke checks. It does not build or distribute the JNP Mod client JAR and does not deploy client-side Monster Maze Helper or Halloween Havoc features. The bot/API process is shared, so its restart may briefly interrupt that process, but this workflow changes only the Oracle endpoint.
+The Oracle-only flow deploys backend source into the existing Oracle release directory, backs up and validates the current SQLite database, switches the active release, restarts `monster-bot.service`, and runs local API smoke checks for HH, HHI and other public community endpoints. It does not build or distribute the JNP Mod client JAR and does not deploy client-side Monster Maze Helper or Halloween Havoc features. The bot/API process is shared, so its restart may briefly interrupt that process, but this workflow changes only the Oracle endpoint.
 
 ### Monster Maze leaderboard data separation
 
