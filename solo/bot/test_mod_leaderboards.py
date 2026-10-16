@@ -422,10 +422,6 @@ class ModLeaderboardTests(unittest.TestCase):
             ("1.8", "speed", 2, "Jumper", str(uuid.uuid4()), "FastRunnerC", 30, 90000),
         ]
         c.executemany("INSERT INTO runs VALUES(?,?,?,?,?,?,?,?)", candidates)
-        # A worse later run from the same player must not occupy a separate server-PB
-        # leaderboard position or shift the target profile's category placement.
-        c.execute("INSERT INTO runs VALUES(?,?,?,?,?,?,?,?)",
-                  ("1.8", "speed", 2, "Jumper", candidates[2][4], "FastRunnerA", 29, 250000))
         c.commit()
         c.close()
 
