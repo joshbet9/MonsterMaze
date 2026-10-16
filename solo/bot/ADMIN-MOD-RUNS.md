@@ -1,6 +1,6 @@
 # JNP Mod Community Run Admin Tool
 
-`solo/bot/admin_mod_runs.py` is an Oracle-host-side CLI for reviewing, correcting, or deleting client-reported **Monster Maze Community** and **Halloween Havoc/HHC Community** records. It is not a public HTTP admin endpoint. It never modifies the authoritative Monster Maze server PB (`runs`) or server submissions tables.
+`solo/bot/admin_mod_runs.py` is an Oracle-host-side CLI for reviewing, correcting, or deleting client-reported **Monster Maze Community** and **Halloween Havoc/HHC/HHI Community** records. It is not a public HTTP admin endpoint. It never modifies the authoritative Monster Maze server PB (`runs`) or server submissions tables.
 
 ## Where it reads data
 
@@ -18,7 +18,7 @@ python3 admin_mod_runs.py show <submission-id>
 python3 admin_mod_runs.py edit <submission-id> --name CorrectName --stage 28 --kit Jumper
 python3 admin_mod_runs.py delete <submission-id>
 
-# Halloween Havoc / Halloween Havoc Challenger uploads.
+# Halloween Havoc / Challenger / Insanity uploads.
 python3 admin_mod_runs.py list --dataset hh --context HH --limit 50
 python3 admin_mod_runs.py list --dataset hh --context HHC --server-type MPS
 python3 admin_mod_runs.py show <submission-id> --dataset hh
@@ -29,16 +29,16 @@ python3 admin_mod_runs.py delete <submission-id> --dataset hh
 
 Use the complete `submission_id` returned by `list` or `show`. Options such as `--db` and `--backup-dir` are global arguments and must be placed before the command if overriding the defaults.
 
-For MM entries, editable fields include player identity/name, context, mode, pattern, kit, stage, and duration. For HH/HHC, editable fields include name, context, server type/node, duration/reported duration, success/status, and finish reason. HH/HHC edits that affect shared run metadata (name, context, server type, status) propagate to the associated objective-split rows so the full-run and split leaderboards remain consistent. Deleting an HH/HHC run also deletes its linked split rows.
+For MM entries, editable fields include player identity/name, context, mode, pattern, kit, stage, and duration. For HH/HHC/HHI, editable fields include name, context, server type/node, duration/reported duration, success/status, and finish reason. Edits that affect shared run metadata (name, context, server type, status) propagate to associated objective-split rows so full-run and split leaderboards remain consistent. Deleting a run also deletes its linked split rows.
 
 For new MM uploads, `list` includes a `STARTED (UTC)` column and `show` includes both the raw `started_at` epoch milliseconds and a readable `started_at_utc` value. This is the time the client detected the start of the game; it is distinct from `time_ms` (the recorded run duration) and `submitted_at` (when the upload arrived at the API). The start time is read-only. Rows accepted before this field was deployed show `unknown` because the original upload did not carry a start timestamp. Use matching player/context plus nearby start timestamps to review likely duplicates, but inspect their stages and kits before deleting anything.
 
 ## Safeguards
 
 - Every confirmed edit or deletion creates a timestamped SQLite snapshot in `/home/ubuntu/monstermaze/backups/` (or the chosen `--backup-dir`) and validates it with `PRAGMA quick_check` before changing data.
-- Every successful mutation records its action, operator, timestamp, and before/after JSON. MM audit entries use `community_mod_run_admin_audit`; HH/HHC entries use `community_hh_run_admin_audit`.
+- Every successful mutation records its action, operator, timestamp, and before/after JSON. MM audit entries use `community_mod_run_admin_audit`; HH/HHC/HHI entries use `community_hh_run_admin_audit`.
 - Interactive confirmation is enabled by default. `--yes` can skip it only for deliberate scripted use.
-- Submission IDs and immutable run identities are not editable. Validation prevents impossible HH/HHC status combinations; a run is successful exactly when its status is `COMPLETED`.
+- Submission IDs and immutable run identities are not editable. Validation prevents impossible HH/HHC/HHI status combinations; a run is successful exactly when its status is `COMPLETED`.
 - All Community records remain unverified. The tool never promotes them into official Monster Maze PBs/MMR.
 - Backups are retained for recovery; admin-created backups are not automatically pruned.
 
