@@ -62,21 +62,20 @@ def _entry(row, context=None, source="community"):
 
 
 def _community_profile_placements(c, player_uuid):
-    """Return one-based category ranks for a player's exact community run records."""
+    """Rank each player's best result once within every exact community category."""
     rows = c.execute("""
         WITH categories AS (
             SELECT DISTINCT context, lower(mode) AS mode, pattern, kit
             FROM community_mod_runs
             WHERE game='Monster Maze' AND lower(uuid)=?
         ),
-        ranked AS (
-            SELECT lower(r.uuid) AS uuid, r.context, lower(r.mode) AS mode,
-                   r.pattern, r.kit, r.stage, r.time_ms, r.submitted_at,
+        personal_bests AS (
+            SELECT r.*,
                    ROW_NUMBER() OVER (
-                       PARTITION BY r.context, lower(r.mode), r.pattern, r.kit
-                       ORDER BY r.stage DESC, r.time_ms ASC, r.submitted_at ASC,
-                                r.name COLLATE NOCASE ASC, r.submission_id ASC
-                   ) AS placement
+                       PARTITION BY lower(r.uuid), r.context, lower(r.mode), r.pattern, r.kit
+                       ORDER BY r.stage DESC, r.time_ms ASC, r.submitted_at DESC,
+                                r.name COLLATE NOCASE ASC, r.submission_id DESC
+                   ) AS personal_best_order
             FROM community_mod_runs AS r
             WHERE r.game='Monster Maze'
               AND EXISTS (
@@ -84,6 +83,17 @@ def _community_profile_placements(c, player_uuid):
                   WHERE cat.context=r.context AND cat.mode=lower(r.mode)
                     AND cat.pattern=r.pattern AND cat.kit=r.kit
               )
+        ),
+        ranked AS (
+            SELECT lower(uuid) AS uuid, context, lower(mode) AS mode,
+                   pattern, kit, stage, time_ms, submitted_at,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY context, lower(mode), pattern, kit
+                       ORDER BY stage DESC, time_ms ASC, submitted_at ASC,
+                                name COLLATE NOCASE ASC, lower(uuid) ASC
+                   ) AS placement
+            FROM personal_bests
+            WHERE personal_best_order=1
         )
         SELECT context, mode, pattern, kit, stage, time_ms, submitted_at, placement
         FROM ranked WHERE uuid=?
