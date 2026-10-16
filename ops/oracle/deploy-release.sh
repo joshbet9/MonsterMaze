@@ -156,6 +156,27 @@ if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/halloween-havoc/l
   exit 1
 fi
 
+# HHI is an independent public community context. Confirm its full runs, splits,
+# and dynamic-objective BKS routes are available and scoped only to HHI.
+if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/halloween-havoc/leaderboard?context=HHI&kind=runs' \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("source") == "community" and d.get("verified") is False and d.get("context") == "HHI" and d.get("kind") == "runs" and isinstance(d.get("rows"), list)'; then
+  echo "Public Halloween Havoc Insanity full-run health check failed." >&2
+  rollback
+  exit 1
+fi
+if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/halloween-havoc/leaderboard?context=HHI&kind=splits' \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("source") == "community" and d.get("verified") is False and d.get("context") == "HHI" and d.get("kind") == "splits" and isinstance(d.get("rows"), list)'; then
+  echo "Public Halloween Havoc Insanity objective-split health check failed." >&2
+  rollback
+  exit 1
+fi
+if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/halloween-havoc/leaderboard?context=HHI&serverType=ALL&kind=bks' \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("source") == "community" and d.get("verified") is False and d.get("context") == "HHI" and d.get("kind") == "bks" and isinstance(d.get("benchmarks"), list) and all(b.get("context") == "HHI" for b in d["benchmarks"])'; then
+  echo "Public Halloween Havoc Insanity BKS health check failed." >&2
+  rollback
+  exit 1
+fi
+
 # Validate the chronological games-history route introduced for JNP Mod.
 if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/history?context=ALL&limit=1&offset=0' \
     | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("source") == "community" and d.get("verified") is False and d.get("context") == "ALL" and d.get("chronological") == "oldest-first" and isinstance(d.get("rows"), list) and isinstance(d.get("total"), int) and isinstance(d.get("hasMore"), bool)'; then
