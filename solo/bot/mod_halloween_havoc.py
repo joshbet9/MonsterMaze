@@ -1,4 +1,4 @@
-"""Public, rate-limited Halloween Havoc/HHC community run uploads and leaderboards.
+"""Public, rate-limited HH/HHC/HHI community run uploads and leaderboards.
 
 All submitted values are client-reported and unverified. This data is kept in
 its own tables; it is never part of authoritative Monster Maze PB/MMR records.
@@ -25,7 +25,7 @@ _MAX_BODY = 64 * 1024
 _MAX_SPLITS = 100
 _MAX_TIME_MS = 24 * 60 * 60 * 1000
 
-# Stable eight-section HH route. The two route-variable labels ("Find a way to clear the path"
+# Stable eight-section route shared by HH, HHC and HHI. The two route-variable labels ("Find a way to clear the path"
 # and "Board the Green Ship") remain raw events inside adjacent longer intervals.
 # The fixed interval endpoints below appear in all four uploaded reference runs.
 _CANONICAL_SPLIT_SCHEMA = 3
@@ -78,7 +78,7 @@ def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
         int(item.get("splitIndex", item.get("index", 0)) or 0),
         int(item.get("elapsedMs", 0) or 0)))
 
-    # Preserve generic/synthetic legacy objective sequences that are not an HH route.
+    # Preserve generic/synthetic legacy objective sequences that are not the shared route.
     # Real HH partial runs still qualify when at least one non-terminal checkpoint is seen.
     recognized_orders = {_checkpoint_order(item.get("objective", "")) for item in ordered}
     recognized_orders.discard(-1)
@@ -718,7 +718,7 @@ def _best_known_split_benchmarks(rows, required_objectives):
 
 
 def _required_objectives_from_completed_runs(c, context, server_type):
-    """Use HH's fixed route schema; infer HHI's required objective order from completed runs."""
+    """Use the shared eight-checkpoint route when canonical milestones are present."""
     clauses = ["successful=1"]
     args = []
     if context != "ALL":
