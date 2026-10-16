@@ -363,6 +363,65 @@ class ModLeaderboardTests(unittest.TestCase):
         self.assertEqual(profile["rows"][0]["pattern"], 2)
         self.assertEqual(profile["rows"][0]["kit"], "Maverick")
 
+    def test_community_player_profile_includes_global_category_placement(self):
+        player_uuid = str(uuid.uuid4())
+        candidates = [
+            (player_uuid, "MazeRunner", 30, 95000),
+            (str(uuid.uuid4()), "Stage31Runner", 31, 120000),
+            (str(uuid.uuid4()), "FastRunnerA", 30, 70000),
+            (str(uuid.uuid4()), "FastRunnerB", 30, 80000),
+            (str(uuid.uuid4()), "FastRunnerC", 30, 90000),
+        ]
+        for index, (uuid_value, name, stage, time_ms) in enumerate(candidates):
+            payload = {
+                "submissionId": str(uuid.uuid4()), "uuid": uuid_value, "name": name,
+                "context": "MIN", "game": "Monster Maze", "mode": "speed",
+                "pattern": 2, "kit": "Jumper", "stage": stage, "timeMs": time_ms,
+            }
+            status, response = mod_leaderboards.handle_submit(
+                json.dumps(payload).encode("utf-8"), "placement-community-ip-%d" % index, self.db
+            )
+            self.assertEqual(status, 200, response)
+            self.assertTrue(response["accepted"])
+
+        status, profile = mod_leaderboards.handle_get(
+            "/api/v1/mod/player",
+            {"source": ["community"], "uuid": [player_uuid], "context": ["MIN"],
+             "mode": ["speed"], "pattern": ["2"], "kit": ["Jumper"]},
+            self.db, {"1.8": {"original", "modern", "speed"}, "1.21": {"original", "modern", "classic"}}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(profile["rows"]), 1)
+        row = profile["rows"][0]
+        self.assertEqual((row["context"], row["mode"], row["pattern"], row["kit"], row["stage"]),
+                         ("MIN", "speed", 2, "Jumper", 30))
+        self.assertEqual(row["placement"], 5)
+
+    def test_server_player_profile_includes_global_category_placement(self):
+        player_uuid = str(uuid.uuid4())
+        c = self.db()
+        candidates = [
+            ("1.8", "speed", 2, "Jumper", player_uuid, "MazeRunner", 30, 95000),
+            ("1.8", "speed", 2, "Jumper", str(uuid.uuid4()), "Stage31Runner", 31, 120000),
+            ("1.8", "speed", 2, "Jumper", str(uuid.uuid4()), "FastRunnerA", 30, 70000),
+            ("1.8", "speed", 2, "Jumper", str(uuid.uuid4()), "FastRunnerB", 30, 80000),
+            ("1.8", "speed", 2, "Jumper", str(uuid.uuid4()), "FastRunnerC", 30, 90000),
+        ]
+        c.executemany("INSERT INTO runs VALUES(?,?,?,?,?,?,?,?)", candidates)
+        c.commit()
+        c.close()
+
+        status, profile = mod_leaderboards.handle_get(
+            "/api/v1/mod/player",
+            {"source": ["server"], "uuid": [player_uuid], "platform": ["1.8"],
+             "mode": ["speed"], "pattern": ["2"], "kit": ["Jumper"]},
+            self.db, {"1.8": {"original", "modern", "speed"}, "1.21": {"original", "modern", "classic"}}
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(profile["verified"])
+        self.assertEqual(len(profile["rows"]), 1)
+        self.assertEqual(profile["rows"][0]["placement"], 5)
+
     def test_arcade_alias_maps_to_min_for_upload_and_public_filter(self):
         payload = {
             "submissionId": str(uuid.uuid4()), "uuid": str(uuid.uuid4()), "name": "ArcadeRunner",
