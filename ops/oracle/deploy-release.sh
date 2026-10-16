@@ -156,5 +156,21 @@ if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/halloween-havoc/l
   exit 1
 fi
 
+# Validate the chronological games-history route introduced for JNP Mod.
+if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/history?context=ALL&limit=1&offset=0' \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("source") == "community" and d.get("verified") is False and d.get("context") == "ALL" and d.get("chronological") == "oldest-first" and isinstance(d.get("rows"), list) and isinstance(d.get("total"), int) and isinstance(d.get("hasMore"), bool)'; then
+  echo "Public JNP Mod game-history health check failed." >&2
+  rollback
+  exit 1
+fi
+# Validate that any available completed WR has schema-v3 canonical checkpoint rows.
+# Partial runs may omit boundaries, so gaps are allowed and are surfaced by the API.
+if ! curl -fsS --max-time 10 'http://127.0.0.1:8090/api/v1/mod/halloween-havoc/leaderboard?context=ALL&serverType=ALL&kind=bks' \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); ids=("GIANT","GENDO","CHALLENGES_COMPLETE","MINECART_LAVA","MAZE_EXIT","BOTTOM_DECK_PORTAL","PUMPKIN_KING_MINIONS","PUMPKIN_KING"); assert d.get("ok") is True and d.get("source") == "community" and d.get("verified") is False and d.get("kind") == "bks" and isinstance(d.get("benchmarks"), list); assert all(b.get("worldRecordTimeMs") is None or (isinstance(b.get("worldRecordSplits"), list) and len(b["worldRecordSplits"]) > 0 and all(s.get("checkpointId") in ids and int(s.get("schemaVersion", 0)) >= 3 and isinstance(s.get("missingCheckpointIds"), list) for s in b["worldRecordSplits"])) for b in d["benchmarks"])'; then
+  echo "Public Halloween Havoc canonical-checkpoint health check failed." >&2
+  rollback
+  exit 1
+fi
+
 echo "Oracle bot deployment successful: $RELEASE_TAG"
 echo "Current release: $(readlink -f "$CURRENT")"
