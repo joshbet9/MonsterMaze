@@ -530,6 +530,88 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(len(board["rows"]), 1)
         self.assertEqual(board["rows"][0]["context"], "HHC")
 
+    def test_hhi_upload_and_leaderboards_are_separate_from_hh_and_hhc(self):
+        hh_run = self.payload()
+        hhc_run = self.payload(
+            context="HHC", uuid=self.member2_uuid, name="RunnerB", serverNode="HHC-1")
+        hhi_run = self.payload(
+            context="HHI", uuid=self.member3_uuid, name="RunnerC", serverNode="HHI-1")
+
+        self.assertEqual(self.submit(hh_run, "hhi-isolation-hh-ip")[0], 200)
+        self.assertEqual(self.submit(hhc_run, "hhi-isolation-hhc-ip")[0], 200)
+        status, accepted = self.submit(hhi_run, "hhi-isolation-hhi-ip")
+        self.assertEqual(status, 200, accepted)
+        self.assertTrue(accepted["accepted"])
+
+        for context in ("HH", "HHC", "HHI"):
+            status, board = self.get({"context": [context], "kind": ["runs"]})
+            self.assertEqual(status, 200, board)
+            self.assertEqual(board["context"], context)
+            self.assertEqual(len(board["rows"]), 1)
+            self.assertEqual(board["rows"][0]["context"], context)
+
+        status, all_rows = self.get({"context": ["ALL"], "kind": ["runs"]})
+        self.assertEqual(status, 200, all_rows)
+        self.assertEqual({row["context"] for row in all_rows["rows"]}, {"HH", "HHC", "HHI"})
+
+    def test_hhi_preserves_dynamic_objectives_instead_of_using_hh_checkpoint_schema(self):
+        payload = self.payload(
+            context="HHI",
+            uuid=self.member4_uuid,
+            name="RunnerD",
+            serverNode="HHI-2",
+            teamSignature="hhi-dynamic-objective-team",
+            timeMs=30000,
+            splitCount=2,
+            splits=[
+                {"index": 1, "objective": "Defeat the Giant", "splitMs": 10000, "elapsedMs": 10000,
+                 "status": "PASSED", "checkpointId": "GIANT", "fromCheckpointId": "START",
+                 "schemaVersion": 3},
+                {"index": 2, "objective": "Defeat the Nightmare Lord", "splitMs": 20000, "elapsedMs": 30000,
+                 "status": "PASSED", "checkpointId": "PUMPKIN_KING", "fromCheckpointId": "GIANT",
+                 "schemaVersion": 3},
+            ],
+        )
+        status, accepted = self.submit(payload, "hhi-dynamic-objectives-ip")
+        self.assertEqual(status, 200, accepted)
+        self.assertTrue(accepted["accepted"])
+
+        status, history = self.get({"kind": ["history"], "uuid": [self.member4_uuid]})
+        self.assertEqual(status, 200, history)
+        hhi_run = next(row for row in history["rows"] if row["context"] == "HHI")
+        dynamic = hhi_run["canonicalSplits"]
+        self.assertEqual([row["objective"] for row in dynamic],
+                         ["Defeat the Giant", "Defeat the Nightmare Lord"])
+        self.assertEqual([row["splitIndex"] for row in dynamic], [1, 2])
+        self.assertTrue(all(not row["checkpointId"] and row["schemaVersion"] == 0 for row in dynamic))
+        self.assertEqual(hhi_run["splitSchemaVersion"], 0)
+
+        status, bks = self.get({"context": ["HHI"], "serverType": ["STANDARD"], "kind": ["bks"]})
+        self.assertEqual(status, 200, bks)
+        self.assertEqual(bks["context"], "HHI")
+        self.assertEqual(len(bks["benchmarks"]), 1)
+        benchmark = bks["benchmarks"][0]
+        self.assertEqual(benchmark["context"], "HHI")
+        self.assertEqual(benchmark["requiredObjectives"],
+                         ["Defeat the Giant", "Defeat the Nightmare Lord"])
+        self.assertEqual([row["objective"] for row in benchmark["rows"]],
+                         ["Defeat the Giant", "Defeat the Nightmare Lord"])
+        self.assertTrue(all(not row["checkpointId"] and row["schemaVersion"] == 0
+                            for row in benchmark["worldRecordSplits"]))
+
+    def test_hhi_does_not_change_hh_bks_schema_or_records(self):
+        payload = self.payload(
+            context="HHI",
+            uuid=self.member2_uuid,
+            name="RunnerB",
+            serverNode="HHI-3",
+            teamSignature="isolated-hhi-bks",
+        )
+        self.assertEqual(self.submit(payload, "hhi-bks-isolation-ip")[0], 200)
+        status, hh_bks = self.get({"context": ["HH"], "kind": ["bks"]})
+        self.assertEqual(status, 200, hh_bks)
+        self.assertEqual(hh_bks["benchmarks"], [])
+
     def test_rejects_invalid_context_and_inconsistent_splits(self):
         bad_context = self.payload(context="ALL")
         self.assertEqual(self.submit(bad_context)[0], 400)
