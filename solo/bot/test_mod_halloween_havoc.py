@@ -554,41 +554,59 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(status, 200, all_rows)
         self.assertEqual({row["context"] for row in all_rows["rows"]}, {"HH", "HHC", "HHI"})
 
-    def test_hhi_preserves_dynamic_objectives_instead_of_using_hh_checkpoint_schema(self):
-        payload = self.payload(
-            context="HHI",
-            uuid=self.member4_uuid,
-            name="RunnerD",
-            serverNode="HHI-2",
-            teamSignature="hhi-dynamic-objective-team",
-            timeMs=30000,
-            # Legacy clients may set splitCount from their local canonical view.
-            # The backend validates/derives the HHI count from observed objective events.
-            splitCount=1,
-            canonicalSplits=[{"index": 1, "checkpointId": "GIANT", "objective": "Local client view"}],
-            rawSplitCount=2,
-            splits=[
-                {"index": 1, "objective": "Defeat the Giant", "splitMs": 10000, "elapsedMs": 10000,
-                 "status": "PASSED", "checkpointId": "GIANT", "fromCheckpointId": "START",
-                 "schemaVersion": 3},
-                {"index": 2, "objective": "Defeat the Nightmare Lord", "splitMs": 20000, "elapsedMs": 30000,
-                 "status": "PASSED", "checkpointId": "PUMPKIN_KING", "fromCheckpointId": "GIANT",
-                 "schemaVersion": 3},
-            ],
-        )
-        status, accepted = self.submit(payload, "hhi-dynamic-objectives-ip")
-        self.assertEqual(status, 200, accepted)
-        self.assertTrue(accepted["accepted"])
+    def test_hhi_uses_the_same_canonical_checkpoint_schema_as_hh(self):
+        objectives = [
+            "Defeat the Giant",
+            "Defeat Gendo",
+            "Complete the 4 challenges",
+            "Guide the minecart across the lava",
+            "Find an exit to the maze",
+            "Enter the portal on the bottom deck",
+            "Defeat the Pumpkin King's Minions",
+            "Pumpkin King",
+        ]
+        elapsed = 0
+        splits = []
+        for index, objective in enumerate(objectives, 1):
+            elapsed += 1000
+            splits.append({
+                "index": index, "objective": objective, "splitMs": 1000,
+                "elapsedMs": elapsed, "status": "PASSED",
+            })
 
-        status, history = self.get({"kind": ["history"], "uuid": [self.member4_uuid]})
-        self.assertEqual(status, 200, history)
-        hhi_run = next(row for row in history["rows"] if row["context"] == "HHI")
-        dynamic = hhi_run["canonicalSplits"]
-        self.assertEqual([row["objective"] for row in dynamic],
-                         ["Defeat the Giant", "Defeat the Nightmare Lord"])
-        self.assertEqual([row["splitIndex"] for row in dynamic], [1, 2])
-        self.assertTrue(all(not row["checkpointId"] and row["schemaVersion"] == 0 for row in dynamic))
-        self.assertEqual(hhi_run["splitSchemaVersion"], 0)
+        # Submit the same objective route to both contexts. Canonical checkpoint IDs
+        # and interval derivation are shared; only leaderboard/storage context differs.
+        hh_payload = self.payload(
+            context="HH", uuid=self.member3_uuid, name="RunnerC",
+            serverNode="HH-1", teamSignature="same-route-hh",
+            timeMs=10000, splitCount=8, rawSplitCount=8, splits=splits,
+        )
+        hhi_payload = self.payload(
+            context="HHI", uuid=self.member4_uuid, name="RunnerD",
+            serverNode="HHI-1", teamSignature="same-route-hhi",
+            timeMs=10000, splitCount=8, rawSplitCount=8, splits=splits,
+        )
+        status, response = self.submit(hh_payload, "hhi-shared-schema-hh-ip")
+        self.assertEqual(status, 200, response)
+        status, response = self.submit(hhi_payload, "hhi-shared-schema-hhi-ip")
+        self.assertEqual(status, 200, response)
+
+        histories = {}
+        for player_uuid, context in ((self.member3_uuid, "HH"), (self.member4_uuid, "HHI")):
+            status, history = self.get({"kind": ["history"], "uuid": [player_uuid]})
+            self.assertEqual(status, 200, history)
+            run = next(row for row in history["rows"] if row["context"] == context)
+            canonical = run["canonicalSplits"]
+            self.assertEqual([row["checkpointId"] for row in canonical], list(hh._CANONICAL_IDS))
+            self.assertEqual([row["objective"] for row in canonical], list(hh._CANONICAL_LABELS))
+            self.assertTrue(all(row["schemaVersion"] == 3 for row in canonical))
+            self.assertEqual(run["splitSchemaVersion"], 3)
+            histories[context] = canonical
+
+        self.assertEqual(
+            [row["checkpointId"] for row in histories["HH"]],
+            [row["checkpointId"] for row in histories["HHI"]],
+        )
 
         status, bks = self.get({"context": ["HHI"], "serverType": ["STANDARD"], "kind": ["bks"]})
         self.assertEqual(status, 200, bks)
@@ -596,11 +614,11 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(len(bks["benchmarks"]), 1)
         benchmark = bks["benchmarks"][0]
         self.assertEqual(benchmark["context"], "HHI")
-        self.assertEqual(benchmark["requiredObjectives"],
-                         ["Defeat the Giant", "Defeat the Nightmare Lord"])
+        self.assertEqual(benchmark["requiredObjectives"], list(hh._CANONICAL_LABELS))
         self.assertEqual([row["objective"] for row in benchmark["rows"]],
-                         ["Defeat the Giant", "Defeat the Nightmare Lord"])
-        self.assertTrue(all(not row["checkpointId"] and row["schemaVersion"] == 0
+                         list(hh._CANONICAL_LABELS))
+        self.assertTrue(all(row["checkpointId"] in hh._CANONICAL_IDS
+                            and row["schemaVersion"] == 3
                             for row in benchmark["worldRecordSplits"]))
 
     def test_hhi_does_not_change_hh_bks_schema_or_records(self):
