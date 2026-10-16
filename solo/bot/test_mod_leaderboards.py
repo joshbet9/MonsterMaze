@@ -391,10 +391,23 @@ class ModLeaderboardTests(unittest.TestCase):
             "context": "MIN", "game": "Monster Maze", "mode": "speed",
             "pattern": 2, "kit": "Jumper", "stage": 30, "timeMs": 75000,
         }
-        status, response = mod_leaderboards.handle_submit(
-            json.dumps(duplicate_payload).encode("utf-8"), "placement-community-duplicate-ip", self.db
+        # Insert this duplicate directly because the upload endpoint deliberately
+        # rate-limits rapid requests from a single player. The placement query must
+        # still match the real leaderboard's ordering when multiple rows exist.
+        c = self.db()
+        mod_leaderboards._ensure_schema(c)
+        c.execute(
+            """INSERT INTO community_mod_runs
+               (submission_id, uuid, name, context, game, mode, pattern, kit,
+                stage, time_ms, submitted_at, started_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (duplicate_payload["submissionId"], duplicate_payload["uuid"], duplicate_payload["name"],
+             duplicate_payload["context"], duplicate_payload["game"], duplicate_payload["mode"],
+             duplicate_payload["pattern"], duplicate_payload["kit"], duplicate_payload["stage"],
+             duplicate_payload["timeMs"], 1760000009000, 1760000000000)
         )
-        self.assertEqual(status, 200, response)
+        c.commit()
+        c.close()
 
         status, profile = mod_leaderboards.handle_get(
             "/api/v1/mod/player",
