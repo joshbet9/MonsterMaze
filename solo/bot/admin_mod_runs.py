@@ -437,8 +437,8 @@ def list_hh_entries(
         args.append(canonical_uuid(filters["uuid"], "player UUID"))
     if filters.get("context"):
         context = str(filters["context"]).strip().upper()
-        if context not in {"HH", "HHC"}:
-            raise AdminError("HH context must be HH or HHC")
+        if context not in {"HH", "HHC", "HHI"}:
+            raise AdminError("HH context must be HH, HHC, or HHI")
         clauses.append("context=?")
         args.append(context)
     if filters.get("server_type"):
@@ -471,7 +471,7 @@ def list_hh_entries(
 
 def normalize_hh_changes(changes: dict[str, Any], existing: dict[str, Any]) -> dict[str, Any]:
     if not changes:
-        raise AdminError("Specify at least one HH/HHC field to change")
+        raise AdminError("Specify at least one HH/HHC/HHI field to change")
     unknown = set(changes) - HH_EDITABLE_FIELDS
     if unknown:
         raise AdminError("Fields cannot be changed by this tool: " + ", ".join(sorted(unknown)))
@@ -484,8 +484,8 @@ def normalize_hh_changes(changes: dict[str, Any], existing: dict[str, Any]) -> d
             normalized[field] = name
         elif field == "context":
             context = str(raw).strip().upper()
-            if context not in {"HH", "HHC"}:
-                raise AdminError("context must be HH or HHC")
+            if context not in {"HH", "HHC", "HHI"}:
+                raise AdminError("context must be HH, HHC, or HHI")
             normalized[field] = context
         elif field == "server_type":
             server_type = str(raw).strip().upper()
@@ -688,19 +688,19 @@ def print_entry(entry: dict[str, Any]) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Administer unverified JNP Mod community runs (Monster Maze and HH/HHC).")
+    parser = argparse.ArgumentParser(description="Administer unverified JNP Mod community runs (Monster Maze and HH/HHC/HHI).")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB, help=f"SQLite database (default: {DEFAULT_DB})")
     parser.add_argument("--backup-dir", type=Path, default=DEFAULT_BACKUP_DIR,
                         help=f"directory for pre-change database backups (default: {DEFAULT_BACKUP_DIR})")
     sub = parser.add_subparsers(dest="command", required=True)
 
     list_cmd = sub.add_parser("list", help="list community runs")
-    list_cmd.add_argument("--dataset", choices=["mm", "hh"], default="mm", help="community dataset: Monster Maze or HH/HHC")
+    list_cmd.add_argument("--dataset", choices=["mm", "hh"], default="mm", help="community dataset: Monster Maze or HH/HHC/HHI")
     list_cmd.add_argument("--name", help="case-insensitive name substring")
     list_cmd.add_argument("--uuid", help="player UUID")
     list_cmd.add_argument("--submission-id", help="exact submission ID")
-    list_cmd.add_argument("--context", help="MM: MPS/MIN; HH: HH/HHC")
-    list_cmd.add_argument("--server-type", choices=["STANDARD", "MPS"], help="HH/HHC server type")
+    list_cmd.add_argument("--context", help="MM: MPS/MIN; HH: HH/HHC/HHI")
+    list_cmd.add_argument("--server-type", choices=["STANDARD", "MPS"], help="HH/HHC/HHI server type")
     list_cmd.add_argument("--mode", choices=sorted(ALLOWED_MODES), help="Monster Maze mode")
     list_cmd.add_argument("--limit", type=int, default=50)
     list_cmd.add_argument("--offset", type=int, default=0)
@@ -715,7 +715,7 @@ def build_parser() -> argparse.ArgumentParser:
     edit_cmd.add_argument("--dataset", choices=["mm", "hh"], default="mm")
     edit_cmd.add_argument("--uuid")
     edit_cmd.add_argument("--name")
-    edit_cmd.add_argument("--context", help="MM: MPS/MIN; HH: HH/HHC")
+    edit_cmd.add_argument("--context", help="MM: MPS/MIN; HH: HH/HHC/HHI")
     edit_cmd.add_argument("--mode", choices=sorted(ALLOWED_MODES))
     edit_cmd.add_argument("--pattern", type=int, choices=[-1, 0, 1, 2])
     edit_cmd.add_argument("--kit", choices=sorted(ALLOWED_KITS))
@@ -729,7 +729,7 @@ def build_parser() -> argparse.ArgumentParser:
     edit_cmd.add_argument("--finish-reason")
     edit_cmd.add_argument("--yes", action="store_true", help="skip interactive confirmation")
 
-    delete_cmd = sub.add_parser("delete", help="delete a community run and its splits if HH/HHC")
+    delete_cmd = sub.add_parser("delete", help="delete a community run and its splits if HH/HHC/HHI")
     delete_cmd.add_argument("submission_id")
     delete_cmd.add_argument("--dataset", choices=["mm", "hh"], default="mm")
     delete_cmd.add_argument("--yes", action="store_true", help="skip interactive confirmation")
