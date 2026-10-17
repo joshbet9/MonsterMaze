@@ -28,7 +28,7 @@ jobs:
       - name: Test JNP Mod public endpoints and filters
         working-directory: solo/bot
         run: python -m unittest -v test_mod_leaderboards.py
-      - name: Test Halloween Havoc/HHC uploads and community leaderboards
+      - name: Test Halloween Havoc/HHC/HHI uploads and community leaderboards
         working-directory: solo/bot
         run: python -m unittest -v test_mod_halloween_havoc.py
       - name: Test JNP Mod community run admin safeguards
@@ -133,6 +133,10 @@ jobs:
           grep -q 'community_hh_runs' solo/bot/admin_mod_runs.py
           grep -q 'community_hh_splits' solo/bot/admin_mod_runs.py
           grep -q 'community_hh_run_admin_audit' solo/bot/admin_mod_runs.py
+          grep -q '"HHI"' solo/bot/mod_halloween_havoc.py
+          grep -q 'context=HHI&kind=runs' ops/oracle/deploy-release.sh
+          grep -q 'context=HHI&kind=splits' ops/oracle/deploy-release.sh
+          grep -q 'context=HHI&serverType=ALL&kind=bks' ops/oracle/deploy-release.sh
           # Oracle-only release must be isolated from the standard multi-target release.
           oracle_workflow=.github/workflows/deploy-oracle-only.yml
           test -f "$oracle_workflow"

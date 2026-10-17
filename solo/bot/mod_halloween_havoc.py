@@ -1,4 +1,4 @@
-"""Public, rate-limited Halloween Havoc/HHC community run uploads and leaderboards.
+"""Public, rate-limited HH/HHC/HHI community run uploads and leaderboards.
 
 All submitted values are client-reported and unverified. This data is kept in
 its own tables; it is never part of authoritative Monster Maze PB/MMR records.
@@ -18,14 +18,14 @@ _PLAYER_LAST = {}
 _RATE_SECONDS = 5.0
 _NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,16}$")
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-_CONTEXTS = {"HH", "HHC"}
+_CONTEXTS = {"HH", "HHC", "HHI"}
 _SERVER_TYPES = {"STANDARD", "MPS"}
 _RUN_STATUSES = {"COMPLETED", "FAILED", "PARTIAL"}
 _MAX_BODY = 64 * 1024
 _MAX_SPLITS = 100
 _MAX_TIME_MS = 24 * 60 * 60 * 1000
 
-# Stable eight-section HH route. The two route-variable labels ("Find a way to clear the path"
+# Stable eight-section route shared by HH, HHC and HHI. The two route-variable labels ("Find a way to clear the path"
 # and "Board the Green Ship") remain raw events inside adjacent longer intervals.
 # The fixed interval endpoints below appear in all four uploaded reference runs.
 _CANONICAL_SPLIT_SCHEMA = 3
@@ -71,14 +71,14 @@ def _split_has_missing_boundary(split):
 
 
 def _canonicalize_one_run(raw_splits, total_elapsed_ms=0, completed=False):
-    """Derive the fixed eight-checkpoint view; non-canonical events merge into longer intervals."""
+    """Derive the shared eight-checkpoint Halloween Havoc route for HH, HHC and HHI."""
     if not raw_splits:
         return []
     ordered = sorted(raw_splits, key=lambda item: (
         int(item.get("splitIndex", item.get("index", 0)) or 0),
         int(item.get("elapsedMs", 0) or 0)))
 
-    # Preserve generic/synthetic legacy objective sequences that are not an HH route.
+    # Preserve generic/synthetic legacy objective sequences that are not the shared route.
     # Real HH partial runs still qualify when at least one non-terminal checkpoint is seen.
     recognized_orders = {_checkpoint_order(item.get("objective", "")) for item in ordered}
     recognized_orders.discard(-1)
@@ -294,7 +294,7 @@ def _normalize_payload(body):
         raise ValueError("name must be a Minecraft username")
     context = str(payload.get("context", "")).strip().upper()
     if context not in _CONTEXTS:
-        raise ValueError("context must be HH or HHC")
+        raise ValueError("context must be HH, HHC, or HHI")
     server_type = str(payload.get("serverType", "STANDARD")).strip().upper()
     if server_type not in _SERVER_TYPES:
         raise ValueError("serverType must be STANDARD or MPS")
@@ -413,7 +413,7 @@ def _normalize_payload(body):
     provided_split_count = _bounded_int(
         payload.get("splitCount", canonical_count), "splitCount", 0, _MAX_SPLITS)
     # Accept the legacy raw-event splitCount during rollout, but store the public count
-    # using the canonical methodology. This keeps older clients upload-compatible.
+    # using the same server-derived canonical checkpoint methodology for HH, HHC and HHI.
     if provided_split_count not in (len(normalized_splits), canonical_count):
         raise ValueError("splitCount matches neither raw events nor canonical checkpoints")
     if "rawSplitCount" in payload:
@@ -718,7 +718,7 @@ def _best_known_split_benchmarks(rows, required_objectives):
 
 
 def _required_objectives_from_completed_runs(c, context, server_type):
-    """Use the fixed eight-checkpoint HH route when canonical milestones are present."""
+    """Use the shared eight-checkpoint route when canonical milestones are present."""
     clauses = ["successful=1"]
     args = []
     if context != "ALL":
@@ -758,13 +758,13 @@ def _required_objectives_from_completed_runs(c, context, server_type):
 
 
 def handle_get(path, query, db_fn):
-    """Return (status, payload) for HH/HHC community boards and group profiles."""
+    """Return (status, payload) for HH/HHC/HHI community boards and group profiles."""
     if path != "/api/v1/mod/halloween-havoc/leaderboard":
         return None
     try:
         context = _value(query, "context", "HH").upper()
-        if context not in ("HH", "HHC", "ALL"):
-            raise ValueError("context must be HH, HHC, or ALL")
+        if context not in ("HH", "HHC", "HHI", "ALL"):
+            raise ValueError("context must be HH, HHC, HHI, or ALL")
         server_type = _value(query, "serverType", "ALL").upper()
         if server_type not in ("STANDARD", "MPS", "ALL"):
             raise ValueError("serverType must be STANDARD, MPS, or ALL")

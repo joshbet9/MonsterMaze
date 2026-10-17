@@ -530,6 +530,135 @@ class HalloweenHavocApiTests(unittest.TestCase):
         self.assertEqual(len(board["rows"]), 1)
         self.assertEqual(board["rows"][0]["context"], "HHC")
 
+    def test_hhi_upload_and_leaderboards_are_separate_from_hh_and_hhc(self):
+        hh_run = self.payload()
+        hhc_run = self.payload(
+            context="HHC", uuid=self.member2_uuid, name="RunnerB", serverNode="HHC-1")
+        hhi_run = self.payload(
+            context="HHI", uuid=self.member3_uuid, name="RunnerC", serverNode="HHI-1")
+
+        self.assertEqual(self.submit(hh_run, "hhi-isolation-hh-ip")[0], 200)
+        self.assertEqual(self.submit(hhc_run, "hhi-isolation-hhc-ip")[0], 200)
+        status, accepted = self.submit(hhi_run, "hhi-isolation-hhi-ip")
+        self.assertEqual(status, 200, accepted)
+        self.assertTrue(accepted["accepted"])
+
+        for context in ("HH", "HHC", "HHI"):
+            status, board = self.get({"context": [context], "kind": ["runs"]})
+            self.assertEqual(status, 200, board)
+            self.assertEqual(board["context"], context)
+            self.assertEqual(len(board["rows"]), 1)
+            self.assertEqual(board["rows"][0]["context"], context)
+
+            status, split_board = self.get({"context": [context], "kind": ["splits"]})
+            self.assertEqual(status, 200, split_board)
+            self.assertEqual(split_board["context"], context)
+            self.assertTrue(split_board["rows"])
+            self.assertTrue(all(row["context"] == context for row in split_board["rows"]))
+
+            status, group = self.get({
+                "context": [context], "serverType": ["STANDARD"], "kind": ["group"],
+                "teamSignature": [self.team_signature],
+            })
+            self.assertEqual(status, 200, group)
+            self.assertEqual(group["context"], context)
+            self.assertEqual(group["attemptCount"], 1)
+            self.assertEqual(group["run"]["context"], context)
+            self.assertTrue(all(row["context"] == context for row in group["splits"]))
+            self.assertTrue(all(row["context"] == context for row in group["globalBestSplits"]))
+
+        status, all_rows = self.get({"context": ["ALL"], "kind": ["runs"]})
+        self.assertEqual(status, 200, all_rows)
+        self.assertEqual({row["context"] for row in all_rows["rows"]}, {"HH", "HHC", "HHI"})
+
+    def test_hhi_uses_the_same_canonical_checkpoint_schema_as_hh(self):
+        objectives = [
+            "Defeat the Giant",
+            "Defeat Gendo",
+            "Complete the 4 challenges",
+            "Guide the minecart across the lava",
+            "Find an exit to the maze",
+            "Enter the portal on the bottom deck",
+            "Defeat the Pumpkin King's Minions",
+            "Pumpkin King",
+        ]
+        elapsed = 0
+        splits = []
+        for index, objective in enumerate(objectives, 1):
+            elapsed += 1000
+            splits.append({
+                "index": index, "objective": objective, "splitMs": 1000,
+                "elapsedMs": elapsed, "status": "PASSED",
+            })
+
+        # Submit the same objective route to both contexts. Canonical checkpoint IDs
+        # and interval derivation are shared; only leaderboard/storage context differs.
+        hh_payload = self.payload(
+            context="HH", uuid=self.member3_uuid, name="RunnerC",
+            serverNode="HH-1", teamSignature="same-route-hh",
+            timeMs=10000, splitCount=8, rawSplitCount=8, splits=splits,
+        )
+        hhc_payload = self.payload(
+            context="HHC", uuid=self.member2_uuid, name="RunnerB",
+            serverNode="HHC-1", teamSignature="same-route-hhc",
+            timeMs=10000, splitCount=8, rawSplitCount=8, splits=splits,
+        )
+        hhi_payload = self.payload(
+            context="HHI", uuid=self.member4_uuid, name="RunnerD",
+            serverNode="HHI-1", teamSignature="same-route-hhi",
+            timeMs=10000, splitCount=8, rawSplitCount=8, splits=splits,
+        )
+        status, response = self.submit(hh_payload, "hhi-shared-schema-hh-ip")
+        self.assertEqual(status, 200, response)
+        status, response = self.submit(hhc_payload, "hhi-shared-schema-hhc-ip")
+        self.assertEqual(status, 200, response)
+        status, response = self.submit(hhi_payload, "hhi-shared-schema-hhi-ip")
+        self.assertEqual(status, 200, response)
+
+        histories = {}
+        for player_uuid, context in (
+            (self.member3_uuid, "HH"), (self.member2_uuid, "HHC"), (self.member4_uuid, "HHI")
+        ):
+            status, history = self.get({"kind": ["history"], "uuid": [player_uuid]})
+            self.assertEqual(status, 200, history)
+            run = next(row for row in history["rows"] if row["context"] == context)
+            canonical = run["canonicalSplits"]
+            self.assertEqual([row["checkpointId"] for row in canonical], list(hh._CANONICAL_IDS))
+            self.assertEqual([row["objective"] for row in canonical], list(hh._CANONICAL_LABELS))
+            self.assertTrue(all(row["schemaVersion"] == 3 for row in canonical))
+            self.assertEqual(run["splitSchemaVersion"], 3)
+            histories[context] = canonical
+
+        shared_checkpoint_ids = [row["checkpointId"] for row in histories["HH"]]
+        self.assertEqual(shared_checkpoint_ids, [row["checkpointId"] for row in histories["HHC"]])
+        self.assertEqual(shared_checkpoint_ids, [row["checkpointId"] for row in histories["HHI"]])
+
+        status, bks = self.get({"context": ["HHI"], "serverType": ["STANDARD"], "kind": ["bks"]})
+        self.assertEqual(status, 200, bks)
+        self.assertEqual(bks["context"], "HHI")
+        self.assertEqual(len(bks["benchmarks"]), 1)
+        benchmark = bks["benchmarks"][0]
+        self.assertEqual(benchmark["context"], "HHI")
+        self.assertEqual(benchmark["requiredObjectives"], list(hh._CANONICAL_LABELS))
+        self.assertEqual([row["objective"] for row in benchmark["rows"]],
+                         list(hh._CANONICAL_LABELS))
+        self.assertTrue(all(row["checkpointId"] in hh._CANONICAL_IDS
+                            and row["schemaVersion"] == 3
+                            for row in benchmark["worldRecordSplits"]))
+
+    def test_hhi_does_not_change_hh_bks_schema_or_records(self):
+        payload = self.payload(
+            context="HHI",
+            uuid=self.member2_uuid,
+            name="RunnerB",
+            serverNode="HHI-3",
+            teamSignature="isolated-hhi-bks",
+        )
+        self.assertEqual(self.submit(payload, "hhi-bks-isolation-ip")[0], 200)
+        status, hh_bks = self.get({"context": ["HH"], "kind": ["bks"]})
+        self.assertEqual(status, 200, hh_bks)
+        self.assertEqual(hh_bks["benchmarks"], [])
+
     def test_rejects_invalid_context_and_inconsistent_splits(self):
         bad_context = self.payload(context="ALL")
         self.assertEqual(self.submit(bad_context)[0], 400)
