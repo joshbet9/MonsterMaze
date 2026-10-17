@@ -579,9 +579,14 @@ def handle_submit(body, client_ip, db_fn):
                             # elapsed time while retaining the canonical submission ID/start.
                             updates["stage"] = stage
                             updates["time_ms"] = time_ms
+                        higher_stage_snapshot = stage > existing_stage
                         if kit != "Unknown" and (
                                 existing_kit == "Unknown"
-                                or (kit_confirmed and not existing_confirmed)):
+                                or (kit_confirmed and not existing_confirmed)
+                                or (kit_confirmed and kit != existing_kit and higher_stage_snapshot)):
+                            # When a padskip tracker attached early with a stale kit but a
+                            # later full-run snapshot supplies a stronger stage, keep the kit
+                            # from the stronger score snapshot alongside that stage.
                             updates["kit"] = kit
                             updates["kit_confirmed"] = 1 if kit_confirmed else 0
                         elif kit_confirmed and existing_kit == kit and not existing_confirmed:
