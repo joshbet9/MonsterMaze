@@ -542,11 +542,11 @@ def handle_submit(body, client_ip, db_fn):
                     earliest_candidate_start = max(1, started_at - 24 * 60 * 60 * 1000)
                     latest_candidate_start = started_at + max(time_ms, 30_000)
                     candidates = c.execute(
-                        """SELECT submission_id, kit, pattern, started_at, time_ms, stage, kit_confirmed
+                        """SELECT submission_id, kit, pattern, started_at, time_ms, stage, kit_confirmed, context
                            FROM community_mod_runs
-                           WHERE lower(uuid)=? AND context=? AND started_at BETWEEN ? AND ?
+                           WHERE lower(uuid)=? AND started_at BETWEEN ? AND ?
                            ORDER BY ABS(started_at - ?) ASC""",
-                        (player_uuid, context, earliest_candidate_start, latest_candidate_start, started_at),
+                        (player_uuid, earliest_candidate_start, latest_candidate_start, started_at),
                     ).fetchall()
                     same_round = None
                     for candidate in candidates:
@@ -588,6 +588,12 @@ def handle_submit(body, client_ip, db_fn):
                             updates["kit_confirmed"] = 1
                         if int(same_round[2]) == -1 and pattern in (0, 1, 2):
                             updates["pattern"] = pattern
+                        existing_context = str(same_round[7] or "MPS").upper()
+                        # Same UUID + overlapping run timing is stronger identity evidence
+                        # than a client context that may have been resolved late after padskip.
+                        # Prefer MIN when either observer saw the Arcade node.
+                        if context == "MIN" and existing_context != "MIN":
+                            updates["context"] = "MIN"
                         if updates:
                             assignments = ", ".join(field + "=?" for field in updates)
                             c.execute("UPDATE community_mod_runs SET " + assignments + " WHERE submission_id=?",
