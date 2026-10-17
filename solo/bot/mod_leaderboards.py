@@ -583,7 +583,7 @@ def handle_submit(body, client_ip, db_fn):
                         if int(same_round[2]) == -1 and pattern in (0, 1, 2):
                             updates["pattern"] = pattern
                         if updates:
-                            assignments = ", ".join(field + "=? " for field in updates).rstrip()
+                            assignments = ", ".join(field + "=?" for field in updates)
                             c.execute("UPDATE community_mod_runs SET " + assignments + " WHERE submission_id=?",
                                       list(updates.values()) + [same_round[0]])
                             c.commit()
