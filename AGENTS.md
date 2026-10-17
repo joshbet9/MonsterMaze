@@ -167,29 +167,29 @@ These are separate implementations of the same game. They should maintain equiva
 
 1.8:
 
-`C:\Users\Josh\MonsterMaze\1.8\MonsterMazeStandalone`
+`1.8/MonsterMazeStandalone`
 
 1.21:
 
-`C:\Users\Josh\MonsterMaze\1.21\MonsterMazeStandalone`
+`1.21/MonsterMazeStandalone`
 
 ### Test server directories
 
 1.8 server:
 
-`C:\monstermaze_test`
+`<MM_1_8_TEST_SERVER_ROOT>`
 
 1.8 plugin directory:
 
-`C:\monstermaze_test\plugins`
+`<MM_1_8_TEST_PLUGIN_DIR>`
 
 1.21 server:
 
-`C:\monstermaze21`
+`<MM_1_21_TEST_SERVER_ROOT>`
 
 1.21 plugin directory:
 
-`C:\monstermaze21\plugins`
+`<MM_1_21_TEST_PLUGIN_DIR>`
 
 ### Deployment mapping
 
@@ -197,8 +197,8 @@ NEVER deploy a version to the wrong server.
 
 | Source                       | Test server                   |
 | ---------------------------- | ----------------------------- |
-| `1.8/MonsterMazeStandalone`  | `C:\monstermaze_test\plugins` |
-| `1.21/MonsterMazeStandalone` | `C:\monstermaze21\plugins`    |
+| `1.8/MonsterMazeStandalone`  | `<MM_1_8_TEST_PLUGIN_DIR>` |
+| `1.21/MonsterMazeStandalone` | `<MM_1_21_TEST_PLUGIN_DIR>`    |
 
 ### Build workflow
 
@@ -248,7 +248,7 @@ Deployment commands should use these mappings:
 
 ->
 
-`C:\monstermaze_test\plugins\MonsterMazeStandalone.jar`
+`<MM_1_8_TEST_PLUGIN_DIR>\MonsterMazeStandalone.jar`
 
 1.21:
 
@@ -256,7 +256,7 @@ Deployment commands should use these mappings:
 
 ->
 
-`C:\monstermaze21\plugins\MonsterMazeStandalone.jar`
+`<MM_1_21_TEST_PLUGIN_DIR>\MonsterMazeStandalone.jar`
 
 Do not assume that a successful Maven build means the server successfully loaded the plugin.
 
