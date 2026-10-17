@@ -144,6 +144,41 @@ class ModLeaderboardTests(unittest.TestCase):
         c.close()
         self.assertEqual(row, (1, "Jumper", 30, 180000, first_start, 1))
 
+    def test_manual_kit_correction_can_replace_prior_confirmed_kit(self):
+        player_uuid = str(uuid.uuid4())
+        first_start = 1760000004000
+        first = {
+            "submissionId": str(uuid.uuid4()), "uuid": player_uuid, "name": "MazeRunner",
+            "context": "MIN", "game": "Monster Maze", "mode": "classic",
+            "pattern": 0, "kit": "Jumper", "kitConfirmed": True,
+            "stage": 24, "timeMs": 180000, "startedAt": first_start,
+        }
+        correction = dict(first)
+        correction["submissionId"] = str(uuid.uuid4())
+        correction["startedAt"] = first_start + 60000
+        correction["stage"] = 31
+        correction["timeMs"] = 90000
+        correction["kit"] = "Repulsor"
+        correction["manualKitCorrection"] = True
+        first_status, first_response = mod_leaderboards.handle_submit(
+            json.dumps(first).encode("utf-8"), "manual-kit-first", self.db
+        )
+        second_status, second_response = mod_leaderboards.handle_submit(
+            json.dumps(correction).encode("utf-8"), "manual-kit-correction", self.db
+        )
+        self.assertEqual(first_status, 200)
+        self.assertTrue(first_response["accepted"])
+        self.assertEqual(second_status, 200)
+        self.assertTrue(second_response["deduplicated"])
+        c = self.db()
+        row = c.execute(
+            "SELECT COUNT(*),kit,kit_confirmed,kit_manual,stage,time_ms,started_at "
+            "FROM community_mod_runs WHERE lower(uuid)=?",
+            (player_uuid.lower(),),
+        ).fetchone()
+        c.close()
+        self.assertEqual(row, (1, "Repulsor", 1, 1, 31, 90000, first_start))
+
     def test_overlapping_duplicate_with_late_context_resolution_is_collapsed(self):
         player_uuid = str(uuid.uuid4())
         first_start = 1760000002000
@@ -215,9 +250,9 @@ class ModLeaderboardTests(unittest.TestCase):
             (player_uuid.lower(),),
         ).fetchone()
         c.close()
-        self.assertEqual(row, (1, "Repulsor", 1, 31, 90000, first_start))
+        self.assertEqual(row, (1, "Jumper", 1, 31, 90000, first_start))
 
-    def test_higher_stage_duplicate_can_correct_conflicting_confirmed_kit(self):
+    def test_higher_stage_duplicate_preserves_first_confirmed_kit(self):
         player_uuid = str(uuid.uuid4())
         first_start = 1760000003000
         first = {
