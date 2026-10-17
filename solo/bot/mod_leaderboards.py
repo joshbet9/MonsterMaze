@@ -39,7 +39,8 @@ def _ensure_schema(c):
         time_ms INTEGER NOT NULL DEFAULT 0,
         submitted_at INTEGER NOT NULL,
         started_at INTEGER NOT NULL DEFAULT 0,
-        kit_confirmed INTEGER NOT NULL DEFAULT 0
+        kit_confirmed INTEGER NOT NULL DEFAULT 0,
+        kit_manual INTEGER NOT NULL DEFAULT 0
     )""")
     # Backward-compatible migration for Oracle databases created by older releases.
     columns = {row[1] for row in c.execute("PRAGMA table_info(community_mod_runs)").fetchall()}
@@ -47,6 +48,8 @@ def _ensure_schema(c):
         c.execute("ALTER TABLE community_mod_runs ADD COLUMN started_at INTEGER NOT NULL DEFAULT 0")
     if "kit_confirmed" not in columns:
         c.execute("ALTER TABLE community_mod_runs ADD COLUMN kit_confirmed INTEGER NOT NULL DEFAULT 0")
+    if "kit_manual" not in columns:
+        c.execute("ALTER TABLE community_mod_runs ADD COLUMN kit_manual INTEGER NOT NULL DEFAULT 0")
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_mod_board ON community_mod_runs(context,game,mode,stage DESC,time_ms ASC)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_mod_player ON community_mod_runs(uuid,submitted_at DESC)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_mod_start ON community_mod_runs(uuid,context,started_at)")
@@ -542,7 +545,7 @@ def handle_submit(body, client_ip, db_fn):
                     earliest_candidate_start = max(1, started_at - 24 * 60 * 60 * 1000)
                     latest_candidate_start = started_at + max(time_ms, 30_000)
                     candidates = c.execute(
-                        """SELECT submission_id, kit, pattern, started_at, time_ms, stage, kit_confirmed, context
+                        """SELECT submission_id, kit, pattern, started_at, time_ms, stage, kit_confirmed, context, kit_manual
                            FROM community_mod_runs
                            WHERE lower(uuid)=? AND started_at BETWEEN ? AND ?
                            ORDER BY ABS(started_at - ?) ASC""",
@@ -574,21 +577,24 @@ def handle_submit(body, client_ip, db_fn):
                         existing_kit = str(same_round[1] or "Unknown")
                         existing_confirmed = bool(same_round[6])
                         existing_stage = int(same_round[5] or 0)
+                        existing_manual = bool(same_round[8]) if len(same_round) > 8 else False
+                        manual_correction = payload.get("manualKitCorrection") is True
                         if stage > existing_stage:
                             # Higher stage is the stronger score snapshot; update its paired
                             # elapsed time while retaining the canonical submission ID/start.
                             updates["stage"] = stage
                             updates["time_ms"] = time_ms
-                        higher_stage_snapshot = stage > existing_stage
                         if kit != "Unknown" and (
                                 existing_kit == "Unknown"
                                 or (kit_confirmed and not existing_confirmed)
-                                or (kit_confirmed and kit != existing_kit and higher_stage_snapshot)):
-                            # When a padskip tracker attached early with a stale kit but a
-                            # later full-run snapshot supplies a stronger stage, keep the kit
-                            # from the stronger score snapshot alongside that stage.
+                                or (manual_correction and not existing_manual)):
+                            # Stage/time improvements are independent from kit evidence.
+                            # Keep the first confirmed automatic cue when two confirmed kits
+                            # conflict; only a new confirmation over an unconfirmed value or
+                            # an explicit user correction can replace the stored kit.
                             updates["kit"] = kit
                             updates["kit_confirmed"] = 1 if kit_confirmed else 0
+                            updates["kit_manual"] = 1 if manual_correction else 0
                         elif kit_confirmed and existing_kit == kit and not existing_confirmed:
                             updates["kit_confirmed"] = 1
                         if int(same_round[2]) == -1 and pattern in (0, 1, 2):
@@ -619,10 +625,11 @@ def handle_submit(body, client_ip, db_fn):
                     return 429, {"ok": False, "error": "player_rate_limited"}
 
                 c.execute("""INSERT INTO community_mod_runs
-                             (submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at,kit_confirmed)
-                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             (submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at,kit_confirmed,kit_manual)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                           (sid, player_uuid, name, context, game, mode, pattern, kit, stage, time_ms, now,
-                           started_at, 1 if kit_confirmed else 0))
+                           started_at, 1 if kit_confirmed else 0,
+                           1 if payload.get("manualKitCorrection") is True else 0))
                 c.commit()
                 _IP_LAST[client_ip] = monotonic
                 _PLAYER_LAST[player_uuid] = monotonic
