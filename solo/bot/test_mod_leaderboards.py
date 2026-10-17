@@ -144,6 +144,43 @@ class ModLeaderboardTests(unittest.TestCase):
         c.close()
         self.assertEqual(row, (1, "Jumper", 30, 180000, first_start, 1))
 
+    def test_lower_stage_confirmed_cue_repairs_kit_without_downgrading_score(self):
+        player_uuid = str(uuid.uuid4())
+        first_start = 1760000005000
+        # The higher-stage snapshot attached the wrong kit after the recorder's
+        # stale-sidebar transition. The short/early finalized snapshot has the cue
+        # associated with the first observed death and must supply kit attribution.
+        high_stage = {
+            "submissionId": str(uuid.uuid4()), "uuid": player_uuid, "name": "MazeRunner",
+            "context": "MIN", "game": "Monster Maze", "mode": "classic",
+            "pattern": 1, "kit": "Repulsor", "kitConfirmed": True,
+            "stage": 38, "timeMs": 240000, "startedAt": first_start,
+        }
+        early_death = dict(high_stage)
+        early_death["submissionId"] = str(uuid.uuid4())
+        early_death["startedAt"] = first_start + 60000
+        early_death["stage"] = 21
+        early_death["timeMs"] = 120000
+        early_death["kit"] = "Jumper"
+        first_status, first_response = mod_leaderboards.handle_submit(
+            json.dumps(high_stage).encode("utf-8"), "high-stage-wrong-kit", self.db
+        )
+        second_status, second_response = mod_leaderboards.handle_submit(
+            json.dumps(early_death).encode("utf-8"), "early-death-right-kit", self.db
+        )
+        self.assertEqual(first_status, 200)
+        self.assertTrue(first_response["accepted"])
+        self.assertEqual(second_status, 200)
+        self.assertTrue(second_response["deduplicated"])
+        c = self.db()
+        row = c.execute(
+            "SELECT COUNT(*),kit,kit_confirmed,stage,time_ms,started_at "
+            "FROM community_mod_runs WHERE lower(uuid)=?",
+            (player_uuid.lower(),),
+        ).fetchone()
+        c.close()
+        self.assertEqual(row, (1, "Jumper", 1, 38, 240000, first_start))
+
     def test_manual_kit_correction_can_replace_prior_confirmed_kit(self):
         player_uuid = str(uuid.uuid4())
         first_start = 1760000004000
