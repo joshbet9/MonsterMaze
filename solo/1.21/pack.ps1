@@ -45,7 +45,7 @@ if ($env:MM_SOLO_JDK21_WINDOWS) {
     $jdk21 = (Get-ChildItem $jdkExtract -Directory | Select-Object -First 1).FullName
 } else {
     $jdkRoots = @(
-        'C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium',
+        (Join-Path $env:LOCALAPPDATA 'Programs\Eclipse Adoptium'),
         'C:\Program Files\Eclipse Adoptium'
     )
     $jdk21 = $null
