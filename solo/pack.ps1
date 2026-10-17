@@ -33,7 +33,7 @@ if ($env:MM_SOLO_JDK8_WINDOWS) {
     Expand-Archive -LiteralPath $jdkZip -DestinationPath $jdkExtract -Force
     $JDK8 = (Get-ChildItem $jdkExtract -Directory | Select-Object -First 1).FullName
 } else {
-    $JDK8 = "C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium\jdk-8.0.502.7-hotspot"
+    $JDK8 = Join-Path $env:LOCALAPPDATA "Programs\Eclipse Adoptium\jdk-8.0.502.7-hotspot"
 }
 
 $javaExe = if ($IsWindows) { "java.exe" } else { "java.exe" }
