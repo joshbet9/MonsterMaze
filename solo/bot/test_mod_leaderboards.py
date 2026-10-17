@@ -156,7 +156,8 @@ class ModLeaderboardTests(unittest.TestCase):
         stronger = dict(first)
         stronger["submissionId"] = str(uuid.uuid4())
         stronger["startedAt"] = first_start + 60000
-        stronger["timeMs"] = 120000
+        stronger["timeMs"] = 90000
+        stronger["stage"] = 31
         stronger["kit"] = "Repulsor"
         stronger["kitConfirmed"] = True
         first_status, first_response = mod_leaderboards.handle_submit(
@@ -171,11 +172,11 @@ class ModLeaderboardTests(unittest.TestCase):
         self.assertTrue(second_response["deduplicated"])
         c = self.db()
         row = c.execute(
-            "SELECT COUNT(*),kit,kit_confirmed,started_at FROM community_mod_runs WHERE lower(uuid)=?",
+            "SELECT COUNT(*),kit,kit_confirmed,stage,time_ms,started_at FROM community_mod_runs WHERE lower(uuid)=?",
             (player_uuid.lower(),),
         ).fetchone()
         c.close()
-        self.assertEqual(row, (1, "Repulsor", 1, first_start))
+        self.assertEqual(row, (1, "Repulsor", 1, 31, 90000, first_start))
 
     def test_late_unknown_duplicate_never_downgrades_known_kit(self):
         player_uuid = str(uuid.uuid4())
