@@ -144,6 +144,45 @@ class ModLeaderboardTests(unittest.TestCase):
         c.close()
         self.assertEqual(row, (1, "Jumper", 30, 180000, first_start, 1))
 
+    def test_overlapping_duplicate_with_late_context_resolution_is_collapsed(self):
+        player_uuid = str(uuid.uuid4())
+        first_start = 1760000002000
+        first = {
+            "submissionId": str(uuid.uuid4()), "uuid": player_uuid, "name": "MazeRunner",
+            "context": "MPS", "game": "Monster Maze", "mode": "classic",
+            "pattern": 0, "kit": "Unknown", "kitConfirmed": False,
+            "stage": 22, "timeMs": 180000, "startedAt": first_start,
+        }
+        # The first tracker uploaded using its early MPS fallback. A later tracker
+        # resolved the actual Arcade node and has the same round's overlapping interval.
+        later = dict(first)
+        later["submissionId"] = str(uuid.uuid4())
+        later["context"] = "MIN"
+        later["startedAt"] = first_start + 60000
+        later["timeMs"] = 120000
+        later["stage"] = 29
+        later["kit"] = "Repulsor"
+        later["kitConfirmed"] = True
+
+        first_status, first_response = mod_leaderboards.handle_submit(
+            json.dumps(first).encode("utf-8"), "context-late-first", self.db
+        )
+        second_status, second_response = mod_leaderboards.handle_submit(
+            json.dumps(later).encode("utf-8"), "context-late-second", self.db
+        )
+        self.assertEqual(first_status, 200)
+        self.assertTrue(first_response["accepted"])
+        self.assertEqual(second_status, 200)
+        self.assertTrue(second_response["deduplicated"])
+        c = self.db()
+        row = c.execute(
+            "SELECT COUNT(*),context,kit,kit_confirmed,stage,time_ms,started_at "
+            "FROM community_mod_runs WHERE lower(uuid)=?",
+            (player_uuid.lower(),),
+        ).fetchone()
+        c.close()
+        self.assertEqual(row, (1, "MIN", "Repulsor", 1, 29, 120000, first_start))
+
     def test_overlap_duplicate_can_upgrade_known_unconfirmed_kit(self):
         player_uuid = str(uuid.uuid4())
         first_start = 1760000001000
