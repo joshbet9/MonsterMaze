@@ -584,14 +584,21 @@ def handle_submit(body, client_ip, db_fn):
                             # elapsed time while retaining the canonical submission ID/start.
                             updates["stage"] = stage
                             updates["time_ms"] = time_ms
+                        conflicting_confirmed_kits = (
+                            kit_confirmed and existing_confirmed and kit != "Unknown"
+                            and existing_kit != "Unknown" and kit != existing_kit
+                        )
+                        lower_stage_cue = conflicting_confirmed_kits and stage < existing_stage
                         if kit != "Unknown" and (
-                                existing_kit == "Unknown"
-                                or (kit_confirmed and not existing_confirmed)
-                                or (manual_correction and not existing_manual)):
-                            # Stage/time improvements are independent from kit evidence.
-                            # Keep the first confirmed automatic cue when two confirmed kits
-                            # conflict; only a new confirmation over an unconfirmed value or
-                            # an explicit user correction can replace the stored kit.
+                                (manual_correction and not existing_manual)
+                                or (not existing_manual and not manual_correction and (
+                                    existing_kit == "Unknown"
+                                    or (kit_confirmed and not existing_confirmed)
+                                    or lower_stage_cue))):
+                            # The lower-stage snapshot is the first-death/early-finalized
+                            # cue in this padskip case. Keep its confirmed kit while retaining
+                            # the higher-stage snapshot as the canonical score/time result.
+                            # Explicit user correction has highest priority and is stored.
                             updates["kit"] = kit
                             updates["kit_confirmed"] = 1 if kit_confirmed else 0
                             updates["kit_manual"] = 1 if manual_correction else 0
