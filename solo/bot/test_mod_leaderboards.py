@@ -73,6 +73,7 @@ class ModLeaderboardTests(unittest.TestCase):
         mod_leaderboards._ensure_schema(c)
         columns = {row[1] for row in c.execute("PRAGMA table_info(community_mod_runs)")}
         self.assertIn("started_at", columns)
+        self.assertIn("kit_confirmed", columns)
         c.close()
 
     def test_same_player_uploads_near_same_game_start_are_deduplicated(self):
