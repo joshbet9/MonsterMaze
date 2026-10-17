@@ -6,13 +6,13 @@ across multiple games, WITHOUT changing gameplay.
 Rule enforced for every item below: **functionality stays identical**. If any change makes the
 game behave unreasonably, revert that single item (steps included) and rebuild.
 
-The deployed/edited source lives in `C:\Users\Josh\MonsterMazeStandalone.claude`
-(not `C:\Users\Josh\MonsterMazeStandalone`). Build + deploy:
+The deployed/edited source for this performance pass was a separate local working copy; absolute developer-machine paths are intentionally omitted. Build + deploy from the relevant local project copy:
 
-```
-$env:JAVA_HOME="C:\Users\Josh\AppData\Local\Programs\Eclipse Adoptium\jdk-8.0.502.7-hotspot"
-mvn -o clean package        # in the .claude folder
-copy target\MonsterMazeStandalone.jar C:\monstermaze_test\plugins\MonsterMazeStandalone.jar
+```powershell
+# Set this to your installed Java 8 JDK before building, if required by your Maven setup.
+$env:JAVA_HOME = "<path-to-java-8-jdk>"
+mvn -o clean package
+Copy-Item target\MonsterMazeStandalone.jar "<test-plugin-dir>\MonsterMazeStandalone.jar"
 ```
 
 Restart the test server to apply.
