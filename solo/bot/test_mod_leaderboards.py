@@ -217,6 +217,41 @@ class ModLeaderboardTests(unittest.TestCase):
         c.close()
         self.assertEqual(row, (1, "Repulsor", 1, 31, 90000, first_start))
 
+    def test_higher_stage_duplicate_can_correct_conflicting_confirmed_kit(self):
+        player_uuid = str(uuid.uuid4())
+        first_start = 1760000003000
+        first = {
+            "submissionId": str(uuid.uuid4()), "uuid": player_uuid, "name": "MazeRunner",
+            "context": "MIN", "game": "Monster Maze", "mode": "classic",
+            "pattern": 0, "kit": "Jumper", "kitConfirmed": True,
+            "stage": 24, "timeMs": 180000, "startedAt": first_start,
+        }
+        later = dict(first)
+        later["submissionId"] = str(uuid.uuid4())
+        later["startedAt"] = first_start + 60000
+        later["timeMs"] = 90000
+        later["stage"] = 31
+        later["kit"] = "Repulsor"
+
+        status_a, response_a = mod_leaderboards.handle_submit(
+            json.dumps(first).encode("utf-8"), "kit-conflict-first", self.db
+        )
+        status_b, response_b = mod_leaderboards.handle_submit(
+            json.dumps(later).encode("utf-8"), "kit-conflict-later", self.db
+        )
+        self.assertEqual(status_a, 200)
+        self.assertTrue(response_a["accepted"])
+        self.assertEqual(status_b, 200)
+        self.assertTrue(response_b["deduplicated"])
+        c = self.db()
+        row = c.execute(
+            "SELECT COUNT(*),kit,kit_confirmed,stage,time_ms,started_at "
+            "FROM community_mod_runs WHERE lower(uuid)=?",
+            (player_uuid.lower(),),
+        ).fetchone()
+        c.close()
+        self.assertEqual(row, (1, "Repulsor", 1, 31, 90000, first_start))
+
     def test_late_unknown_duplicate_never_downgrades_known_kit(self):
         player_uuid = str(uuid.uuid4())
         first = {
