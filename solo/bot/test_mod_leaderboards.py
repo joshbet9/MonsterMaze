@@ -107,6 +107,75 @@ class ModLeaderboardTests(unittest.TestCase):
         c.close()
         self.assertEqual(rows, (1, "Repulsor", 1, 1760000000000))
 
+    def test_overlapping_padskip_duplicate_with_late_start_is_collapsed(self):
+        player_uuid = str(uuid.uuid4())
+        first_start = 1760000000000
+        first = {
+            "submissionId": str(uuid.uuid4()), "uuid": player_uuid, "name": "MazeRunner",
+            "context": "MPS", "game": "Monster Maze", "mode": "classic",
+            "pattern": 1, "kit": "Jumper", "kitConfirmed": True,
+            "stage": 30, "timeMs": 180000, "startedAt": first_start,
+        }
+        # This tracker attached a minute later after a padskip, but its elapsed-time
+        # interval still overlaps the real run and ends at the same point.
+        late = {
+            "submissionId": str(uuid.uuid4()), "uuid": player_uuid, "name": "MazeRunner",
+            "context": "MPS", "game": "Monster Maze", "mode": "classic",
+            "pattern": -1, "kit": "Repulsor", "kitConfirmed": False,
+            "stage": 19, "timeMs": 120000, "startedAt": first_start + 60000,
+        }
+        one_status, one = mod_leaderboards.handle_submit(
+            json.dumps(first).encode("utf-8"), "padskip-first", self.db
+        )
+        two_status, two = mod_leaderboards.handle_submit(
+            json.dumps(late).encode("utf-8"), "padskip-late", self.db
+        )
+        self.assertEqual(one_status, 200)
+        self.assertTrue(one["accepted"])
+        self.assertEqual(two_status, 200)
+        self.assertTrue(two["accepted"])
+        self.assertTrue(two["deduplicated"])
+        c = self.db()
+        row = c.execute(
+            "SELECT COUNT(*),kit,stage,time_ms,started_at,kit_confirmed FROM community_mod_runs WHERE lower(uuid)=?",
+            (player_uuid.lower(),),
+        ).fetchone()
+        c.close()
+        self.assertEqual(row, (1, "Jumper", 30, 180000, first_start, 1))
+
+    def test_overlap_duplicate_can_upgrade_known_unconfirmed_kit(self):
+        player_uuid = str(uuid.uuid4())
+        first_start = 1760000001000
+        first = {
+            "submissionId": str(uuid.uuid4()), "uuid": player_uuid, "name": "MazeRunner",
+            "context": "MIN", "game": "Monster Maze", "mode": "classic",
+            "pattern": -1, "kit": "Jumper", "kitConfirmed": False,
+            "stage": 24, "timeMs": 180000, "startedAt": first_start,
+        }
+        stronger = dict(first)
+        stronger["submissionId"] = str(uuid.uuid4())
+        stronger["startedAt"] = first_start + 60000
+        stronger["timeMs"] = 120000
+        stronger["kit"] = "Repulsor"
+        stronger["kitConfirmed"] = True
+        first_status, first_response = mod_leaderboards.handle_submit(
+            json.dumps(first).encode("utf-8"), "kit-confidence-first", self.db
+        )
+        second_status, second_response = mod_leaderboards.handle_submit(
+            json.dumps(stronger).encode("utf-8"), "kit-confidence-second", self.db
+        )
+        self.assertEqual(first_status, 200)
+        self.assertTrue(first_response["accepted"])
+        self.assertEqual(second_status, 200)
+        self.assertTrue(second_response["deduplicated"])
+        c = self.db()
+        row = c.execute(
+            "SELECT COUNT(*),kit,kit_confirmed,started_at FROM community_mod_runs WHERE lower(uuid)=?",
+            (player_uuid.lower(),),
+        ).fetchone()
+        c.close()
+        self.assertEqual(row, (1, "Repulsor", 1, first_start))
+
     def test_late_unknown_duplicate_never_downgrades_known_kit(self):
         player_uuid = str(uuid.uuid4())
         first = {
