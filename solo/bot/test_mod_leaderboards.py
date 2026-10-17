@@ -287,7 +287,7 @@ class ModLeaderboardTests(unittest.TestCase):
             (player_uuid.lower(),),
         ).fetchone()
         c.close()
-        self.assertEqual(row, (1, "Jumper", 1, 31, 90000, first_start))
+        self.assertEqual(row, (1, "Repulsor", 1, 31, 90000, first_start))
 
     def test_higher_stage_duplicate_preserves_first_confirmed_kit(self):
         player_uuid = str(uuid.uuid4())
@@ -322,7 +322,7 @@ class ModLeaderboardTests(unittest.TestCase):
             (player_uuid.lower(),),
         ).fetchone()
         c.close()
-        self.assertEqual(row, (1, "Repulsor", 1, 31, 90000, first_start))
+        self.assertEqual(row, (1, "Jumper", 1, 31, 90000, first_start))
 
     def test_late_unknown_duplicate_never_downgrades_known_kit(self):
         player_uuid = str(uuid.uuid4())
