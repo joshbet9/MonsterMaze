@@ -542,7 +542,7 @@ def handle_submit(body, client_ip, db_fn):
                     earliest_candidate_start = max(1, started_at - 24 * 60 * 60 * 1000)
                     latest_candidate_start = started_at + max(time_ms, 30_000)
                     candidates = c.execute(
-                        """SELECT submission_id, kit, pattern, started_at, time_ms, kit_confirmed
+                        """SELECT submission_id, kit, pattern, started_at, time_ms, stage, kit_confirmed
                            FROM community_mod_runs
                            WHERE lower(uuid)=? AND context=? AND started_at BETWEEN ? AND ?
                            ORDER BY ABS(started_at - ?) ASC""",
@@ -572,7 +572,13 @@ def handle_submit(body, client_ip, db_fn):
                         # Never let an unconfirmed duplicate overwrite stronger kit metadata.
                         updates = {}
                         existing_kit = str(same_round[1] or "Unknown")
-                        existing_confirmed = bool(same_round[5])
+                        existing_confirmed = bool(same_round[6])
+                        existing_stage = int(same_round[5] or 0)
+                        if stage > existing_stage:
+                            # Higher stage is the stronger score snapshot; update its paired
+                            # elapsed time while retaining the canonical submission ID/start.
+                            updates["stage"] = stage
+                            updates["time_ms"] = time_ms
                         if kit != "Unknown" and (
                                 existing_kit == "Unknown"
                                 or (kit_confirmed and not existing_confirmed)):
