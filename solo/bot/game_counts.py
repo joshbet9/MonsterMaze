@@ -245,24 +245,6 @@ def _set_alert_state(user_id, state, notified_at=None):
         conn.close()
 
 
-def _active_alert_threshold_hint():
-    conn = base.db()
-    try:
-        _ensure_alert_table(conn)
-        rows = conn.execute(
-            "SELECT threshold, COUNT(*) FROM mixed_arcade_alerts "
-            "GROUP BY threshold ORDER BY threshold"
-        ).fetchall()
-        conn.commit()
-    finally:
-        conn.close()
-    if not rows:
-        return None
-    return " • ".join(
-        f"{count} subscriber(s) at {threshold}+ player(s)"
-        for threshold, count in rows
-    )
-
 
 async def notify_alert_subscribers(bot, count):
     now = int(datetime.now(timezone.utc).timestamp())
@@ -400,7 +382,6 @@ async def update(bot, cfg):
             raise ValueError("PlexTrends snapshot did not include a Mixed Arcade count")
         checked_at = snapshot.get("updated_at") or datetime.now(timezone.utc)
         _save_latest_count(mixed_count, checked_at)
-        await notify_alert_subscribers(bot, int(mixed_count))
     except asyncio.CancelledError:
         raise
     except Exception as exc:
@@ -409,6 +390,13 @@ async def update(bot, cfg):
         return
 
     _last_logged_error = None
+    try:
+        await notify_alert_subscribers(bot, int(mixed_count))
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        _log_error("Mixed Arcade subscriber processing failed", exc)
+
     channel_ref = cfg.get("game_counts_channel", CHANNEL_DEFAULT)
     channel = bot.channel(channel_ref)
     if channel is None:
