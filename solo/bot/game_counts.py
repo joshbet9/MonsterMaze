@@ -2,7 +2,6 @@
 import asyncio
 import gzip
 import os
-import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -64,6 +63,7 @@ async def fetch_snapshot(cfg):
         raise ValueError("game_counts_page_url must be an HTTPS URL")
     html = await asyncio.to_thread(_read_page, url)
     snapshot = parse_live_counts(html)
+    snapshot["source"] = url
     snapshot["updated_at"] = datetime.now(timezone.utc)
     return snapshot
 
@@ -91,7 +91,7 @@ def build_embed(snapshot):
         description=f"**Network online:** {snapshot['network_players']:,} players",
         color=0x3498DB,
         timestamp=snapshot["updated_at"],
-        url=PAGE_URL_DEFAULT,
+        url=snapshot.get("source", PAGE_URL_DEFAULT),
     )
     mixed_count = snapshot["mixed_arcade_count"]
     if mixed_count > 0:
