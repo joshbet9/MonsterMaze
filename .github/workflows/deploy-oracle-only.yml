@@ -66,6 +66,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Test PlexTrends game-count polling and parsing
+        working-directory: solo/bot
+        run: python -m unittest -v test_plextrends_scraper.py
+
       - name: Run JNP Mod leaderboard API tests
         working-directory: solo/bot
         run: python -m unittest -v test_mod_leaderboards.py
