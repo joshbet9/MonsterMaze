@@ -9,24 +9,24 @@ from html.parser import HTMLParser
 
 
 _GAME_PATTERNS = (
-    ("Mixed Arcade", (r"mixed[\\s_-]*arcade",)),
-    ("Super Smash Mobs Legacy", (r"super[\\s_-]*smash[\\s_-]*mobs[\\s_-]*legacy",)),
-    ("Nano Games", (r"nano[\\s_-]*games?",)),
-    ("Micro Battles", (r"micro[\\s_-]*battles?",)),
-    ("Castle Siege", (r"castle[\\s_-]*siege",)),
-    ("Cake Wars", (r"cake[\\s_-]*wars",)),
-    ("Speed Builders", (r"speed[\\s_-]*builders?",)),
-    ("Survival Games", (r"survival[\\s_-]*games?",)),
-    ("Super Paintball", (r"super[\\s_-]*paintball",)),
-    ("Dragon Escape", (r"dragon[\\s_-]*escape",)),
-    ("Block Hunt", (r"block[\\s_-]*hunt",)),
-    ("Minestrike", (r"mine[\\s_-]*strike",)),
+    ("Mixed Arcade", (r"mixed[\s_-]*arcade",)),
+    ("Super Smash Mobs Legacy", (r"super[\s_-]*smash[\s_-]*mobs[\s_-]*legacy",)),
+    ("Nano Games", (r"nano[\s_-]*games?",)),
+    ("Micro Battles", (r"micro[\s_-]*battles?",)),
+    ("Castle Siege", (r"castle[\s_-]*siege",)),
+    ("Cake Wars", (r"cake[\s_-]*wars",)),
+    ("Speed Builders", (r"speed[\s_-]*builders?",)),
+    ("Survival Games", (r"survival[\s_-]*games?",)),
+    ("Super Paintball", (r"super[\s_-]*paintball",)),
+    ("Dragon Escape", (r"dragon[\s_-]*escape",)),
+    ("Block Hunt", (r"block[\s_-]*hunt",)),
+    ("Minestrike", (r"mine[\s_-]*strike",)),
     ("Champions", (r"champions?",)),
     ("Clans", (r"clans?",)),
-    ("Bridges", (r"the[\\s_-]*bridges|bridges",)),
-    ("Turf Wars", (r"turf[\\s_-]*wars",)),
+    ("Bridges", (r"the[\s_-]*bridges|bridges",)),
+    ("Turf Wars", (r"turf[\s_-]*wars",)),
     ("Lobby", (r"lobbies|lobby",)),
-    ("MPS Legacy", (r"mps[\\s_-]*legacy",)),
+    ("MPS Legacy", (r"mps[\s_-]*legacy",)),
 )
 
 _BLOCK_TAGS = {
@@ -49,14 +49,14 @@ class _VisibleText(HTMLParser):
         if tag in _IGNORED_TAGS:
             self.ignored_depth += 1
         if not self.ignored_depth and tag in _BLOCK_TAGS:
-            self.parts.append("\\n")
+            self.parts.append("\n")
 
     def handle_endtag(self, tag):
         tag = tag.lower()
         if tag in _IGNORED_TAGS and self.ignored_depth:
             self.ignored_depth -= 1
         if not self.ignored_depth and tag in _BLOCK_TAGS:
-            self.parts.append("\\n")
+            self.parts.append("\n")
 
     def handle_data(self, data):
         if not self.ignored_depth and data.strip():
@@ -67,13 +67,13 @@ def visible_text(html):
     parser = _VisibleText()
     parser.feed(html)
     parser.close()
-    return re.sub(r"\\s+", " ", " ".join(parser.parts)).strip()
+    return re.sub(r"\s+", " ", " ".join(parser.parts)).strip()
 
 
 def _count_after(label_pattern, section):
     match = re.search(
-        r"(?:^|\\b)" + label_pattern
-        + r"\\b\\s*(?:players?\\s*)?(?:[:=–—-]\\s*)?(\\d[\\d,]*)\\b",
+        r"(?:^|\b)" + label_pattern
+        + r"\b\s*(?:players?\s*)?(?:[:=–—-]\s*)?(\d[\d,]*)\b",
         section,
         re.IGNORECASE,
     )
@@ -81,8 +81,8 @@ def _count_after(label_pattern, section):
         return int(match.group(1).replace(",", ""))
     # Some layouts place the count before the game label.
     match = re.search(
-        r"\\b(\\d[\\d,]*)\\s*(?:players?\\s+)?"
-        + label_pattern + r"(?:\\b|$)",
+        r"\b(\d[\d,]*)\s*(?:players?\s+)?"
+        + label_pattern + r"(?:\b|$)",
         section,
         re.IGNORECASE,
     )
@@ -93,8 +93,8 @@ def parse_live_counts(html):
     """Return the current visible per-game counts or raise if the section is missing."""
     text = visible_text(html)
     active = re.search(
-        r"Currently\\s+Active\\s+Players(.*?)(?:Total\\s+Unique\\s+Players|"
-        r"Historical\\s+Player\\s+Trends|Total\\s+Player\\s+Volume\\s+Range)",
+        r"Currently\s+Active\s+Players(.*?)(?:Total\s+Unique\s+Players|"
+        r"Historical\s+Player\s+Trends|Total\s+Player\s+Volume\s+Range)",
         text,
         re.IGNORECASE,
     )
@@ -102,7 +102,7 @@ def parse_live_counts(html):
         raise ValueError("PlexTrends page did not expose the Currently Active Players section")
     section = active.group(1)
     total_match = re.search(
-        r"(?:Online|Players\\s+Online|Network\\s+Online)\\s*:?\\s*(\\d[\\d,]*)",
+        r"(?:Online|Players\s+Online|Network\s+Online)\s*:?\s*(\d[\d,]*)",
         section,
         re.IGNORECASE,
     )
