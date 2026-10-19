@@ -75,13 +75,13 @@ def _chunks(lines, max_chars=950):
     for line in lines:
         needed = len(line) + (1 if current else 0)
         if current and length + needed > max_chars:
-            chunks.append("\\n".join(current))
+            chunks.append("\n".join(current))
             current = []
             length = 0
         current.append(line)
         length += len(line) + (1 if len(current) > 1 else 0)
     if current:
-        chunks.append("\\n".join(current))
+        chunks.append("\n".join(current))
     return chunks
 
 
