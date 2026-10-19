@@ -9,9 +9,6 @@
   "game_counts_channel": "game-counts",
   "game_counts_page_url": "https://plextrends.com/",
   "game_counts_interval": 30,
-  "game_counts_alert_role_id": "",
-  "game_counts_mixed_arcade_threshold": 1,
-  "game_counts_alert_initial_active": false,
   "competition_timezone": "Australia/Brisbane",
   "modes": ["modern", "speed", "original"],
   "platform_modes": {
