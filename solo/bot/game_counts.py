@@ -11,9 +11,9 @@ from plextrends_scraper import parse_live_counts
 
 
 PAGE_URL_DEFAULT = "https://plextrends.com/"
-CHANNEL_DEFAULT = "game-counts"
+CHANNEL_DEFAULT = "mixed-arcade-count"
 INTERVAL_DEFAULT = 30
-BOARD_KEY = "game-counts"
+BOARD_KEY = "mixed-arcade-count"
 REQUEST_TIMEOUT = 12
 MAX_PAGE_BYTES = 20 * 1024 * 1024
 
@@ -67,23 +67,6 @@ async def fetch_snapshot(cfg):
     return snapshot
 
 
-def _chunks(lines, max_chars=950):
-    chunks = []
-    current = []
-    length = 0
-    for line in lines:
-        needed = len(line) + (1 if current else 0)
-        if current and length + needed > max_chars:
-            chunks.append("\n".join(current))
-            current = []
-            length = 0
-        current.append(line)
-        length += len(line) + (1 if len(current) > 1 else 0)
-    if current:
-        chunks.append("\n".join(current))
-    return chunks
-
-
 def build_embed(snapshot, cfg):
     mixed_count = int(snapshot["mixed_arcade_count"])
     if mixed_count > 0:
@@ -105,7 +88,7 @@ def build_embed(snapshot, cfg):
         value="Use `/mixedarcade alert player_count:<number>` to get a DM when the count reaches your chosen threshold.",
         inline=False,
     )
-    embed.set_footer(text="Polls every 30 seconds • Source: PlexTrends")
+    embed.set_footer(text="Polled every 30 seconds • PlexTrends source")
     return embed
 
 
