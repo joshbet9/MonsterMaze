@@ -22,7 +22,7 @@ class FakeUser:
 
 class FakeBot:
     def __init__(self):
-        self.cfg = {"game_counts_channel": "game-counts"}
+        self.cfg = {"game_counts_channel": "mixed-arcade-count"}
         self.users = {}
         self.channel_object = SimpleNamespace(id=123456789)
 
