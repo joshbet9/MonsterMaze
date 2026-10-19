@@ -6,7 +6,7 @@
   "server_status_channel": "server-status",
   "server_status_url": "http://127.0.0.1:8765/status",
   "server_status_interval": 15,
-  "game_counts_channel": "game-counts",
+  "game_counts_channel": "mixed-arcade-count",
   "game_counts_page_url": "https://plextrends.com/",
   "game_counts_interval": 30,
   "competition_timezone": "Australia/Brisbane",
