@@ -25,6 +25,9 @@ _GAME_PATTERNS = (
     ("Clans", (r"clans?",)),
     ("Bridges", (r"the[\s_-]*bridges|bridges",)),
     ("Turf Wars", (r"turf[\s_-]*wars",)),
+    ("SkyWars", (r"sky[\s_-]*wars?",)),
+    ("One Block", (r"one[\s_-]*block",)),
+    ("One in the Quiver", (r"one[\s_-]*in[\s_-]*the[\s_-]*quiver|oitq",)),
     ("Lobby", (r"lobbies|lobby",)),
     ("MPS Legacy", (r"mps[\s_-]*legacy",)),
 )
@@ -72,7 +75,7 @@ def visible_text(html):
 
 def _count_after(label_pattern, section):
     match = re.search(
-        r"(?:^|\b)" + label_pattern
+        r"(?:^|\b)(?:" + label_pattern + r")"
         + r"\b\s*(?:players?\s*)?(?:[:=–—-]\s*)?(\d[\d,]*)\b",
         section,
         re.IGNORECASE,
@@ -82,7 +85,7 @@ def _count_after(label_pattern, section):
     # Some layouts place the count before the game label.
     match = re.search(
         r"\b(\d[\d,]*)\s*(?:players?\s+)?"
-        + label_pattern + r"(?:\b|$)",
+        + r"(?:" + label_pattern + r")" + r"(?:\b|$)",
         section,
         re.IGNORECASE,
     )
