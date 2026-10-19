@@ -12,7 +12,7 @@ from plextrends_scraper import parse_live_counts
 
 PAGE_URL_DEFAULT = "https://plextrends.com/"
 CHANNEL_DEFAULT = "mixed-arcade-count"
-INTERVAL_DEFAULT = 30
+INTERVAL_DEFAULT = 300
 BOARD_KEY = "mixed-arcade-count"
 REQUEST_TIMEOUT = 12
 MAX_PAGE_BYTES = 20 * 1024 * 1024
@@ -29,8 +29,6 @@ def _read_page(url):
     headers = {
         "Accept": "text/html,application/xhtml+xml",
         "Accept-Encoding": "gzip",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
         "User-Agent": "MonsterMaze-GameCounts/1.0 (+https://github.com/joshbet9/MonsterMaze)",
     }
     if _cached_etag:
@@ -88,7 +86,7 @@ def build_embed(snapshot, cfg):
         value="Use `/mixedarcade alert player_count:<number>` to get a DM when the count reaches your chosen threshold.",
         inline=False,
     )
-    embed.set_footer(text="Polled every 30 seconds • PlexTrends source")
+    embed.set_footer(text="Polled every 5 minutes • PlexTrends snapshots are roughly 5 minutes apart")
     return embed
 
 
@@ -396,7 +394,7 @@ async def update(bot, cfg):
 
 
 async def run(bot, cfg):
-    interval = max(30, int(cfg.get("game_counts_interval", INTERVAL_DEFAULT)))
+    interval = max(300, int(cfg.get("game_counts_interval", INTERVAL_DEFAULT)))
     while True:
         try:
             await update(bot, cfg)
