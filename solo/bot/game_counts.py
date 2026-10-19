@@ -85,76 +85,305 @@ def _chunks(lines, max_chars=950):
 
 
 def build_embed(snapshot, cfg):
+    mixed_count = int(snapshot["mixed_arcade_count"])
+    threshold_hint = _active_alert_threshold_hint()
+    if mixed_count > 0:
+        status = f"🟢 **{mixed_count:,} player(s)** currently in Mixed Arcade"
+    else:
+        status = "⚪ **0 players** currently listed in Mixed Arcade"
+
     embed = discord.Embed(
-        title="Mineplex Live Game Counts",
-        description=f"**Network online:** {snapshot['network_players']:,} players",
-        color=0x3498DB,
+        title="Mixed Arcade — Live Player Count",
+        description=status,
+        color=0x2ECC71 if mixed_count > 0 else 0x95A5A6,
         timestamp=snapshot["updated_at"],
         url=snapshot.get("source", PAGE_URL_DEFAULT),
     )
-    mixed_count = snapshot["mixed_arcade_count"]
-    threshold = max(1, int(cfg.get("game_counts_mixed_arcade_threshold", 1)))
-    if mixed_count >= threshold:
-        mixed_text = f"🟢 **ACTIVE** — {mixed_count:,} player(s)"
-    elif mixed_count > 0:
-        mixed_text = f"⚪ Below alert threshold — {mixed_count:,} player(s); alert at {threshold}"
-    else:
-        mixed_text = "⚪ Inactive — 0 players"
-    embed.add_field(name="Mixed Arcade", value=mixed_text, inline=False)
-
-    rows = snapshot["game_counts"]
-    chunks = _chunks([f"• **{row['name']}** — {row['count']:,}" for row in rows])
-    if not chunks:
-        chunks = ["No per-game counts were listed."]
-    for index, chunk in enumerate(chunks, 1):
-        title = "Players by game" if len(chunks) == 1 else f"Players by game ({index})"
-        embed.add_field(name=title, value=chunk, inline=True)
-
     embed.add_field(
-        name="MPS server details",
-        value=(
-            "PlexTrends' public live dashboard does not expose the per-MPS-server "
-            "breakdown shown by Plexify /gamecounts. Network and per-game counts "
-            "are monitored here; Mixed Arcade start alerts remain enabled."
-        ),
+        name="Your own alert",
+        value="Use `/mixedarcade alert player_count:<number>` to receive a DM when the count reaches your chosen threshold.",
         inline=False,
     )
-    embed.set_footer(text="Refreshes every 30 seconds • Source: PlexTrends")
+    if threshold_hint:
+        embed.add_field(name="Community alert thresholds", value=threshold_hint, inline=False)
+    embed.set_footer(text="Checked every 30 seconds • Count source: PlexTrends")
     return embed
 
 
-def _get_active_state():
+def _ensure_state_table(conn):
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS game_counts_state "
+        "(state_key TEXT PRIMARY KEY, state_value TEXT NOT NULL)"
+    )
+
+
+def _get_state(key):
     conn = base.db()
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS game_counts_state "
-            "(state_key TEXT PRIMARY KEY, state_value TEXT NOT NULL)"
-        )
+        _ensure_state_table(conn)
         row = conn.execute(
-            "SELECT state_value FROM game_counts_state WHERE state_key='mixed_arcade_active'"
+            "SELECT state_value FROM game_counts_state WHERE state_key=?", (key,)
         ).fetchone()
         conn.commit()
-        return None if row is None else row[0] == "1"
+        return None if row is None else row[0]
     finally:
         conn.close()
+
+
+def _set_state(key, value):
+    conn = base.db()
+    try:
+        _ensure_state_table(conn)
+        conn.execute(
+            "INSERT INTO game_counts_state(state_key, state_value) VALUES(?, ?) "
+            "ON CONFLICT(state_key) DO UPDATE SET state_value=excluded.state_value",
+            (key, str(value)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _get_active_state():
+    value = _get_state("mixed_arcade_active")
+    return None if value is None else value == "1"
 
 
 def _set_active_state(active):
+    _set_state("mixed_arcade_active", "1" if active else "0")
+
+
+def _save_latest_count(count, updated_at):
+    _set_state("mixed_arcade_count", int(count))
+    _set_state("mixed_arcade_checked_at", int(updated_at.timestamp()))
+
+
+def latest_count():
+    count = _get_state("mixed_arcade_count")
+    checked_at = _get_state("mixed_arcade_checked_at")
+    return (
+        int(count) if count is not None else None,
+        int(checked_at) if checked_at is not None else None,
+    )
+
+
+def _ensure_alert_table(conn):
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS mixed_arcade_alerts ("
+        "user_id TEXT PRIMARY KEY, threshold INTEGER NOT NULL, "
+        "state TEXT NOT NULL DEFAULT 'armed', updated_at INTEGER NOT NULL, "
+        "last_notified_at INTEGER)"
+    )
+
+
+def set_alert_subscription(user_id, threshold):
+    now = int(datetime.now(timezone.utc).timestamp())
     conn = base.db()
     try:
+        _ensure_alert_table(conn)
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS game_counts_state "
-            "(state_key TEXT PRIMARY KEY, state_value TEXT NOT NULL)"
-        )
-        conn.execute(
-            "INSERT INTO game_counts_state(state_key, state_value) VALUES('mixed_arcade_active', ?) "
-            "ON CONFLICT(state_key) DO UPDATE SET state_value=excluded.state_value",
-            ("1" if active else "0",),
+            "INSERT INTO mixed_arcade_alerts(user_id, threshold, state, updated_at, last_notified_at) "
+            "VALUES(?, ?, 'armed', ?, NULL) "
+            "ON CONFLICT(user_id) DO UPDATE SET threshold=excluded.threshold, "
+            "state='armed', updated_at=excluded.updated_at, last_notified_at=NULL",
+            (str(user_id), int(threshold), now),
         )
         conn.commit()
     finally:
         conn.close()
 
+
+def remove_alert_subscription(user_id):
+    conn = base.db()
+    try:
+        _ensure_alert_table(conn)
+        cur = conn.execute("DELETE FROM mixed_arcade_alerts WHERE user_id=?", (str(user_id),))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def get_alert_subscription(user_id):
+    conn = base.db()
+    try:
+        _ensure_alert_table(conn)
+        row = conn.execute(
+            "SELECT threshold, state, last_notified_at FROM mixed_arcade_alerts WHERE user_id=?",
+            (str(user_id),),
+        ).fetchone()
+        conn.commit()
+        return None if row is None else {
+            "threshold": int(row[0]), "state": row[1], "last_notified_at": row[2]
+        }
+    finally:
+        conn.close()
+
+
+def _get_alert_subscribers():
+    conn = base.db()
+    try:
+        _ensure_alert_table(conn)
+        rows = conn.execute(
+            "SELECT user_id, threshold, state FROM mixed_arcade_alerts"
+        ).fetchall()
+        conn.commit()
+        return [
+            {"user_id": row[0], "threshold": int(row[1]), "state": row[2]}
+            for row in rows
+        ]
+    finally:
+        conn.close()
+
+
+def _set_alert_state(user_id, state, notified_at=None):
+    conn = base.db()
+    try:
+        _ensure_alert_table(conn)
+        if notified_at is None:
+            conn.execute(
+                "UPDATE mixed_arcade_alerts SET state=?, updated_at=? WHERE user_id=?",
+                (state, int(datetime.now(timezone.utc).timestamp()), str(user_id)),
+            )
+        else:
+            conn.execute(
+                "UPDATE mixed_arcade_alerts SET state=?, updated_at=?, last_notified_at=? WHERE user_id=?",
+                (state, int(datetime.now(timezone.utc).timestamp()), notified_at, str(user_id)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _active_alert_threshold_hint():
+    conn = base.db()
+    try:
+        _ensure_alert_table(conn)
+        rows = conn.execute(
+            "SELECT threshold, COUNT(*) FROM mixed_arcade_alerts "
+            "GROUP BY threshold ORDER BY threshold"
+        ).fetchall()
+        conn.commit()
+    finally:
+        conn.close()
+    if not rows:
+        return None
+    return " • ".join(
+        f"{count} subscriber(s) at {threshold}+ player(s)"
+        for threshold, count in rows
+    )
+
+
+async def notify_alert_subscribers(bot, count):
+    now = int(datetime.now(timezone.utc).timestamp())
+    for subscription in _get_alert_subscribers():
+        user_id = subscription["user_id"]
+        threshold = subscription["threshold"]
+        state = subscription["state"]
+
+        if count < threshold:
+            if state != "armed":
+                _set_alert_state(user_id, "armed")
+            continue
+        if state != "armed":
+            continue
+
+        try:
+            user = await bot.call(
+                lambda user_id=user_id: bot.fetch_user(int(user_id)),
+                "Mixed Arcade alert recipient",
+            )
+            await bot.call(
+                lambda user=user, threshold=threshold: user.send(
+                    f"🔔 Mineplex Mixed Arcade has reached **{count:,} players** "
+                    f"(your alert threshold: **{threshold}**). "
+                    f"Track the live count in <#{bot.channel(cfg_channel_ref(bot)) .id}>."
+                ),
+                "Mixed Arcade player-count alert",
+            )
+            _set_alert_state(user_id, "triggered", now)
+        except discord.Forbidden:
+            # Avoid retrying a permanently closed DM every 30 seconds. The user
+            # can re-arm the alert with /mixedarcade alert after enabling DMs.
+            _set_alert_state(user_id, "blocked")
+            print(
+                f"[game-counts] cannot DM user {user_id}; ask them to enable DMs "
+                "and reconfigure /mixedarcade alert",
+                flush=True,
+            )
+        except (discord.NotFound, discord.HTTPException) as exc:
+            # Transient Discord errors leave the alert armed for retry next poll.
+            _log_error(f"could not deliver Mixed Arcade alert to {user_id}", exc)
+
+
+def cfg_channel_ref(bot):
+    channel = bot.channel(bot.cfg.get("game_counts_channel", CHANNEL_DEFAULT))
+    return channel.id if channel else 0
+
+
+class MixedArcadeCommands(discord.app_commands.Group):
+    def __init__(self):
+        super().__init__(
+            name="mixedarcade",
+            description="Track Mixed Arcade player counts and configure alerts",
+        )
+
+    @discord.app_commands.command(
+        name="alert", description="DM me when Mixed Arcade reaches a player count"
+    )
+    @discord.app_commands.describe(player_count="Alert me at this number of players (1–1000)")
+    async def alert(
+        self,
+        interaction: discord.Interaction,
+        player_count: discord.app_commands.Range[int, 1, 1000],
+    ):
+        set_alert_subscription(interaction.user.id, player_count)
+        count, _ = latest_count()
+        message = (
+            f"✅ I'll DM you when Mixed Arcade reaches **{player_count} players**. "
+            "After the count falls below your threshold, the alert re-arms for the next game."
+        )
+        if count is not None and count >= player_count:
+            message += " The count is already at or above that level, so you should be alerted on the next poll."
+        message += " Make sure this bot is allowed to send you DMs."
+        await interaction.response.send_message(message, ephemeral=True)
+
+    @discord.app_commands.command(
+        name="remove", description="Remove my Mixed Arcade player-count alert"
+    )
+    async def remove(self, interaction: discord.Interaction):
+        removed = remove_alert_subscription(interaction.user.id)
+        message = (
+            "Your Mixed Arcade alert has been removed."
+            if removed else "You don't have a Mixed Arcade alert configured."
+        )
+        await interaction.response.send_message(message, ephemeral=True)
+
+    @discord.app_commands.command(
+        name="status", description="Show the latest Mixed Arcade count and my alert"
+    )
+    async def status(self, interaction: discord.Interaction):
+        count, checked_at = latest_count()
+        if count is None:
+            status = "No successful PlexTrends reading yet."
+        else:
+            status = f"**Mixed Arcade:** {count:,} player(s)"
+            if checked_at:
+                status += f" • Last checked <t:{checked_at}:R>"
+        subscription = get_alert_subscription(interaction.user.id)
+        if subscription:
+            threshold = subscription["threshold"]
+            state = subscription["state"]
+            if state == "armed":
+                extra = f"Your alert is armed at **{threshold}+ players**."
+            elif state == "triggered":
+                extra = f"Your **{threshold}+ player** alert has fired; it re-arms once the count falls below {threshold}."
+            else:
+                extra = f"Your **{threshold}+ player** alert couldn't be delivered by DM. Enable DMs and run `/mixedarcade alert` again."
+            status += "\\n" + extra
+        else:
+            status += "\\nYou have no alert configured. Use `/mixedarcade alert` to subscribe."
+        await interaction.response.send_message(status, ephemeral=True)
 
 async def _publish(bot, channel, embed):
     stored = base.get_board_msg(BOARD_KEY)
