@@ -86,27 +86,26 @@ def _chunks(lines, max_chars=950):
 
 def build_embed(snapshot, cfg):
     mixed_count = int(snapshot["mixed_arcade_count"])
-    threshold_hint = _active_alert_threshold_hint()
     if mixed_count > 0:
-        status = f"🟢 **{mixed_count:,} player(s)** currently in Mixed Arcade"
+        description = f"🟢 **{mixed_count:,} player(s)** currently in Mixed Arcade"
+        color = 0x2ECC71
     else:
-        status = "⚪ **0 players** currently listed in Mixed Arcade"
+        description = "⚪ **0 players** currently listed in Mixed Arcade"
+        color = 0x95A5A6
 
     embed = discord.Embed(
         title="Mixed Arcade — Live Player Count",
-        description=status,
-        color=0x2ECC71 if mixed_count > 0 else 0x95A5A6,
+        description=description,
+        color=color,
         timestamp=snapshot["updated_at"],
         url=snapshot.get("source", PAGE_URL_DEFAULT),
     )
     embed.add_field(
-        name="Your own alert",
-        value="Use `/mixedarcade alert player_count:<number>` to receive a DM when the count reaches your chosen threshold.",
+        name="Personal alerts",
+        value="Use `/mixedarcade alert player_count:<number>` to get a DM when the count reaches your chosen threshold.",
         inline=False,
     )
-    if threshold_hint:
-        embed.add_field(name="Community alert thresholds", value=threshold_hint, inline=False)
-    embed.set_footer(text="Checked every 30 seconds • Count source: PlexTrends")
+    embed.set_footer(text="Polls every 30 seconds • Source: PlexTrends")
     return embed
 
 
@@ -142,15 +141,6 @@ def _set_state(key, value):
         conn.commit()
     finally:
         conn.close()
-
-
-def _get_active_state():
-    value = _get_state("mixed_arcade_active")
-    return None if value is None else value == "1"
-
-
-def _set_active_state(active):
-    _set_state("mixed_arcade_active", "1" if active else "0")
 
 
 def _save_latest_count(count, updated_at):
@@ -316,11 +306,6 @@ async def notify_alert_subscribers(bot, count):
             _log_error(f"could not deliver Mixed Arcade alert to {user_id}", exc)
 
 
-def cfg_channel_ref(bot):
-    channel = bot.channel(bot.cfg.get("game_counts_channel", CHANNEL_DEFAULT))
-    return channel.id if channel else 0
-
-
 class MixedArcadeCommands(discord.app_commands.Group):
     def __init__(self):
         super().__init__(
@@ -405,26 +390,24 @@ async def _publish(bot, channel, embed):
         base.set_board_msg(BOARD_KEY, channel.id, message.id)
 
 
-async def _send_mixed_arcade_alert(bot, channel, count, cfg):
-    role_id = str(cfg.get("game_counts_alert_role_id", "") or "").strip()
-    mention = f"<@&{role_id}>" if role_id.isdigit() else ""
-    content = (
-        f"{mention + ' ' if mention else ''}🟢 **Mixed Arcade is active!** "
-        f"{count:,} player(s) detected on Mineplex."
-    )
-    await bot.call(
-        lambda: channel.send(
-            content=content,
-            allowed_mentions=discord.AllowedMentions(
-                everyone=False, roles=True, users=False
-            ),
-        ),
-        "Mixed Arcade start alert",
-    )
-
-
 async def update(bot, cfg):
     global _last_logged_error
+    try:
+        snapshot = await fetch_snapshot(cfg)
+        mixed_count = snapshot.get("mixed_arcade_count")
+        if mixed_count is None:
+            raise ValueError("PlexTrends snapshot did not include a Mixed Arcade count")
+        checked_at = snapshot.get("updated_at") or datetime.now(timezone.utc)
+        _save_latest_count(mixed_count, checked_at)
+        await notify_alert_subscribers(bot, int(mixed_count))
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        # Keep the last successful count and each user's armed state on scrape failure.
+        _log_error("PlexTrends poll failed", exc)
+        return
+
+    _last_logged_error = None
     channel_ref = cfg.get("game_counts_channel", CHANNEL_DEFAULT)
     channel = bot.channel(channel_ref)
     if channel is None:
@@ -432,41 +415,12 @@ async def update(bot, cfg):
         return
 
     try:
-        snapshot = await fetch_snapshot(cfg)
         await _publish(bot, channel, build_embed(snapshot, cfg))
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        # Keep the last successful Discord message and alert state intact on scrape failure.
-        _log_error("PlexTrends poll failed", exc)
-        return
+        _log_error("Mixed Arcade channel update failed", exc)
 
-    _last_logged_error = None
-    mixed_count = snapshot.get("mixed_arcade_count")
-    if mixed_count is None:
-        return
-    current_active = mixed_count >= max(1, int(cfg.get("game_counts_mixed_arcade_threshold", 1)))
-    previous_active = _get_active_state()
-
-    if previous_active is None:
-        # Baseline only; avoid announcing a game that started before deployment.
-        if current_active and bool(cfg.get("game_counts_alert_initial_active", False)):
-            try:
-                await _send_mixed_arcade_alert(bot, channel, mixed_count, cfg)
-            except Exception as exc:
-                _log_error("initial Mixed Arcade alert failed", exc)
-                return
-        _set_active_state(current_active)
-    elif previous_active != current_active:
-        if current_active:
-            try:
-                await _send_mixed_arcade_alert(bot, channel, mixed_count, cfg)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                _log_error("Mixed Arcade alert failed; will retry next poll", exc)
-                return
-        _set_active_state(current_active)
 
 
 async def run(bot, cfg):
