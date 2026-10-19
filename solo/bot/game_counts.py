@@ -350,7 +350,7 @@ class MixedArcadeCommands(discord.app_commands.Group):
                 extra = f"Your **{threshold}+ player** alert couldn't be delivered by DM. Enable DMs and run `/mixedarcade alert` again."
             status += "\n" + extra
         else:
-            status += "\nYou have no alert configured. Use \`/mixedarcade alert\` to subscribe."
+            status += "\nYou have no alert configured. Use /mixedarcade alert to subscribe."
         await interaction.response.send_message(status, ephemeral=True)
 
 async def _publish(bot, channel, embed):
