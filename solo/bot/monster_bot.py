@@ -6,6 +6,7 @@ import discord
 import api_server
 import monster_bot_v2 as base
 import server_status
+import game_counts
 import tournament_bot as tournament_impl
 from ign_denylist import handle_denylist
 
@@ -68,13 +69,25 @@ async def _post_feed_async(bot, run):
 class APIMonsterBot(tournament_impl.TournamentBot):
     def __init__(self, cfg):
         super().__init__(cfg)
+        self.tree = discord.app_commands.CommandTree(self)
+        self.tree.add_command(game_counts.MixedArcadeCommands())
+        self._mixed_arcade_commands_synced = False
         global CURRENT_BOT
         CURRENT_BOT = self
 
     async def on_ready(self):
         await super().on_ready()
+        if not self._mixed_arcade_commands_synced:
+            try:
+                synced = await self.tree.sync()
+                self._mixed_arcade_commands_synced = True
+                print(f"[game-counts] synced {len(synced)} Discord application commands", flush=True)
+            except Exception as exc:
+                print(f"[game-counts] application-command sync failed: {exc}", flush=True)
         if not getattr(self, "server_status_task", None) or self.server_status_task.done():
             self.server_status_task = asyncio.create_task(server_status.run(self, self.cfg))
+        if not getattr(self, "game_counts_task", None) or self.game_counts_task.done():
+            self.game_counts_task = asyncio.create_task(game_counts.run(self, self.cfg))
 
     async def on_message(self, message):
         if message.author == self.user:
