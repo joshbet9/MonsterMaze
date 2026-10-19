@@ -283,11 +283,12 @@ async def notify_alert_subscribers(bot, count):
                 lambda user_id=user_id: bot.fetch_user(int(user_id)),
                 "Mixed Arcade alert recipient",
             )
+            channel = bot.channel(bot.cfg.get("game_counts_channel", CHANNEL_DEFAULT))
+            channel_hint = f" View the live count in <#{channel.id}>." if channel else ""
             await bot.call(
-                lambda user=user, threshold=threshold: user.send(
+                lambda user=user, threshold=threshold, channel_hint=channel_hint: user.send(
                     f"🔔 Mineplex Mixed Arcade has reached **{count:,} players** "
-                    f"(your alert threshold: **{threshold}**). "
-                    f"Track the live count in <#{bot.channel(cfg_channel_ref(bot)) .id}>."
+                    f"(your alert threshold: **{threshold}**)." + channel_hint
                 ),
                 "Mixed Arcade player-count alert",
             )
