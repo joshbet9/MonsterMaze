@@ -16,3 +16,11 @@ map: eyeofender
 # Example:
 # mob-overrides:
 #   siberian: creeper
+
+# CPU competitors. Disabled until a trained direct policy artifact is configured.
+cpu-opponents:
+  enabled: false
+  count: 1
+  kit: JUMPER
+  name-prefix: CPU
+  seed: 1337

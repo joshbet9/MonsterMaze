@@ -57,10 +57,10 @@ public final class SoloRunCompletionListener implements Listener {
         int stage = plugin.getGameManager().getStage();
 
         if (runs.isEmpty()) {
-            participantCount = plugin.getGameManager().getAlivePlayers().size();
+            participantCount = plugin.getGameManager().getAliveHumanPlayers().size();
         }
 
-        for (Player player : plugin.getGameManager().getAlivePlayers()) {
+        for (Player player : plugin.getGameManager().getAliveHumanPlayers()) {
             UUID uuid = player.getUniqueId();
             RunInfo info = runs.get(uuid);
             if (info != null) {
@@ -104,7 +104,7 @@ public final class SoloRunCompletionListener implements Listener {
         for (UUID uuid : new HashSet<UUID>(runs.keySet())) {
             Player player = Bukkit.getPlayer(uuid);
             if (player == null || !player.isOnline()) continue;
-            if (!plugin.getGameManager().getAlivePlayers().contains(player)) {
+            if (!plugin.getGameManager().getAliveHumanPlayers().contains(player)) {
                 RunInfo info = runs.remove(uuid);
                 if (info != null) record(player, info, info.stage);
             }
@@ -116,7 +116,7 @@ public final class SoloRunCompletionListener implements Listener {
         for (UUID uuid : new HashSet<UUID>(runs.keySet())) {
             Player player = Bukkit.getPlayer(uuid);
             if (player == null || !player.isOnline()) continue;
-            if (plugin.getGameManager().getAlivePlayers().contains(player)) {
+            if (plugin.getGameManager().getAliveHumanPlayers().contains(player)) {
                 RunInfo info = runs.remove(uuid);
                 if (info != null) record(player, info, plugin.getGameManager().getStage());
             }
