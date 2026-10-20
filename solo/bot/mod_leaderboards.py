@@ -61,6 +61,82 @@ def _entry(row, context=None, source="community"):
     return item
 
 
+def _community_profile_placements(c, player_uuid):
+    """Return the exact one-based row position of each profile PB in its public category board."""
+    rows = c.execute("""
+        WITH categories AS (
+            SELECT DISTINCT context, lower(mode) AS mode, pattern, kit
+            FROM community_mod_runs
+            WHERE game='Monster Maze' AND lower(uuid)=?
+        ),
+        ranked AS (
+            SELECT lower(r.uuid) AS uuid, r.context, lower(r.mode) AS mode,
+                   r.pattern, r.kit, r.stage, r.time_ms, r.submitted_at, r.submission_id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY r.context, lower(r.mode), r.pattern, r.kit
+                       ORDER BY r.stage DESC, r.time_ms ASC, r.submitted_at ASC,
+                                r.name COLLATE NOCASE ASC, r.submission_id ASC
+                   ) AS placement
+            FROM community_mod_runs AS r
+            WHERE r.game='Monster Maze'
+              AND EXISTS (
+                  SELECT 1 FROM categories AS cat
+                  WHERE cat.context=r.context AND cat.mode=lower(r.mode)
+                    AND cat.pattern=r.pattern AND cat.kit=r.kit
+              )
+        )
+        SELECT context, mode, pattern, kit, stage, time_ms, submitted_at, placement, submission_id
+        FROM ranked WHERE uuid=?
+    """, (player_uuid, player_uuid)).fetchall()
+    return {
+        (str(row[0]), str(row[1]).lower(), int(row[2]), str(row[3]),
+         int(row[4]), int(row[5]), int(row[6]), str(row[8])): int(row[7])
+        for row in rows
+    }
+
+
+def _server_profile_placements(c, player_uuid):
+    """Rank each player's best authoritative PB once within the exact server category."""
+    rows = c.execute("""
+        WITH categories AS (
+            SELECT DISTINCT platform, lower(mode) AS mode, pattern, kit
+            FROM runs WHERE lower(uuid)=?
+        ),
+        personal_bests AS (
+            SELECT r.*,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY lower(r.uuid), r.platform, lower(r.mode), r.pattern, r.kit
+                       ORDER BY r.stage DESC, r.time_ms ASC,
+                                r.name COLLATE NOCASE ASC, lower(r.uuid) ASC
+                   ) AS personal_best_order
+            FROM runs AS r
+            WHERE EXISTS (
+                SELECT 1 FROM categories AS cat
+                WHERE cat.platform=r.platform AND cat.mode=lower(r.mode)
+                  AND cat.pattern=r.pattern AND cat.kit=r.kit
+            )
+        ),
+        ranked AS (
+            SELECT lower(uuid) AS uuid, platform, lower(mode) AS mode,
+                   pattern, kit, stage, time_ms,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY platform, lower(mode), pattern, kit
+                       ORDER BY stage DESC, time_ms ASC,
+                                name COLLATE NOCASE ASC, lower(uuid) ASC
+                   ) AS placement
+            FROM personal_bests
+            WHERE personal_best_order=1
+        )
+        SELECT platform, mode, pattern, kit, stage, time_ms, placement
+        FROM ranked WHERE uuid=?
+    """, (player_uuid, player_uuid)).fetchall()
+    return {
+        (str(row[0]), str(row[1]).lower(), int(row[2]), str(row[3]),
+         int(row[4]), int(row[5])): int(row[6])
+        for row in rows
+    }
+
+
 def handle_game_info(query, db_fn):
     """Return every observed participant result for a nearby, timestamp-anchored MM round."""
     try:
@@ -328,7 +404,7 @@ def handle_get(path, query, db_fn, allowed_modes):
                         args.append(kit)
                     sql = """SELECT uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at
                              FROM community_mod_runs WHERE %s
-                             ORDER BY stage DESC,time_ms ASC,submitted_at ASC,name COLLATE NOCASE ASC
+                             ORDER BY stage DESC,time_ms ASC,submitted_at ASC,name COLLATE NOCASE ASC,submission_id ASC
                              LIMIT 100""" % " AND ".join(where)
                     rows = c.execute(sql, tuple(args)).fetchall()
                     return 200, {"ok": True, "source": "community", "verified": False,
@@ -363,7 +439,7 @@ def handle_get(path, query, db_fn, allowed_modes):
                     if kit not in _ALLOWED_KITS - {"Unknown"}:
                         raise ValueError("invalid kit filter")
                     where.append("kit=?"); args.append(kit)
-                rows = c.execute("""SELECT uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at
+                rows = c.execute("""SELECT uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at,submission_id
                                      FROM community_mod_runs WHERE %s
                                      ORDER BY stage DESC,time_ms ASC,submitted_at DESC LIMIT 500""" % " AND ".join(where),
                                  tuple(args)).fetchall()
@@ -376,9 +452,17 @@ def handle_get(path, query, db_fn, allowed_modes):
                     if key not in best or (int(row[7]), -int(row[8])) > (int(best[key][7]), -int(best[key][8])):
                         best[key] = row
                 profile_rows = sorted(best.values(), key=lambda r: (-int(r[7]), int(r[8]), r[2], r[4], r[5], r[6]))
+                placements = _community_profile_placements(c, player_uuid)
+                response_rows = []
+                for row in profile_rows[:100]:
+                    item = _entry(row)
+                    placement_key = (str(row[2]), str(row[4]).lower(), int(row[5]), str(row[6]),
+                                     int(row[7]), int(row[8]), int(row[9]), str(row[11]))
+                    item["placement"] = placements.get(placement_key)
+                    response_rows.append(item)
                 return 200, {"ok": True, "source": "community",
                              "player": {"uuid": player_uuid, "name": rows[0][1]},
-                             "rows": [_entry(r) for r in profile_rows[:100]],
+                             "rows": response_rows,
                              "attemptCount": len(rows)}
             else:
                 if path.endswith("/leaderboard"):
@@ -410,7 +494,7 @@ def handle_get(path, query, db_fn, allowed_modes):
                                FROM runs WHERE %s
                              )
                              SELECT uuid,name,platform,mode,pattern,kit,stage,time_ms
-                             FROM ranked WHERE rn=1 ORDER BY stage DESC,time_ms ASC,name COLLATE NOCASE ASC LIMIT 100""" % " AND ".join(where)
+                             FROM ranked WHERE rn=1 ORDER BY stage DESC,time_ms ASC,name COLLATE NOCASE ASC,lower(uuid) ASC LIMIT 100""" % " AND ".join(where)
                     rows = c.execute(sql, tuple(args)).fetchall()
                     result = []
                     for r in rows:
@@ -448,9 +532,15 @@ def handle_get(path, query, db_fn, allowed_modes):
                                     FROM runs WHERE %s
                                     ORDER BY stage DESC,time_ms ASC,platform,mode,pattern,kit LIMIT 100""" % " AND ".join(where),
                                  tuple(args)).fetchall()
-                result = [{"uuid": r[0], "name": r[1], "platform": r[2], "mode": r[3],
-                           "pattern": int(r[4]), "kit": r[5], "stage": int(r[6]),
-                           "timeMs": int(r[7]), "source": "server", "verified": True} for r in rows]
+                placements = _server_profile_placements(c, player_uuid)
+                result = []
+                for r in rows:
+                    placement_key = (str(r[2]), str(r[3]).lower(), int(r[4]), str(r[5]),
+                                     int(r[6]), int(r[7]))
+                    result.append({"uuid": r[0], "name": r[1], "platform": r[2], "mode": r[3],
+                                   "pattern": int(r[4]), "kit": r[5], "stage": int(r[6]),
+                                   "timeMs": int(r[7]), "placement": placements.get(placement_key),
+                                   "source": "server", "verified": True})
                 profile = {"uuid": player_uuid, "name": result[0]["name"]} if result else None
                 return 200, {"ok": True, "source": "server", "verified": True, "player": profile, "rows": result}
         finally:
