@@ -38,12 +38,18 @@ def _ensure_schema(c):
         stage INTEGER NOT NULL,
         time_ms INTEGER NOT NULL DEFAULT 0,
         submitted_at INTEGER NOT NULL,
-        started_at INTEGER NOT NULL DEFAULT 0
+        started_at INTEGER NOT NULL DEFAULT 0,
+        kit_confirmed INTEGER NOT NULL DEFAULT 0,
+        kit_manual INTEGER NOT NULL DEFAULT 0
     )""")
     # Backward-compatible migration for Oracle databases created by older releases.
     columns = {row[1] for row in c.execute("PRAGMA table_info(community_mod_runs)").fetchall()}
     if "started_at" not in columns:
         c.execute("ALTER TABLE community_mod_runs ADD COLUMN started_at INTEGER NOT NULL DEFAULT 0")
+    if "kit_confirmed" not in columns:
+        c.execute("ALTER TABLE community_mod_runs ADD COLUMN kit_confirmed INTEGER NOT NULL DEFAULT 0")
+    if "kit_manual" not in columns:
+        c.execute("ALTER TABLE community_mod_runs ADD COLUMN kit_manual INTEGER NOT NULL DEFAULT 0")
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_mod_board ON community_mod_runs(context,game,mode,stage DESC,time_ms ASC)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_mod_player ON community_mod_runs(uuid,submitted_at DESC)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_community_mod_start ON community_mod_runs(uuid,context,started_at)")
@@ -506,6 +512,9 @@ def handle_submit(body, client_ip, db_fn):
             kit = "Slowball"
         if kit not in _ALLOWED_KITS:
             kit = "Unknown"
+        raw_kit_confirmed = payload.get("kitConfirmed", False)
+        kit_confirmed = raw_kit_confirmed is True or (type(raw_kit_confirmed) is int and raw_kit_confirmed == 1)
+        kit_confirmed = kit_confirmed and kit != "Unknown"
         if stage < 1 or stage > 500:
             raise ValueError("stage must be between 1 and 500")
         if time_ms < 0 or time_ms > 24 * 60 * 60 * 1000:
@@ -529,24 +538,80 @@ def handle_submit(body, client_ip, db_fn):
                 if existing:
                     return 200, {"ok": True, "accepted": True, "duplicate": True, "submissionId": sid}
 
-                # Different clients observe the same game independently and create different
-                # submission IDs. Collapse the same participant/context when game-detection
-                # timestamps are within 30 seconds; unknown/legacy timestamps (0) are not guessed.
+                # Independent clients may restart a tracker after a padskip or stale sidebar,
+                # so one real attempt can have start times over 30 seconds apart. Match the
+                # usual close starts OR overlapping player-run intervals, never unanchored rows.
                 if started_at > 0:
-                    same_round = c.execute(
-                        """SELECT submission_id, kit, pattern, started_at FROM community_mod_runs
-                           WHERE lower(uuid)=? AND context=? AND started_at BETWEEN ? AND ?
-                           ORDER BY ABS(started_at - ?) ASC LIMIT 1""",
-                        (player_uuid, context, started_at - 30_000, started_at + 30_000, started_at),
-                    ).fetchone()
+                    earliest_candidate_start = max(1, started_at - 24 * 60 * 60 * 1000)
+                    latest_candidate_start = started_at + max(time_ms, 30_000)
+                    candidates = c.execute(
+                        """SELECT submission_id, kit, pattern, started_at, time_ms, stage, kit_confirmed, context, kit_manual
+                           FROM community_mod_runs
+                           WHERE lower(uuid)=? AND started_at BETWEEN ? AND ?
+                           ORDER BY ABS(started_at - ?) ASC""",
+                        (player_uuid, earliest_candidate_start, latest_candidate_start, started_at),
+                    ).fetchall()
+                    same_round = None
+                    for candidate in candidates:
+                        old_start = int(candidate[3] or 0)
+                        old_duration = int(candidate[4] or 0)
+                        start_delta = abs(old_start - started_at)
+                        overlaps = False
+                        if old_start > 0 and old_duration > 0 and time_ms > 0:
+                            old_end = old_start + old_duration
+                            new_end = started_at + time_ms
+                            overlap = min(old_end, new_end) - max(old_start, started_at)
+                            end_delta = abs(old_end - new_end)
+                            shorter_duration = min(old_duration, time_ms)
+                            overlaps = overlap > 0 and (
+                                end_delta <= 60_000
+                                or (shorter_duration > 0 and overlap * 10 >= shorter_duration * 7)
+                            )
+                        if start_delta <= 30_000 or overlaps:
+                            same_round = candidate
+                            break
                     if same_round:
-                        # A second observer may have stronger kit/pattern evidence. Preserve
-                        # the existing row identity but fill metadata that was previously unknown.
+                        # A confirmed kit can correct a known-but-unconfirmed observation.
+                        # Never let an unconfirmed duplicate overwrite stronger kit metadata.
                         updates = {}
-                        if same_round[1] == "Unknown" and kit != "Unknown":
+                        existing_kit = str(same_round[1] or "Unknown")
+                        existing_confirmed = bool(same_round[6])
+                        existing_stage = int(same_round[5] or 0)
+                        existing_manual = bool(same_round[8]) if len(same_round) > 8 else False
+                        manual_correction = payload.get("manualKitCorrection") is True
+                        if stage > existing_stage:
+                            # Higher stage is the stronger score snapshot; update its paired
+                            # elapsed time while retaining the canonical submission ID/start.
+                            updates["stage"] = stage
+                            updates["time_ms"] = time_ms
+                        conflicting_confirmed_kits = (
+                            kit_confirmed and existing_confirmed and kit != "Unknown"
+                            and existing_kit != "Unknown" and kit != existing_kit
+                        )
+                        lower_stage_cue = conflicting_confirmed_kits and stage < existing_stage
+                        if kit != "Unknown" and (
+                                (manual_correction and not existing_manual)
+                                or (not existing_manual and not manual_correction and (
+                                    existing_kit == "Unknown"
+                                    or (kit_confirmed and not existing_confirmed)
+                                    or lower_stage_cue))):
+                            # The lower-stage snapshot is the first-death/early-finalized
+                            # cue in this padskip case. Keep its confirmed kit while retaining
+                            # the higher-stage snapshot as the canonical score/time result.
+                            # Explicit user correction has highest priority and is stored.
                             updates["kit"] = kit
+                            updates["kit_confirmed"] = 1 if kit_confirmed else 0
+                            updates["kit_manual"] = 1 if manual_correction else 0
+                        elif kit_confirmed and existing_kit == kit and not existing_confirmed:
+                            updates["kit_confirmed"] = 1
                         if int(same_round[2]) == -1 and pattern in (0, 1, 2):
                             updates["pattern"] = pattern
+                        existing_context = str(same_round[7] or "MPS").upper()
+                        # Same UUID + overlapping run timing is stronger identity evidence
+                        # than a client context that may have been resolved late after padskip.
+                        # Prefer MIN when either observer saw the Arcade node.
+                        if context == "MIN" and existing_context != "MIN":
+                            updates["context"] = "MIN"
                         if updates:
                             assignments = ", ".join(field + "=?" for field in updates)
                             c.execute("UPDATE community_mod_runs SET " + assignments + " WHERE submission_id=?",
@@ -567,9 +632,11 @@ def handle_submit(body, client_ip, db_fn):
                     return 429, {"ok": False, "error": "player_rate_limited"}
 
                 c.execute("""INSERT INTO community_mod_runs
-                             (submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at)
-                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                          (sid, player_uuid, name, context, game, mode, pattern, kit, stage, time_ms, now, started_at))
+                             (submission_id,uuid,name,context,game,mode,pattern,kit,stage,time_ms,submitted_at,started_at,kit_confirmed,kit_manual)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                          (sid, player_uuid, name, context, game, mode, pattern, kit, stage, time_ms, now,
+                           started_at, 1 if kit_confirmed else 0,
+                           1 if payload.get("manualKitCorrection") is True else 0))
                 c.commit()
                 _IP_LAST[client_ip] = monotonic
                 _PLAYER_LAST[player_uuid] = monotonic
