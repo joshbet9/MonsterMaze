@@ -67,7 +67,7 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
 
     @Override
     public void onDisable() {
-        stopRun("Server is stopping", false, false);
+        stopRun("Server is stopping", true, false);
     }
 
     @Override
@@ -761,7 +761,9 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         if (run != null && run.player.getUniqueId().equals(event.getPlayer().getUniqueId())) {
-            stopRun("Player disconnected", false, false);
+            // PlayerQuitEvent fires before the connection is fully removed. Restore the
+            // pre-run state now so the server never saves the intentionally cleared Snake inventory.
+            stopRun("Player disconnected", true, false);
         }
     }
 
