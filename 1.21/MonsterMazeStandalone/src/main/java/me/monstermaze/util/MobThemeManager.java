@@ -145,14 +145,19 @@ public final class MobThemeManager implements Listener {
     private void paintPad(Player p,PadVisual pad) {
         World w=pad.center.getWorld();int cx=pad.center.getBlockX(),cz=pad.center.getBlockZ();
         BlockData tint=padMaterial(p).createBlockData();boolean mapDefault="map_default".equals(selected(p));
+        BlockData beamGlass=glassMaterial(p).createBlockData();
         for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++){
             Location at=new Location(w,cx+x,pad.surfaceY,cz+z);Block real=w.getBlockAt(at);BlockData visual=real.getBlockData().clone();
-            if(!mapDefault&&real.getType()==Material.LIME_TERRACOTTA)visual=tint.clone();p.sendBlockChange(at,visual);
+            if(!mapDefault){
+                if(x==0&&z==0&&real.getType()==Material.GLASS)visual=beamGlass.clone();
+                else if(real.getType()==Material.LIME_TERRACOTTA)visual=tint.clone();
+            }
+            p.sendBlockChange(at,visual);
         }
-        // Clear any prior overlay left at the upper visual marker.
         Location above=new Location(w,cx,pad.surfaceY+3,cz);Block actual=w.getBlockAt(above);p.sendBlockChange(above,actual.getBlockData().clone());
     }
     private Material padMaterial(Player p){Material m=Material.matchMaterial(color(palette(p))+"_TERRACOTTA");return m==null?Material.LIME_TERRACOTTA:m;}
+    private Material glassMaterial(Player p){Material m=Material.matchMaterial(color(palette(p))+"_STAINED_GLASS");return m==null?Material.LIME_STAINED_GLASS:m;}
 
     private boolean visibleTo(Player p,PadVisual d){if(p==null||!p.isOnline()||d.center.getWorld()==null||!p.getWorld().equals(d.center.getWorld()))return false;Location l=p.getLocation();return Math.abs(l.getX()-d.center.getX())<=192&&Math.abs(l.getZ()-d.center.getZ())<=192;}
     private String palette(Player p){String s=selected(p);if("map_default".equals(s))return s;return "random".equals(s)?randomConcrete(p.getUniqueId(),null):s;}

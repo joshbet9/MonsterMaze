@@ -43,51 +43,47 @@ public class SafePad implements Listener {
 
     @EventHandler
     public void onInteract(PlayerInteractEvent event) {
-        if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
-            Block block = event.getClickedBlock();
-            if (block != null && block.getType() == Material.BEACON) {
-                World world = center.getWorld();
-                if (block.getWorld().equals(world)
-                        && block.getX() == center.getBlockX()
-                        && block.getY() == surfaceY
-                        && block.getZ() == center.getBlockZ()) {
-                    event.setCancelled(true);
-                }
-            }
-        }
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+        Block block = event.getClickedBlock();
+        if (block == null || block.getType() != Material.GLASS) return;
+        World world = center.getWorld();
+        if (block.getWorld().equals(world)
+                && block.getX() == center.getBlockX()
+                && block.getY() == surfaceY
+                && block.getZ() == center.getBlockZ()) event.setCancelled(true);
     }
 
     @SuppressWarnings("deprecation")
     private void captureAndBuild() {
         World world = center.getWorld();
-        int cx = center.getBlockX();
-        int cy = surfaceY;
-        int cz = center.getBlockZ();
+        int cx = center.getBlockX(), cy = surfaceY, cz = center.getBlockZ();
 
+        // Keep glass at the pad surface so it is walked on like a floor tile. The beacon
+        // and its iron base are one block lower, allowing the glass to tint the beam safely.
         for (int x = -2; x <= 2; x++) {
             for (int z = -2; z <= 2; z++) {
-                if (x == 0 && z == 0) continue;
-                setBlock(world.getBlockAt(cx + x, cy, cz + z), Material.STAINED_CLAY, (byte) 5);
+                if (x == 0 && z == 0) setBlock(world.getBlockAt(cx, cy, cz), Material.GLASS, (byte) 0);
+                else setBlock(world.getBlockAt(cx + x, cy, cz + z), Material.STAINED_CLAY, (byte) 5);
             }
         }
-        setBlock(world.getBlockAt(cx, cy, cz), Material.BEACON, (byte) 0);
+        setBlock(world.getBlockAt(cx, cy - 1, cz), Material.BEACON, (byte) 0);
 
         for (int x = -1; x <= 1; x++) {
             for (int z = -1; z <= 1; z++) {
-                setBlock(world.getBlockAt(cx + x, cy - 1, cz + z), Material.IRON_BLOCK, (byte) 0);
+                setBlock(world.getBlockAt(cx + x, cy - 2, cz + z), Material.IRON_BLOCK, (byte) 0);
             }
         }
 
         for (int x = -1; x <= 1; x++) {
-            setBlock(world.getBlockAt(cx + x, cy - 1, cz + 2), Material.QUARTZ_STAIRS, (byte) 7);
-            setBlock(world.getBlockAt(cx + x, cy - 1, cz - 2), Material.QUARTZ_STAIRS, (byte) 6);
-            setBlock(world.getBlockAt(cx + 2, cy - 1, cz + x), Material.QUARTZ_STAIRS, (byte) 5);
-            setBlock(world.getBlockAt(cx - 2, cy - 1, cz + x), Material.QUARTZ_STAIRS, (byte) 4);
+            setBlock(world.getBlockAt(cx + x, cy - 2, cz + 2), Material.QUARTZ_STAIRS, (byte) 7);
+            setBlock(world.getBlockAt(cx + x, cy - 2, cz - 2), Material.QUARTZ_STAIRS, (byte) 6);
+            setBlock(world.getBlockAt(cx + 2, cy - 2, cz + x), Material.QUARTZ_STAIRS, (byte) 5);
+            setBlock(world.getBlockAt(cx - 2, cy - 2, cz + x), Material.QUARTZ_STAIRS, (byte) 4);
         }
-        setBlock(world.getBlockAt(cx + 2, cy - 1, cz + 2), Material.QUARTZ_BLOCK, (byte) 1);
-        setBlock(world.getBlockAt(cx - 2, cy - 1, cz + 2), Material.QUARTZ_BLOCK, (byte) 1);
-        setBlock(world.getBlockAt(cx + 2, cy - 1, cz - 2), Material.QUARTZ_BLOCK, (byte) 1);
-        setBlock(world.getBlockAt(cx - 2, cy - 1, cz - 2), Material.QUARTZ_BLOCK, (byte) 1);
+        setBlock(world.getBlockAt(cx + 2, cy - 2, cz + 2), Material.QUARTZ_BLOCK, (byte) 1);
+        setBlock(world.getBlockAt(cx - 2, cy - 2, cz + 2), Material.QUARTZ_BLOCK, (byte) 1);
+        setBlock(world.getBlockAt(cx + 2, cy - 2, cz - 2), Material.QUARTZ_BLOCK, (byte) 1);
+        setBlock(world.getBlockAt(cx - 2, cy - 2, cz - 2), Material.QUARTZ_BLOCK, (byte) 1);
 
         for (int x = -2; x <= 2; x++) {
             for (int z = -2; z <= 2; z++) {
@@ -153,13 +149,15 @@ public class SafePad implements Listener {
     public void turnOffBeacon() {
         World world = center.getWorld();
         int cx = center.getBlockX(), cy = surfaceY, cz = center.getBlockZ();
-        Block beacon = world.getBlockAt(cx, cy, cz);
-        if (beacon.getType() == Material.BEACON) {
-            beacon.setType(Material.STAINED_CLAY);
-            beacon.setData((byte) 5);
+        Block surface = world.getBlockAt(cx, cy, cz);
+        if (surface.getType() == Material.GLASS) {
+            surface.setType(Material.STAINED_CLAY);
+            surface.setData((byte) 5);
         }
+        Block beacon = world.getBlockAt(cx, cy - 1, cz);
+        if (beacon.getType() == Material.BEACON) beacon.setType(Material.AIR);
         for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) {
-            Block iron = world.getBlockAt(cx + x, cy - 1, cz + z);
+            Block iron = world.getBlockAt(cx + x, cy - 2, cz + z);
             if (iron.getType() == Material.IRON_BLOCK) iron.setType(Material.QUARTZ_BLOCK);
         }
         MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();

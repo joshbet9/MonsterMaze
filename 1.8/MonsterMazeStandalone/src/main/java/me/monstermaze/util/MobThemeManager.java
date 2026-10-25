@@ -110,7 +110,14 @@ public final class MobThemeManager implements Listener {
     @SuppressWarnings("deprecation") private void paintPad(Player p,PadVisual d){
         World w=d.center.getWorld();int cx=d.center.getBlockX(),cz=d.center.getBlockZ();byte tint=colorData(palette(p));
         boolean mapDefault="map_default".equals(selected(p));
-        for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++){Location at=new Location(w,cx+x,d.surfaceY,cz+z);Block b=w.getBlockAt(at);byte data=b.getData();if(!mapDefault&&b.getType()==Material.STAINED_CLAY&&data==5)data=tint;p.sendBlockChange(at,b.getType(),data);}
+        for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++){
+            Location at=new Location(w,cx+x,d.surfaceY,cz+z);Block b=w.getBlockAt(at);byte data=b.getData();Material visualType=b.getType();
+            if(!mapDefault){
+                if(x==0&&z==0&&b.getType()==Material.GLASS){visualType=Material.STAINED_GLASS;data=tint;}
+                else if(b.getType()==Material.STAINED_CLAY&&data==5)data=tint;
+            }
+            p.sendBlockChange(at,visualType,data);
+        }
         Location above=new Location(w,cx,d.surfaceY+3,cz);Block actual=w.getBlockAt(above);p.sendBlockChange(above,actual.getType(),actual.getData());
     }
 

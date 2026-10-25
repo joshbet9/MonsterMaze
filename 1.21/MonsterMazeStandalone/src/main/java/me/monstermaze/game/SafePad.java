@@ -45,31 +45,36 @@ public class SafePad implements Listener {
     public void onInteract(PlayerInteractEvent event) {
         if (event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
         Block block = event.getClickedBlock();
-        if (block == null || block.getType() != Material.BEACON) return;
-        World world = center.getWorld();
-        if (block.getWorld().equals(world) && block.getX() == center.getBlockX()
-                && block.getY() == surfaceY && block.getZ() == center.getBlockZ()) event.setCancelled(true);
+        if (block == null || block.getType() != Material.GLASS) return;
+        if (block.getWorld().equals(center.getWorld())
+                && block.getX() == center.getBlockX()
+                && block.getY() == surfaceY
+                && block.getZ() == center.getBlockZ()) event.setCancelled(true);
     }
 
     private void captureAndBuild() {
         World world = center.getWorld();
         int cx = center.getBlockX(), cy = surfaceY, cz = center.getBlockZ();
+
+        // The central glass is the walkable surface and tints each viewer's vanilla beacon beam.
+        // The beacon and its iron base sit one block lower so the glass does not obstruct movement.
         for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) {
-            if (x != 0 || z != 0) setBlock(world.getBlockAt(cx + x, cy, cz + z), Material.LIME_TERRACOTTA);
+            setBlock(world.getBlockAt(cx + x, cy, cz + z),
+                    (x == 0 && z == 0) ? Material.GLASS : Material.LIME_TERRACOTTA);
         }
-        setBlock(world.getBlockAt(cx, cy, cz), Material.BEACON);
+        setBlock(world.getBlockAt(cx, cy - 1, cz), Material.BEACON);
         for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++)
-            setBlock(world.getBlockAt(cx + x, cy - 1, cz + z), Material.IRON_BLOCK);
+            setBlock(world.getBlockAt(cx + x, cy - 2, cz + z), Material.IRON_BLOCK);
         for (int x = -1; x <= 1; x++) {
-            setBlock(world.getBlockAt(cx + x, cy - 1, cz + 2), stairs(Material.QUARTZ_STAIRS, BlockFace.NORTH));
-            setBlock(world.getBlockAt(cx + x, cy - 1, cz - 2), stairs(Material.QUARTZ_STAIRS, BlockFace.SOUTH));
-            setBlock(world.getBlockAt(cx + 2, cy - 1, cz + x), stairs(Material.QUARTZ_STAIRS, BlockFace.WEST));
-            setBlock(world.getBlockAt(cx - 2, cy - 1, cz + x), stairs(Material.QUARTZ_STAIRS, BlockFace.EAST));
+            setBlock(world.getBlockAt(cx + x, cy - 2, cz + 2), stairs(Material.QUARTZ_STAIRS, BlockFace.NORTH));
+            setBlock(world.getBlockAt(cx + x, cy - 2, cz - 2), stairs(Material.QUARTZ_STAIRS, BlockFace.SOUTH));
+            setBlock(world.getBlockAt(cx + 2, cy - 2, cz + x), stairs(Material.QUARTZ_STAIRS, BlockFace.WEST));
+            setBlock(world.getBlockAt(cx - 2, cy - 2, cz + x), stairs(Material.QUARTZ_STAIRS, BlockFace.EAST));
         }
-        setBlock(world.getBlockAt(cx + 2, cy - 1, cz + 2), Material.CHISELED_QUARTZ_BLOCK);
-        setBlock(world.getBlockAt(cx - 2, cy - 1, cz + 2), Material.CHISELED_QUARTZ_BLOCK);
-        setBlock(world.getBlockAt(cx + 2, cy - 1, cz - 2), Material.CHISELED_QUARTZ_BLOCK);
-        setBlock(world.getBlockAt(cx - 2, cy - 1, cz - 2), Material.CHISELED_QUARTZ_BLOCK);
+        setBlock(world.getBlockAt(cx + 2, cy - 2, cz + 2), Material.CHISELED_QUARTZ_BLOCK);
+        setBlock(world.getBlockAt(cx - 2, cy - 2, cz + 2), Material.CHISELED_QUARTZ_BLOCK);
+        setBlock(world.getBlockAt(cx + 2, cy - 2, cz - 2), Material.CHISELED_QUARTZ_BLOCK);
+        setBlock(world.getBlockAt(cx - 2, cy - 2, cz - 2), Material.CHISELED_QUARTZ_BLOCK);
         for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) for (int y = 1; y <= 3; y++) {
             Block air = world.getBlockAt(cx + x, cy + y, cz + z);
             if (air.getType() != Material.AIR) setBlock(air, Material.AIR);
@@ -79,7 +84,9 @@ public class SafePad implements Listener {
     public void ensureBeacon() {
         World world = center.getWorld();
         if (world == null) return;
-        Block beacon = world.getBlockAt(center.getBlockX(), surfaceY, center.getBlockZ());
+        Block surface = world.getBlockAt(center.getBlockX(), surfaceY, center.getBlockZ());
+        if (surface.getType() != Material.GLASS) surface.setType(Material.GLASS, false);
+        Block beacon = world.getBlockAt(center.getBlockX(), surfaceY - 1, center.getBlockZ());
         if (beacon.getType() != Material.BEACON) beacon.setType(Material.BEACON, false);
         BlockState state = beacon.getState();
         state.update(true, true);
@@ -141,14 +148,14 @@ public class SafePad implements Listener {
     public void turnOffBeacon() {
         World world = center.getWorld();
         int cx = center.getBlockX(), cy = surfaceY, cz = center.getBlockZ();
-        Block beacon = world.getBlockAt(cx, cy, cz);
-        if (beacon.getType() == Material.BEACON) beacon.setType(Material.LIME_TERRACOTTA, false);
+        Block surface = world.getBlockAt(cx, cy, cz);
+        if (surface.getType() == Material.GLASS) surface.setType(Material.LIME_TERRACOTTA, false);
+        Block beacon = world.getBlockAt(cx, cy - 1, cz);
+        if (beacon.getType() == Material.BEACON) beacon.setType(Material.AIR, false);
         MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
         if (plugin != null && plugin.getMobThemeManager() != null) plugin.getMobThemeManager().setSafePadBeaconActive(center, false);
-        // Do not convert the iron base to quartz here. The quartz is only the decorative
-        // frame around the pad; changing the 3x3 base to quartz creates a visible flash of
-        // quartz when the active pad is removed. The snapshots retain the actual maze blocks
-        // that were underneath the pad and restore them when the old pad is finally destroyed.
+        // The beacon is beneath the floor glass. Turning it off swaps the centre surface
+        // to opaque terracotta and removes the hidden beacon; snapshots restore both later.
     }
 
     private static class BlockSnapshot {
