@@ -41,9 +41,15 @@ public final class MonsterDisguiseListener {
             plugin.getLogger().warning("[MonsterMaze] Could not refresh mob disguise for "+p.getName()+": "+failure.getClass().getSimpleName());
         }
     }
+    private Entity findEntityById(int entityId,Player viewer){
+        if(viewer!=null&&viewer.getWorld()!=null)
+            for(Entity candidate:viewer.getWorld().getEntities())if(candidate.getEntityId()==entityId)return candidate;
+        return null;
+    }
     private void rewriteSpawn(PacketEvent event) {
         try {
-            Entity e=event.getPacket().getEntityModifier(event).read(0);
+            int entityId=event.getPacket().getIntegers().read(0);
+            Entity e=findEntityById(entityId,event.getPlayer());
             if(e==null||!e.hasMetadata(MobThemeManager.MOB_METADATA))return;
             String id=plugin.getMobThemeManager()==null?"snowman":plugin.getMobThemeManager().forViewer(event.getPlayer(),e.getUniqueId());
             MobTypes.MobType mob=MobTypes.byId(id);if(mob==null||mob.entityId<0)return;
@@ -52,7 +58,8 @@ public final class MonsterDisguiseListener {
     }
     private void sanitizeMetadata(PacketEvent event) {
         try {
-            Entity e=event.getPacket().getEntityModifier(event).read(0);
+            int entityId=event.getPacket().getIntegers().read(0);
+            Entity e=findEntityById(entityId,event.getPlayer());
             if(e==null||!e.hasMetadata(MobThemeManager.MOB_METADATA))return;
             List<WrappedWatchableObject> values=event.getPacket().getWatchableCollectionModifier().read(0);
             if(values==null||values.isEmpty())return;

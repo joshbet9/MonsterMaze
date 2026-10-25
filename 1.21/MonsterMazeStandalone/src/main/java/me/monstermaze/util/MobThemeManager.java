@@ -17,7 +17,6 @@ import org.bukkit.event.player.*;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.SkullMeta;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
@@ -31,43 +30,15 @@ public final class MobThemeManager implements Listener {
         "chicken","squid","wolf","mooshroom","snowman","ocelot","horse","rabbit","villager","random"));
     private final MonsterMazePlugin plugin;
 
-    private static final Map<String, UUID> HEAD_UUIDS = createHeadUuids();
-    private static Map<String, UUID> createHeadUuids() {
-        Map<String, UUID> values = new HashMap<String, UUID>();
-        putHead(values, "MHF_Creeper", "057b1c4713214863a6fe8887f9ec265f");
-        putHead(values, "MHF_Blaze", "4c38ed11596a4fd4ab1d26f386c1cbac");
-        putHead(values, "MHF_CaveSpider", "cab28771f0cd4fe7b12902c69eba79a5");
-        putHead(values, "MHF_Chicken", "92deafa9430742d9b00388601598d6c0");
-        putHead(values, "MHF_Cow", "f159b274c22e4340b7c152abde147713");
-        putHead(values, "MHF_Enderman", "40ffb37212f64678b3f22176bf56dd4b");
-        putHead(values, "MHF_LavaSlime", "0972bdd14b8649fb9ecca353f8491a51");
-        putHead(values, "MHF_MushroomCow", "a46817d673c54f3fb712af6b3ff47b96");
-        putHead(values, "MHF_Ocelot", "1bee9df54f7142a2bf52d97970d3fea3");
-        putHead(values, "MHF_Pig", "8b57078bf1bd45df83c4d88d16768fbe");
-        putHead(values, "MHF_PigZombie", "18a2bb50334a408491842c380251a24b");
-        putHead(values, "MHF_Sheep", "dfaad5514e7e45a1a6f7c6fc5ec823ac");
-        putHead(values, "MHF_Skeleton", "a3f427a818c549c5a4fb64c6e0e1e0a8");
-        putHead(values, "MHF_Slime", "870aba9340e848b389c532ece00d6630");
-        putHead(values, "MHF_Spider", "5ad55f3441b64bd29c3218983c635936");
-        putHead(values, "MHF_Squid", "72e64683e3134c36a408c66b64e94af5");
-        putHead(values, "MHF_Villager", "bd482739767c45dca1f8c33c40530952");
-        putHead(values, "MHF_Witch", "fef85c492fdf47f89132552046243223");
-        putHead(values, "MHF_Wolf", "8d2d1d6d80344c89bd86809a31fd5193");
-        putHead(values, "MHF_Zombie", "daca2c3d719b41f5b624e4039e6c04bd");
-        putHead(values, "MHF_Question", "606e2ff0ed7748429d6ce1d3321c7838");
-        return Collections.unmodifiableMap(values);
-    }
-    private static void putHead(Map<String, UUID> values, String name, String hex) {
-        values.put(name, UUID.fromString(hex.substring(0, 8) + "-" + hex.substring(8, 12) + "-"
-                + hex.substring(12, 16) + "-" + hex.substring(16, 20) + "-" + hex.substring(20)));
-    }
     private final File file;
     private final Map<UUID,String> choices = new LinkedHashMap<UUID,String>();
     private final Map<String,PadVisual> pads = new LinkedHashMap<String,PadVisual>();
     private boolean warnedMissingDisguise;
+    private final org.bukkit.scheduler.BukkitTask beaconBeamTask;
     public MobThemeManager(MonsterMazePlugin plugin) {
         this.plugin=plugin; this.file=new File(plugin.getDataFolder(),"player-mob-themes.yml"); load();
         Bukkit.getPluginManager().registerEvents(this,plugin);
+        beaconBeamTask=Bukkit.getScheduler().runTaskTimer(plugin,new Runnable(){@Override public void run(){renderBeaconBeams();}},2L,4L);
     }
     public String selected(Player player) {
         if(player==null)return defaultTheme();
@@ -78,32 +49,27 @@ public final class MobThemeManager implements Listener {
     }
     public void giveSelector(Player p) {
         if(p==null||!p.isOnline())return;
-        String choice=selected(p), iconTheme="map_default".equals(choice)?defaultTheme():choice;
-        String owner="random".equals(iconTheme)?"MHF_Question":headOwner(iconTheme);
-        UUID profileId=owner==null?null:HEAD_UUIDS.get(owner);
-        ItemStack item; ItemMeta meta;
-        if(profileId!=null){
-            item=new ItemStack(Material.PLAYER_HEAD);meta=item.getItemMeta();
-            if(meta instanceof SkullMeta){
-                SkullMeta skull=(SkullMeta)meta;
-                try{skull.setOwnerProfile(Bukkit.createPlayerProfile(profileId,owner));}
-                catch(Throwable ignored){try{skull.setOwningPlayer(Bukkit.getOfflinePlayer(profileId));}catch(Throwable ignoredAgain){}}
-                meta=skull;
-            }
-        }else{
-            Material egg=spawnEggMaterial(iconTheme);
-            item=new ItemStack(egg==null?Material.PAPER:egg);meta=item.getItemMeta();
-        }
+        String choice=selected(p),iconTheme="map_default".equals(choice)?defaultTheme():choice;
+        Material icon=selectorIcon(iconTheme);ItemStack item=new ItemStack(icon==null?Material.PAPER:icon);
+        ItemMeta meta=item.getItemMeta();
         meta.setDisplayName(ChatColor.LIGHT_PURPLE+"Mob Theme: "+ChatColor.YELLOW+displayName(choice));
-        meta.setLore(Arrays.asList(ChatColor.GRAY+"Right-click to cycle mob themes",ChatColor.GRAY+"Changes mob appearance and Safe Pad colour",ChatColor.GRAY+"Map Default uses the map's normal mob and colours."));
+        meta.setLore(Arrays.asList(ChatColor.GRAY+"Right-click to cycle mob themes",ChatColor.GRAY+"Uses vanilla mob heads or spawn eggs",ChatColor.GRAY+"Map Default uses the map's normal mob and colours."));
         item.setItemMeta(meta);p.getInventory().setItem(SLOT,item);p.updateInventory();
+    }
+    private static Material selectorIcon(String theme){
+        if("random".equals(theme))return Material.NETHER_STAR;
+        if("creeper".equals(theme))return Material.CREEPER_HEAD;
+        if("skeleton".equals(theme))return Material.SKELETON_SKULL;
+        if("zombie".equals(theme))return Material.ZOMBIE_HEAD;
+        if("snowman".equals(theme))return Material.PUMPKIN;
+        return spawnEggMaterial(theme);
     }
     private static Material spawnEggMaterial(String theme){
         String id=theme==null?"creeper":theme.toLowerCase(Locale.ROOT);
         if("zombie_pigman".equals(id))id="zombified_piglin";
         if("snowman".equals(id))id="snow_golem";
         Material egg=Material.matchMaterial(id.toUpperCase(Locale.ROOT)+"_SPAWN_EGG");
-        if(egg==null)egg=Material.matchMaterial("PIG_SPAWN_EGG");
+        if(egg==null)egg=Material.PIG_SPAWN_EGG;
         return egg;
     }
     public void registerSafePad(Location center) {
@@ -129,7 +95,7 @@ public final class MobThemeManager implements Listener {
             Location tint=new Location(w,cx,pad.surfaceY+3,cz);p.sendBlockChange(tint,w.getBlockAt(tint).getBlockData().clone());
         }
     }
-    public void shutdown(){save();}
+    public void shutdown(){save();if(beaconBeamTask!=null)beaconBeamTask.cancel();}
     @EventHandler public void onThemeClick(PlayerInteractEvent e) {
         if(e.getHand()!=EquipmentSlot.HAND)return;
         Action a=e.getAction(); if(a!=Action.RIGHT_CLICK_AIR&&a!=Action.RIGHT_CLICK_BLOCK)return;
@@ -139,11 +105,11 @@ public final class MobThemeManager implements Listener {
         if(!plugin.hasPerPlayerMobDisguises()&&!warnedMissingDisguise){p.sendMessage(ChatColor.RED+"Mob appearance changes require ProtocolLib; Safe Pad and beacon colours still update.");warnedMissingDisguise=true;}
         p.sendMessage(ChatColor.LIGHT_PURPLE+"Mob theme: "+ChatColor.YELLOW+displayName(selected(p))+ChatColor.GRAY+" (personal view).");
     }
-    @EventHandler(priority=org.bukkit.event.EventPriority.MONITOR)
-    public void refreshTintAfterTerracottaInteraction(PlayerInteractEvent e){
-        if(e.getAction()!=Action.RIGHT_CLICK_BLOCK||e.getClickedBlock()==null)return;
-        if(!e.getClickedBlock().getType().name().endsWith("TERRACOTTA")||"map_default".equals(selected(e.getPlayer())))return;
-        laterRefresh(e.getPlayer());
+    @EventHandler(priority=org.bukkit.event.EventPriority.MONITOR,ignoreCancelled=true)
+    public void refreshTintAfterTerracottaInteraction(final PlayerInteractEvent e){
+        if(e.getAction()!=Action.RIGHT_CLICK_BLOCK||e.getClickedBlock()==null||!e.getClickedBlock().getType().name().endsWith("TERRACOTTA"))return;
+        final Player player=e.getPlayer();
+        for(long delay:new long[]{1L,3L,6L})Bukkit.getScheduler().runTaskLater(plugin,new Runnable(){@Override public void run(){if(player.isOnline())refreshPlayerPads(player);}},delay);
     }
     @EventHandler public void onInventoryClick(InventoryClickEvent e) {
         if(!(e.getWhoClicked() instanceof Player))return; Player p=(Player)e.getWhoClicked();
@@ -171,6 +137,36 @@ public final class MobThemeManager implements Listener {
     }
     private Material padMaterial(Player p){Material m=Material.matchMaterial(color(palette(p))+"_TERRACOTTA");return m==null?Material.LIME_TERRACOTTA:m;}
     private Material glassMaterial(Player p){Material m=Material.matchMaterial(color(palette(p))+"_STAINED_GLASS");return m==null?Material.LIME_STAINED_GLASS:m;}
+    private void renderBeaconBeams(){
+        for(Player viewer:Bukkit.getOnlinePlayers()){
+            if("map_default".equals(selected(viewer)))continue;
+            int[] rgb=beamRgb(palette(viewer));
+            org.bukkit.Color color=org.bukkit.Color.fromRGB(rgb[0],rgb[1],rgb[2]);
+            org.bukkit.Particle.DustOptions dust=new org.bukkit.Particle.DustOptions(color,1.4f);
+            
+            for(PadVisual pad:pads.values()){
+                if(!pad.beaconActive||!visibleTo(viewer,pad)||pad.center.getWorld()==null)continue;
+                World world=pad.center.getWorld();int top=Math.min(world.getMaxHeight()-1,pad.surfaceY+28);
+                for(int y=pad.surfaceY+1;y<=top;y+=2){
+                    Location point=new Location(world,pad.center.getBlockX()+0.5,y+0.05,pad.center.getBlockZ()+0.5);
+                    viewer.spawnParticle(org.bukkit.Particle.DUST,point,1,0.01,0.01,0.01,0.0,dust);
+                }
+            }
+        }
+    }
+    private static int[] beamRgb(String theme){
+        switch(normalize(theme)){
+            case "skeleton":return new int[]{225,225,225};case "spider":return new int[]{45,45,45};
+            case "silverfish":case "bat":case "wolf":return new int[]{135,135,135};
+            case "zombie":return new int[]{45,205,50};case "zombie_pigman":case "magma_cube":case "mooshroom":return new int[]{255,60,60};
+            case "enderman":case "witch":return new int[]{190,65,255};case "cave_spider":return new int[]{35,195,255};
+            case "blaze":case "villager":return new int[]{255,175,30};case "endermite":return new int[]{255,30,200};
+            case "guardian":return new int[]{25,225,225};case "pig":case "rabbit":return new int[]{255,125,185};
+            case "cow":case "horse":return new int[]{155,95,45};case "squid":return new int[]{45,85,255};
+            case "ocelot":return new int[]{255,230,20};case "sheep":case "chicken":case "snowman":return new int[]{245,245,245};
+            default:return new int[]{125,255,0};
+        }
+    }
     private boolean visibleTo(Player p,PadVisual d){if(p==null||!p.isOnline()||d.center.getWorld()==null||!p.getWorld().equals(d.center.getWorld()))return false;Location l=p.getLocation();return Math.abs(l.getX()-d.center.getX())<=192&&Math.abs(l.getZ()-d.center.getZ())<=192;}
     private String palette(Player p){String s=selected(p);if("map_default".equals(s))return s;return "random".equals(s)?randomConcrete(p.getUniqueId(),null):s;}
     private String defaultTheme(){try{String s=plugin.getMapManager()==null?null:plugin.getMapManager().activeMob();return normalize(s==null?"creeper":s);}catch(Throwable ignored){return "creeper";}}
@@ -191,18 +187,6 @@ public final class MobThemeManager implements Listener {
         }
     }
     private static String displayName(String s){if("map_default".equals(s))return "Map Default";if("random".equals(s))return "Random Mob";StringBuilder b=new StringBuilder();for(String part:normalize(s).split("_")){if(b.length()>0)b.append(' ');b.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));}return b.toString();}
-    private static String headOwner(String s) {
-        switch(normalize(s)){
-            case "creeper":return "MHF_Creeper";case "skeleton":return "MHF_Skeleton";case "spider":return "MHF_Spider";
-            case "zombie":return "MHF_Zombie";case "slime":return "MHF_Slime";case "zombie_pigman":return "MHF_PigZombie";
-            case "enderman":return "MHF_Enderman";case "cave_spider":return "MHF_CaveSpider";case "blaze":return "MHF_Blaze";
-            case "magma_cube":return "MHF_LavaSlime";case "witch":return "MHF_Witch";case "pig":return "MHF_Pig";
-            case "sheep":return "MHF_Sheep";case "cow":return "MHF_Cow";case "chicken":return "MHF_Chicken";
-            case "squid":return "MHF_Squid";case "wolf":return "MHF_Wolf";case "mooshroom":return "MHF_MushroomCow";
-            case "ocelot":return "MHF_Ocelot";case "villager":return "MHF_Villager";case "random":return "MHF_Question";
-            default:return null;
-        }
-    }
     private static boolean isSelector(ItemStack i){if(i==null||!i.hasItemMeta())return false;ItemMeta m=i.getItemMeta();return m!=null&&m.hasDisplayName()&&ChatColor.stripColor(m.getDisplayName()).startsWith("Mob Theme:");}
     private String key(Location l){return l.getWorld().getUID()+":"+l.getBlockX()+":"+l.getBlockY()+":"+l.getBlockZ();}
     private void load(){if(!file.exists())return;YamlConfiguration y=YamlConfiguration.loadConfiguration(file);for(String id:y.getKeys(false)){try{choices.put(UUID.fromString(id),normalize(y.getString(id)));}catch(IllegalArgumentException ignored){}}}

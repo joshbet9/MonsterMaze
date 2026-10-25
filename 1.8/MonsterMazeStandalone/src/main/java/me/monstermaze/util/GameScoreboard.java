@@ -49,27 +49,48 @@ public class GameScoreboard {
 
     public void update(Player p, int alive, int stage, int phaseSeconds, boolean hasPad, String mode, String pbText,
                        List<PlayerDistance> standings) {
-        Scoreboard board=boardFor(p); Objective obj=board.getObjective("mm"); if(obj==null)return;
-        setLine(board,obj,"line_mode",getUniqueEntry(15),15,ChatColor.YELLOW+"Mode: ",ChatColor.WHITE+(mode==null?"?":mode));
-        obj.getScore(label(ChatColor.YELLOW,"Players:")).setScore(14);
-        int count=standings==null?0:Math.min(10,standings.size());
-        for(int i=0;i<10;i++){
-            String teamName="line_p"+i, entry=getUniqueEntry(i+1);
-            if(i<count){
-                PlayerDistance player=standings.get(i);String name=player.name.length()>14?player.name.substring(0,14):player.name;
-                setLine(board,obj,teamName,entry,13-i,ChatColor.YELLOW+name,ChatColor.GRAY+" "+player.distance+"b");
-            }else{
-                Team old=board.getTeam(teamName);if(old!=null){board.resetScores(entry);old.unregister();}
-            }
+        Scoreboard board=boardFor(p);Objective obj=board.getObjective("mm");if(obj==null)return;
+        int total=standings==null?0:standings.size();
+        boolean paging=total>14;int pageSize=paging?14:15;
+        int pages=paging?(total+pageSize-1)/pageSize:1;
+        int page=paging?(int)((System.currentTimeMillis()/5000L)%pages):0;
+        int offset=page*pageSize;int count=Math.max(0,Math.min(pageSize,total-offset));
+        boolean compact=total>10;
+        obj.setDisplayName(paging?ChatColor.GOLD+""+ChatColor.BOLD+"Monster Maze ("+(page+1)+"/"+pages+")":
+                ChatColor.GOLD+""+ChatColor.BOLD+"Monster Maze");
+        if(compact){
+            removeLine(board,"line_mode");removeLine(board,"line_pad");removeLine(board,"line_stage");removeLine(board,"line_pb");
+            obj.getScore(label(ChatColor.YELLOW,"Players:")).setScore(15);
+        }else{
+            setLine(board,obj,"line_mode",getUniqueEntry(15),15,ChatColor.YELLOW+"Mode: ",ChatColor.WHITE+(mode==null?"?":mode));
+            obj.getScore(label(ChatColor.YELLOW,"Players:")).setScore(14);
         }
-        int padScore=13-count, stageScore=12-count, pbScore=11-count;
-        setLine(board,obj,"line_pad",getUniqueEntry(12),padScore,ChatColor.GREEN+"Pad: ",
-                hasPad?ChatColor.WHITE+""+phaseSeconds+"s":ChatColor.GRAY+"None");
-        setLine(board,obj,"line_stage",getUniqueEntry(13),stageScore,ChatColor.GOLD+"Stage: ",ChatColor.WHITE+String.valueOf(stage));
-        String pb=pbText!=null&&!pbText.isEmpty()?pbText:"None";
-        setLine(board,obj,"line_pb",getUniqueEntry(14),pbScore,ChatColor.AQUA+"PB: ",ChatColor.WHITE+pb);
+        for(int i=0;i<15;i++){
+            String teamName="line_p"+i,entry=getUniqueEntry(i+1);
+            if(i<count){
+                PlayerDistance player=standings.get(offset+i);
+                String name=player.name.length()>14?player.name.substring(0,14):player.name;
+                int score=compact?14-i:13-i;
+                setLine(board,obj,teamName,entry,score,ChatColor.YELLOW+name,ChatColor.GRAY+" "+player.distance+"b");
+            }else removeLine(board,teamName);
+        }
+        if(!compact){
+            int padScore=13-count,stageScore=12-count,pbScore=11-count;
+            setLine(board,obj,"line_pad",getUniqueEntry(12),padScore,ChatColor.GREEN+"Pad: ",
+                    hasPad?ChatColor.WHITE+""+phaseSeconds+"s":ChatColor.GRAY+"None");
+            setLine(board,obj,"line_stage",getUniqueEntry(13),stageScore,ChatColor.GOLD+"Stage: ",ChatColor.WHITE+String.valueOf(stage));
+            String pb=pbText!=null&&!pbText.isEmpty()?pbText:"None";
+            setLine(board,obj,"line_pb",getUniqueEntry(14),pbScore,ChatColor.AQUA+"PB: ",ChatColor.WHITE+pb);
+        }
         applyVisibility(p);
     }
+
+    private void removeLine(Scoreboard board,String teamName){
+        Team team=board.getTeam(teamName);if(team==null)return;
+        for(String entry:new java.util.ArrayList<String>(team.getEntries())){board.resetScores(entry);team.removeEntry(entry);}
+        team.unregister();
+    }
+
     private void setLine(Scoreboard board,Objective obj,String teamName,String entry,int score,String prefix,String suffix){
         Team team=board.getTeam(teamName);if(team==null)team=board.registerNewTeam(teamName);
         if(!team.hasEntry(entry)){
