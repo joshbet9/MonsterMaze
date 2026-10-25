@@ -15,6 +15,8 @@ $maps = Join-Path $here "maps"
 $sourceProject = Join-Path $repoRoot "1.8/MonsterMazeStandalone"
 $sourceJar = Join-Path $sourceProject "target/MonsterMazeStandalone.jar"
 $soloJar = Join-Path $here "server/plugins/MonsterMazeStandalone.jar"
+$protocolLibUrl = 'https://github.com/dmulloy2/ProtocolLib/releases/download/4.8.0/ProtocolLib.jar'
+$protocolLib = if ($env:MM_PROTOCOLLIB18_JAR) { $env:MM_PROTOCOLLIB18_JAR } else { Join-Path $here "tools/ProtocolLib-4.8.0.jar" }
 $maven = "mvn"
 
 if ($env:MM_SOLO_JDK8_WINDOWS) {
@@ -40,6 +42,13 @@ $javaExe = if ($IsWindows) { "java.exe" } else { "java.exe" }
 
 if (-not (Test-Path (Join-Path $JDK8 "bin/$javaExe"))) { throw "JDK8 not found at $JDK8" }
 if (-not (Test-Path $SPIGOT)) { throw "spigot jar not found at $SPIGOT" }
+if (-not (Test-Path $protocolLib)) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $protocolLib) | Out-Null
+    $headers = @{ 'User-Agent' = 'MonsterMaze-Release/1.0 (https://github.com/joshbet9/MonsterMaze)' }
+    Write-Host "Downloading ProtocolLib 4.8.0 for the Java 8 server..."
+    Invoke-WebRequest -Uri $protocolLibUrl -Headers $headers -OutFile $protocolLib
+}
+if ((Get-Item $protocolLib).Length -lt 1000000) { throw "ProtocolLib 4.8.0 JAR is missing or unexpectedly small: $protocolLib" }
 if (-not (Test-Path $maps)) { throw "Canonical maps directory not found at $maps" }
 if (-not (Test-Path (Join-Path $sourceProject "pom.xml"))) { throw "1.8 source project not found at $sourceProject" }
 
@@ -62,7 +71,9 @@ if (-not $SkipBuild) {
 if (-not (Test-Path $sourceJar)) { throw "Expected built plugin JAR was not found: $sourceJar" }
 New-Item -ItemType Directory -Force -Path (Split-Path $soloJar) | Out-Null
 Copy-Item -Force $sourceJar $soloJar
-Write-Host "Copied canonical plugin JAR to solo/server/plugins/MonsterMazeStandalone.jar"
+$soloProtocolLib = Join-Path $here "server/plugins/ProtocolLib.jar"
+Copy-Item -Force $protocolLib $soloProtocolLib
+Write-Host "Copied canonical plugin and ProtocolLib 4.8.0 to the 1.8 Solo server."
 
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 Copy-Item -Recurse -Force (Join-Path $here "launcher") (Join-Path $dist "launcher")

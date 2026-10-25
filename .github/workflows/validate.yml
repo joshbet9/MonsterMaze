@@ -291,6 +291,7 @@ jobs:
           test -f solo/solo-dist.zip
           unzip -l solo/solo-dist.zip | grep -q 'runtime/jdk8/bin/java.exe'
           unzip -l solo/solo-dist.zip | grep -q 'server/plugins/MonsterMazeStandalone.jar'
+          unzip -l solo/solo-dist.zip | grep -q 'server/plugins/ProtocolLib.jar'
           unzip -l solo/solo-dist.zip | grep -q 'version.json'
 
   release-package-1-21:

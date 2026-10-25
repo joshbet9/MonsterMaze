@@ -14,12 +14,14 @@ $UPDATEABLE = @(
     "launcher/play.bat", "launcher/stop.bat", "launcher/config.bat",
     "submitter/submit.bat", "submitter/submit.ps1",
     "server/plugins/MonsterMazeStandalone.jar",
+    "server/plugins/ProtocolLib.jar",
     "server/bukkit.yml", "server/eula.txt", "server/server.properties", "server/spigot.yml",
     "HOW_TO_PLAY.txt", "README.md"
 )
 
 $RELEASE_ASSETS = @{
     "server/plugins/MonsterMazeStandalone.jar" = "MonsterMaze-Solo-1.8-plugin.jar"
+    "server/plugins/ProtocolLib.jar" = "MonsterMaze-Solo-1.8-ProtocolLib.jar"
 }
 
 function Add-ManifestFile([System.Collections.IDictionary]$files, [string]$manifestPath, [string]$sourcePath, [string]$sourceRel = "") {

@@ -33,6 +33,7 @@ The release assets are:
 - `solo-1.8-version.json` — 1.8 updater manifest;
 - `solo-1.21-version.json` — 1.21 updater manifest;
 - `MonsterMaze-Solo-1.8-plugin.jar` — tested 1.8 plugin binary used by the updater;
+- `MonsterMaze-Solo-1.8-ProtocolLib.jar` — pinned ProtocolLib 4.8.0 runtime for Java 8 per-viewer mob disguises;
 - `MonsterMaze-Solo-1.21-plugin.jar` — tested 1.21 plugin binary used by the updater;
 - `MonsterMaze-Solo-1.21-Paper.jar` — pinned Paper runtime used by the 1.21 Solo package;
 - `MonsterMaze-Solo-1.21-ProtocolLib.jar` — pinned ProtocolLib runtime used by the 1.21 Solo package;

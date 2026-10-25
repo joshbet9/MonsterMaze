@@ -1,0 +1,280 @@
+name: Deploy feature branch to Hyper-V test servers
+
+on:
+  push:
+    branches:
+      - feat/personal-mob-themes
+    paths:
+      - '1.8/MonsterMazeStandalone/**'
+      - '1.21/MonsterMazeStandalone/**'
+      - 'solo/pack.ps1'
+      - 'solo/updater_tools/make_manifest.ps1'
+      - '.github/workflows/deploy-feature-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hyperv-feature-test
+  cancel-in-progress: false
+
+env:
+  BUILDTOOLS_URL: 'https://hub.spigotmc.org/jenkins/job/BuildTools/200/artifact/target/BuildTools.jar'
+  PROTOCOLLIB_18_URL: 'https://github.com/dmulloy2/ProtocolLib/releases/download/4.8.0/ProtocolLib.jar'
+  PROTOCOLLIB_21_URL: 'https://github.com/dmulloy2/ProtocolLib/releases/download/5.4.0/ProtocolLib.jar'
+
+jobs:
+  build-18:
+    name: Build and package test binaries — Minecraft 1.8.8
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      - name: Download pinned BuildTools
+        run: curl -fsSL "$BUILDTOOLS_URL" -o "$RUNNER_TEMP/BuildTools.jar"
+
+      - name: Build Spigot 1.8.8 and install Maven dependency
+        working-directory: 1.8/MonsterMazeStandalone
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -Xmx2G -jar "$RUNNER_TEMP/BuildTools.jar" --rev 1.8.8 --output-dir "$RUNNER_TEMP/spigot"
+          test -s "$RUNNER_TEMP/spigot/spigot-1.8.8.jar"
+          mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
+            -Dfile="$RUNNER_TEMP/spigot/spigot-1.8.8.jar" \
+            -DgroupId=org.spigotmc -DartifactId=spigot \
+            -Dversion=1.8.8-R0.1-SNAPSHOT -Dpackaging=jar
+
+      - name: Build and test plugin
+        working-directory: 1.8/MonsterMazeStandalone
+        run: mvn -B clean package
+
+      - name: Download runtime ProtocolLib 4.8.0
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/staging/1.8"
+          curl -fsSL "$PROTOCOLLIB_18_URL" -o "$GITHUB_WORKSPACE/staging/1.8/ProtocolLib.jar"
+          test "$(stat -c '%s' "$GITHUB_WORKSPACE/staging/1.8/ProtocolLib.jar")" -gt 1000000
+          cp 1.8/MonsterMazeStandalone/target/MonsterMazeStandalone.jar "$GITHUB_WORKSPACE/staging/1.8/MonsterMazeStandalone.jar"
+
+      - name: Upload validated 1.8.8 binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: mm18-test-binaries
+          path: staging/1.8/*
+          if-no-files-found: error
+          retention-days: 3
+
+  build-21:
+    name: Build and package test binaries — Minecraft 1.21.11
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build and test plugin
+        working-directory: 1.21/MonsterMazeStandalone
+        run: mvn -B clean package
+
+      - name: Download runtime ProtocolLib 5.4.0
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/staging/1.21"
+          curl -fsSL "$PROTOCOLLIB_21_URL" -o "$GITHUB_WORKSPACE/staging/1.21/ProtocolLib.jar"
+          test "$(stat -c '%s' "$GITHUB_WORKSPACE/staging/1.21/ProtocolLib.jar")" -gt 1000000
+          cp 1.21/MonsterMazeStandalone/target/MonsterMazeStandalone.jar "$GITHUB_WORKSPACE/staging/1.21/MonsterMazeStandalone.jar"
+
+      - name: Upload validated 1.21.11 binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: mm21-test-binaries
+          path: staging/1.21/*
+          if-no-files-found: error
+          retention-days: 3
+
+  deploy-test:
+    name: Deploy to Hyper-V integration test servers
+    needs: [build-18, build-21]
+    runs-on: ubuntu-22.04
+    environment: hyperv
+    timeout-minutes: 20
+    steps:
+      - name: Download validated 1.8.8 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: mm18-test-binaries
+          path: staging/1.8
+
+      - name: Download validated 1.21.11 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: mm21-test-binaries
+          path: staging/1.21
+
+      - name: Connect runner to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions
+          ping: 100.98.188.97
+
+      - name: Prepare SSH credentials
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HYPERV_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HYPERV_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/monstermaze_hyperv"
+          printf '%s\\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/monstermaze_hyperv" "$HOME/.ssh/known_hosts"
+
+      - name: Verify test host and managed services
+        shell: bash
+        env:
+          HYPERV_SSH_HOST: ${{ secrets.HYPERV_SSH_HOST }}
+          HYPERV_SSH_USER: ${{ secrets.HYPERV_SSH_USER }}
+          HYPERV_SSH_PORT: ${{ secrets.HYPERV_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          port="${HYPERV_SSH_PORT:-22}"
+          test -n "$HYPERV_SSH_HOST"
+          test -n "$HYPERV_SSH_USER"
+          ssh -p "$port" -i "$HOME/.ssh/monstermaze_hyperv" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$HYPERV_SSH_USER@$HYPERV_SSH_HOST" \
+            'set -euo pipefail; sudo -n true; command -v systemctl; test -s /home/monstermaze/servers/1.8/plugins/MonsterMazeStandalone.jar; test -s /home/monstermaze/servers/1.21/plugins/MonsterMazeStandalone.jar; systemctl cat monstermaze-18.service >/dev/null; systemctl cat monstermaze-21.service >/dev/null'
+
+      - name: Transfer validated binaries to test host
+        shell: bash
+        env:
+          HYPERV_SSH_HOST: ${{ secrets.HYPERV_SSH_HOST }}
+          HYPERV_SSH_USER: ${{ secrets.HYPERV_SSH_USER }}
+          HYPERV_SSH_PORT: ${{ secrets.HYPERV_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          port="${HYPERV_SSH_PORT:-22}"
+          for file in \
+            staging/1.8/MonsterMazeStandalone.jar staging/1.8/ProtocolLib.jar \
+            staging/1.21/MonsterMazeStandalone.jar staging/1.21/ProtocolLib.jar; do
+            test -s "$file"
+          done
+          scp -P "$port" -i "$HOME/.ssh/monstermaze_hyperv" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            staging/1.8/MonsterMazeStandalone.jar "$HYPERV_SSH_USER@$HYPERV_SSH_HOST:/tmp/mm18-plugin-$GITHUB_SHA.jar"
+          scp -P "$port" -i "$HOME/.ssh/monstermaze_hyperv" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            staging/1.8/ProtocolLib.jar "$HYPERV_SSH_USER@$HYPERV_SSH_HOST:/tmp/mm18-protocollib-$GITHUB_SHA.jar"
+          scp -P "$port" -i "$HOME/.ssh/monstermaze_hyperv" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            staging/1.21/MonsterMazeStandalone.jar "$HYPERV_SSH_USER@$HYPERV_SSH_HOST:/tmp/mm21-plugin-$GITHUB_SHA.jar"
+          scp -P "$port" -i "$HOME/.ssh/monstermaze_hyperv" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            staging/1.21/ProtocolLib.jar "$HYPERV_SSH_USER@$HYPERV_SSH_HOST:/tmp/mm21-protocollib-$GITHUB_SHA.jar"
+
+      - name: Back up existing JARs, deploy and verify startup
+        shell: bash
+        env:
+          HYPERV_SSH_HOST: ${{ secrets.HYPERV_SSH_HOST }}
+          HYPERV_SSH_USER: ${{ secrets.HYPERV_SSH_USER }}
+          HYPERV_SSH_PORT: ${{ secrets.HYPERV_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          port="${HYPERV_SSH_PORT:-22}"
+          ssh -p "$port" -i "$HOME/.ssh/monstermaze_hyperv" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$HYPERV_SSH_USER@$HYPERV_SSH_HOST" "sudo -n bash -s -- '${GITHUB_SHA}'" <<'REMOTE'
+          set -euo pipefail
+          sha="$1"
+          root=/home/monstermaze/servers
+          backup="/home/monstermaze/backups/feature-test-deploys/$sha"
+          timestamp="$(date --iso-8601=seconds)"
+          targets=(
+            "$root/1.8/plugins/MonsterMazeStandalone.jar"
+            "$root/1.8/plugins/ProtocolLib.jar"
+            "$root/1.21/plugins/MonsterMazeStandalone.jar"
+            "$root/1.21/plugins/ProtocolLib.jar"
+          )
+          names=(mm18-plugin.jar mm18-protocollib.jar mm21-plugin.jar mm21-protocollib.jar)
+          services=(monstermaze-18.service monstermaze-21.service)
+          sudo mkdir -p "$backup"
+          for i in "${!targets[@]}"; do
+            target="${targets[$i]}"
+            name="${names[$i]}"
+            if sudo test -f "$target"; then
+              sudo cp -a "$target" "$backup/$name"
+            else
+              sudo touch "$backup/$name.absent"
+            fi
+          done
+
+          rollback() {
+            echo 'Deployment health check failed; restoring previous plugin/runtime JARs.'
+            sudo systemctl stop "${services[@]}" 2>/dev/null || true
+            for i in "${!targets[@]}"; do
+              target="${targets[$i]}"
+              name="${names[$i]}"
+              if sudo test -f "$backup/$name"; then
+                sudo cp -a "$backup/$name" "$target"
+              elif sudo test -f "$backup/$name.absent"; then
+                sudo rm -f "$target"
+              fi
+            done
+            sudo systemctl start "${services[@]}" || true
+            sudo journalctl -u monstermaze-18.service -n 70 --no-pager || true
+            sudo journalctl -u monstermaze-21.service -n 70 --no-pager || true
+          }
+
+          sudo systemctl stop "${services[@]}"
+          started_at="$(date --iso-8601=seconds)"
+          sudo install -o monstermaze -g monstermaze -m 0644 "/tmp/mm18-plugin-$sha.jar" "$root/1.8/plugins/MonsterMazeStandalone.jar"
+          sudo install -o monstermaze -g monstermaze -m 0644 "/tmp/mm18-protocollib-$sha.jar" "$root/1.8/plugins/ProtocolLib.jar"
+          sudo install -o monstermaze -g monstermaze -m 0644 "/tmp/mm21-plugin-$sha.jar" "$root/1.21/plugins/MonsterMazeStandalone.jar"
+          sudo install -o monstermaze -g monstermaze -m 0644 "/tmp/mm21-protocollib-$sha.jar" "$root/1.21/plugins/ProtocolLib.jar"
+          sudo systemctl start "${services[@]}"
+
+          for attempt in {1..20}; do
+            active18=0; active21=0
+            sudo systemctl is-active --quiet monstermaze-18.service && active18=1 || true
+            sudo systemctl is-active --quiet monstermaze-21.service && active21=1 || true
+            if [ "$active18" -eq 1 ] && [ "$active21" -eq 1 ]; then break; fi
+            sleep 2
+          done
+
+          if ! sudo systemctl is-active --quiet monstermaze-18.service || ! sudo systemctl is-active --quiet monstermaze-21.service; then
+            rollback
+            exit 1
+          fi
+
+          for service in "${services[@]}"; do
+            logs="$(sudo journalctl -u "$service" --since "$started_at" -n 250 --no-pager || true)"
+            if ! printf '%s\\n' "$logs" | grep -qi 'Enabling MonsterMazeStandalone'; then
+              echo "MonsterMazeStandalone did not report an enable event in $service."
+              rollback
+              exit 1
+            fi
+            if printf '%s\\n' "$logs" | grep -Eqi 'Error occurred while enabling MonsterMazeStandalone|Could not load.*MonsterMazeStandalone|UnsupportedClassVersionError|Could not enable per-player mob disguises'; then
+              echo "Monster Maze startup error detected in $service."
+              rollback
+              exit 1
+            fi
+          done
+          echo "Test deployment succeeded for commit $sha. Backups retained in $backup."
+          REMOTE
