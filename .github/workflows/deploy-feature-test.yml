@@ -148,9 +148,11 @@ jobs:
           test -n "$SSH_KNOWN_HOSTS"
           mkdir -p "$HOME/.ssh"
           chmod 700 "$HOME/.ssh"
-          printf '%s\\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/monstermaze_hyperv"
-          printf '%s\\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/monstermaze_hyperv"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/monstermaze_hyperv" "$HOME/.ssh/known_hosts"
+          # Fail here with an explicit key-format error instead of at the later SSH connection.
+          ssh-keygen -y -P "" -f "$HOME/.ssh/monstermaze_hyperv" >/dev/null
 
       - name: Verify test host and managed services
         shell: bash
@@ -265,12 +267,12 @@ jobs:
 
           for service in "${services[@]}"; do
             logs="$(sudo journalctl -u "$service" --since "$started_at" -n 250 --no-pager || true)"
-            if ! printf '%s\\n' "$logs" | grep -qi 'Enabling MonsterMazeStandalone'; then
+            if ! printf '%s\n' "$logs" | grep -qi 'Enabling MonsterMazeStandalone'; then
               echo "MonsterMazeStandalone did not report an enable event in $service."
               rollback
               exit 1
             fi
-            if printf '%s\\n' "$logs" | grep -Eqi 'Error occurred while enabling MonsterMazeStandalone|Could not load.*MonsterMazeStandalone|UnsupportedClassVersionError|Could not enable per-player mob disguises'; then
+            if printf '%s\n' "$logs" | grep -Eqi 'Error occurred while enabling MonsterMazeStandalone|Could not load.*MonsterMazeStandalone|UnsupportedClassVersionError|Could not enable per-player mob disguises'; then
               echo "Monster Maze startup error detected in $service."
               rollback
               exit 1
