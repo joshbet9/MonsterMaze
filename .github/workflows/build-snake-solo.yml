@@ -2,7 +2,7 @@ name: Build Snake Solo Test
 
 on:
   push:
-    branches: [feat/snake-solo-hazard-test]
+    branches: [main, feat/snake-solo-hazard-test]
     paths:
       - 'snake-solo/**'
       - '.github/workflows/build-snake-solo.yml'

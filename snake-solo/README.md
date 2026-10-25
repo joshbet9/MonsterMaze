@@ -1,6 +1,6 @@
 # Snake Solo — playable 1.8.8 prototype
 
-This is a separate Spigot 1.8.8 plugin for testing Snake by yourself. It builds and owns an isolated `snake_solo` world and does not modify Monster Maze worlds or maps.
+This is a separate Spigot 1.8.8 plugin for testing Snake by yourself. It builds and owns an isolated `snake_solo` world and does not modify Monster Maze worlds or maps. To play it in your existing Monster Maze Solo setup, copy `SnakeSoloStandalone.jar` into `solo/server/plugins/` (beside `MonsterMazeStandalone.jar`), then start the usual Solo launcher. The prototype is deliberately not added to the production Solo packer by default.
 
 ## Start and play
 
