@@ -427,12 +427,28 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private void spawnMagmaCube(Run active) {
+        spawnMagmaCube(active, false);
+    }
+
+    private void spawnMagmaCube(Run active, boolean placeNearForTesting) {
         int radius = getConfig().getInt("arena-radius", 48) - 7;
         for (int attempt = 0; attempt < 35; attempt++) {
-            int x = random.nextInt(radius * 2 + 1) - radius;
-            int z = random.nextInt(radius * 2 + 1) - radius;
-            Location loc = new Location(arena, x + 0.5, 64.0, z + 0.5);
-            if (loc.distanceSquared(active.head.getLocation()) < 64.0) continue;
+            Location loc;
+            if (placeNearForTesting && attempt == 0) {
+                Vector forward = active.lastDirection.lengthSquared() > 0.1
+                        ? active.lastDirection.clone().normalize()
+                        : directionFromYaw(active.appliedYaw);
+                loc = active.head.getLocation().clone().add(forward.multiply(6.0));
+                loc.setY(64.0);
+                double bound = Math.max(2.0, radius - 2.0);
+                loc.setX(Math.max(-bound, Math.min(bound, loc.getX())));
+                loc.setZ(Math.max(-bound, Math.min(bound, loc.getZ())));
+            } else {
+                int x = random.nextInt(radius * 2 + 1) - radius;
+                int z = random.nextInt(radius * 2 + 1) - radius;
+                loc = new Location(arena, x + 0.5, 64.0, z + 0.5);
+                if (!placeNearForTesting && loc.distanceSquared(active.head.getLocation()) < 64.0) continue;
+            }
             boolean crowded = false;
             for (MagmaCube existing : active.hazards) {
                 if (existing.isValid() && existing.getLocation().distanceSquared(loc) < 25.0) {
@@ -448,7 +464,9 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
             cube.setCustomNameVisible(false);
             disableAi(cube);
             active.hazards.add(cube);
-            active.player.sendMessage(ChatColor.RED + "Magma cube spawned! Avoid its head collision.");
+            active.player.sendMessage(placeNearForTesting
+                    ? ChatColor.RED + "TEST CUBE spawned about 6 blocks ahead. Steer into it to test the roulette."
+                    : ChatColor.RED + "Magma cube spawned! Avoid its head collision.");
             return;
         }
     }
@@ -522,9 +540,9 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
         if ("now".equals(action)) {
             run.hazardsDisabled = false;
             run.hazardsEnabled = true;
-            if (run.hazards.isEmpty()) spawnMagmaCube(run);
+            if (run.hazards.isEmpty()) spawnMagmaCube(run, true);
             run.nextMagmaTick = run.ticks + magmaIntervalTicks(run);
-            sender.sendMessage(ChatColor.GOLD + "Hazard test enabled.");
+            sender.sendMessage(ChatColor.GOLD + "Hazard test enabled. First cube placed ahead for quick collision testing.");
         } else if ("off".equals(action)) {
             run.hazardsDisabled = true;
             run.hazardsEnabled = false;

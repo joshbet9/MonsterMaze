@@ -23,7 +23,7 @@ Hotbar power-ups: feather (speed), nether star (brief invulnerability), and cook
 - Self-collision (after the first three segments), leaving the arena, or falling below the floor ends the run.
 - Magma cubes are a separate late-game hazard. By default they start after two minutes, then spawn more frequently over time.
 - Hitting a cube starts a short roulette in slot 9 which locks in one of: Turn Lag, Drift, Overshoot or Weakened Sharp Turning. Each hit makes the next locked-in debuff last longer, up to the configured cap.
-- `/snake hazard now` skips the wait so you can test the collision/roulette without surviving two minutes first. It does not change the normal green slime behaviour.
+- `/snake hazard now` skips the wait and places the first cube about six blocks ahead of you, so you can test the collision/roulette without searching the arena or surviving two minutes first. It does not change the normal green slime behaviour.
 
 The multiplayer `three players remain` trigger is intentionally skipped in this *solo* test because a one-player run would satisfy it from the first tick and ruin the normal early game. Timing and debuff durations are configurable in `plugins/SnakeSoloStandalone/config.yml`.
 
