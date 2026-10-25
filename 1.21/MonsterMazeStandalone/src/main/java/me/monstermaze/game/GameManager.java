@@ -289,6 +289,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
 
                 // --- FIX: INITIALIZE & APPLY SCOREBOARD UPFRONT (Issue #5) ---
                 scoreboard.create();
+                List<GameScoreboard.PlayerDistance> distanceStandings = updateDistanceStandings(getAlivePlayers());
                 int pattern = getPatternIndex();
                 for (Player p : getAlivePlayers()) {
                     String pbText = null;
@@ -301,7 +302,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
                         }
                     }
                     scoreboard.update(p, getAlivePlayers().size(), curSafe, phaseTimer, safePad != null,
-                            getMode().color + getMode().id, pbText);
+                            getMode().color + getMode().id, pbText, distanceStandings);
                 }
                 scoreboard.apply(getAlivePlayers());
                 // -------------------------------------------------------------
@@ -373,7 +374,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
                 // PERF: the scoreboard/KB/pad info only changes on stage/phase transitions
                 // (and the PB lookup is per player), so update it 2x/s instead of 20x/s.
                 if ((liveTick % 10) == 1) {
-                    updateDistanceStandings(aliveNow);
+                    List<GameScoreboard.PlayerDistance> distanceStandings = updateDistanceStandings(aliveNow);
                     if (curSafe == 1) emitStageOneGuidance(aliveNow);
                     int pattern = getPatternIndex();
                     int aliveCount = aliveNow.size();
@@ -388,7 +389,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
                             }
                         }
                         scoreboard.update(p, aliveCount, curSafe, phaseTimer, safePad != null,
-                                getMode().color + getMode().id, pbText);
+                                getMode().color + getMode().id, pbText, distanceStandings);
                     }
                     scoreboard.apply(aliveNow);
                 }
@@ -854,37 +855,32 @@ public void startGame(Location preferCenter, int requestedPattern) {
     }
 
     private void teleportToSafePadCenter(Player player) {
-        if (player == null || safePad == null || !player.isOnline()) return;
-        player.setFallDistance(0.0f);
-        player.setVelocity(new Vector(0, 0, 0));
-        player.teleport(safePad.getLocation());
+        if(player==null||safePad==null||!player.isOnline())return;
+        Location facing=player.getLocation(),destination=safePad.getLocation().clone();
+        destination.setYaw(facing.getYaw());destination.setPitch(facing.getPitch());
+        player.setFallDistance(0.0f);player.setVelocity(new Vector(0,0,0));player.teleport(destination);
     }
 
     /** The first two active pads get a brief, non-damaging celebration firework. */
+    /** First two active Safe Pads get three brighter, harmless fireworks. */
     private void launchPadFirework(SafePad pad) {
-        if (pad == null || curSafe > 2) return;
-        final Location at = pad.getLocation().clone().add(0, 1, 0);
-        try {
-            Firework firework = at.getWorld().spawn(at, Firework.class);
-            FireworkMeta meta = firework.getFireworkMeta();
-            meta.setPower(0);
-            meta.addEffect(FireworkEffect.builder()
-                    .with(FireworkEffect.Type.BALL)
-                    .withColor(curSafe == 1 ? Color.LIME : Color.PURPLE)
-                    .withFade(Color.WHITE)
-                    .trail(true)
-                    .flicker(true)
-                    .build());
-            firework.setFireworkMeta(meta);
-            Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
-                @Override public void run() {
-                    try {
-                        if (firework.isValid()) firework.detonate();
-                    } catch (Throwable ignored) { }
+        if(pad==null||curSafe>2)return;
+        final Location center=pad.getLocation().clone().add(0,1,0);final boolean firstPad=curSafe==1;
+        for(int i=0;i<3;i++){
+            final int shot=i;
+            Bukkit.getScheduler().runTaskLater(plugin,new Runnable(){@Override public void run(){
+                Location at=center.clone().add((shot-1)*0.45,0,shot==1?0.35:-0.35);
+                try{
+                    Firework firework=at.getWorld().spawn(at,Firework.class);FireworkMeta meta=firework.getFireworkMeta();meta.setPower(1);
+                    FireworkEffect.Type type=shot==0?FireworkEffect.Type.BALL_LARGE:shot==1?FireworkEffect.Type.STAR:FireworkEffect.Type.BURST;
+                    Color primary=firstPad?(shot==0?Color.LIME:shot==1?Color.YELLOW:Color.AQUA):(shot==0?Color.PURPLE:shot==1?Color.FUCHSIA:Color.AQUA);
+                    meta.addEffect(FireworkEffect.builder().with(type).withColor(primary,Color.WHITE).withFade(firstPad?Color.YELLOW:Color.LIME).trail(true).flicker(true).build());
+                    meta.addEffect(FireworkEffect.builder().with(FireworkEffect.Type.BALL).withColor(firstPad?Color.AQUA:Color.YELLOW).trail(true).build());
+                    firework.setFireworkMeta(meta);
+                }catch(Throwable ignored){
+                        for(int n=0;n<8;n++)at.getWorld().spawnParticle(Particle.HAPPY_VILLAGER,at.clone().add((n%3)*0.2,n*0.15,(n%2)*0.2),1,0,0,0,0);
                 }
-            }, 2L);
-        } catch (Throwable ignored) {
-            at.getWorld().spawnParticle(Particle.HAPPY_VILLAGER, at, 12, 0.2, 0.3, 0.2, 0.02);
+            }},i*3L);
         }
     }
 
@@ -900,36 +896,16 @@ public void startGame(Location preferCenter, int requestedPattern) {
         }
     }
 
-    private void updateDistanceStandings(List<Player> aliveNow) {
-        if (safePad == null || !safePadNavigation.isReady() || aliveNow == null || aliveNow.isEmpty()) return;
-        final List<DistanceEntry> ranking = new ArrayList<DistanceEntry>();
-        for (Player player : aliveNow) {
-            ranking.add(new DistanceEntry(player, safePadNavigation.distanceInBlocks(player.getLocation())));
-        }
-        Collections.sort(ranking, new Comparator<DistanceEntry>() {
-            @Override public int compare(DistanceEntry left, DistanceEntry right) {
-                int byDistance = Double.compare(left.distance, right.distance);
-                return byDistance != 0 ? byDistance : left.player.getName().compareToIgnoreCase(right.player.getName());
-            }
-        });
-
-        StringBuilder leaders = new StringBuilder();
-        int shown = Math.min(3, ranking.size());
-        for (int i = 0; i < shown; i++) {
-            if (i > 0) leaders.append("  ");
-            DistanceEntry entry = ranking.get(i);
-            String name = entry.player.getName();
-            if (name.length() > 10) name = name.substring(0, 10);
-            leaders.append("#").append(i + 1).append(" ").append(name).append(" ")
-                    .append(formatDistance(entry.distance)).append("b");
-        }
-
-        for (int i = 0; i < ranking.size(); i++) {
-            DistanceEntry entry = ranking.get(i);
-            String message = ChatColor.AQUA + "Pad Rank " + ChatColor.YELLOW + "#" + (i + 1) + "/" + ranking.size()
-                    + ChatColor.GRAY + " | " + formatDistance(entry.distance) + " blocks | " + leaders;
-            TextUtil.actionBar(entry.player, message);
-        }
+    private List<GameScoreboard.PlayerDistance> updateDistanceStandings(List<Player> aliveNow) {
+        final List<GameScoreboard.PlayerDistance> lines=new ArrayList<GameScoreboard.PlayerDistance>();
+        if(safePad==null||!safePadNavigation.isReady()||aliveNow==null||aliveNow.isEmpty())return lines;
+        final List<DistanceEntry> ranking=new ArrayList<DistanceEntry>();
+        for(Player player:aliveNow)ranking.add(new DistanceEntry(player,safePadNavigation.distanceInBlocks(player.getLocation())));
+        Collections.sort(ranking,new Comparator<DistanceEntry>(){@Override public int compare(DistanceEntry left,DistanceEntry right){
+            int distance=Double.compare(left.distance,right.distance);return distance!=0?distance:left.player.getName().compareToIgnoreCase(right.player.getName());
+        }});
+        for(DistanceEntry entry:ranking)lines.add(new GameScoreboard.PlayerDistance(entry.player.getName(),formatDistance(entry.distance)));
+        return lines;
     }
 
     private String formatDistance(double distance) {

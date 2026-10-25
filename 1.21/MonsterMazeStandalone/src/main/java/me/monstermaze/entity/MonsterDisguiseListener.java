@@ -63,10 +63,13 @@ public final class MonsterDisguiseListener {
         for (Entity entity : player.getWorld().getEntities()) {
             if (!entity.hasMetadata(MonsterEntityController.MONSTER_METADATA)) continue;
             try {
-                if (protocolManager.getEntityTrackers(entity).contains(player)) {
-                    protocolManager.updateEntity(entity, java.util.Collections.singletonList(player));
-                }
-            } catch (Throwable ignored) { }
+                // Resend the spawn packet so the viewer-specific entity type is rewritten.
+                // Custom ghost entities can be absent from the tracker query while still visible.
+                protocolManager.updateEntity(entity, java.util.Collections.singletonList(player));
+            } catch (Throwable failure) {
+                plugin.getLogger().warning("[MonsterMaze] Could not refresh mob disguise for "
+                        + player.getName() + ": " + failure.getClass().getSimpleName());
+            }
         }
     }
 

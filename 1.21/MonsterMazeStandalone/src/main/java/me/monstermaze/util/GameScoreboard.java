@@ -27,57 +27,58 @@ public class GameScoreboard {
     private final ProtocolManager protocolManager = ProtocolLibrary.getProtocolManager();
 
     private Scoreboard boardFor(Player p) {
-        Scoreboard board = boards.get(p.getUniqueId());
-        if (board == null) {
-            board = Bukkit.getScoreboardManager().getNewScoreboard();
-            Team ghostTeam = board.registerNewTeam("mm_ghosts");
-            ghostTeam.setCanSeeFriendlyInvisibles(true);
-            ghostTeam.addEntry(p.getName());
-
-            Objective obj = board.registerNewObjective("mm", "dummy");
-            obj.setDisplaySlot(DisplaySlot.SIDEBAR);
-            obj.setDisplayName(ChatColor.GOLD + "" + ChatColor.BOLD + "Monster Maze");
-            setStatic(board, obj, 16, label(ChatColor.YELLOW, "Mode"));
-            setupDynamicLine(board, obj, 15, "line_mode", "", "");
-            setStatic(board, obj, 14, " ");
-            setStatic(board, obj, 13, label(ChatColor.YELLOW, "Players"));
-            setupDynamicLine(board, obj, 12, "line_alive", "", "");
-            setStatic(board, obj, 11, "  ");
-            setStatic(board, obj, 10, label(ChatColor.GREEN, "Safe Pad"));
-            setupDynamicLine(board, obj, 9, "line_pad", "", "");
-            setStatic(board, obj, 8, "   ");
-            setStatic(board, obj, 7, label(ChatColor.GOLD, "Stage"));
-            setupDynamicLine(board, obj, 6, "line_stage", "", "");
-            setStatic(board, obj, 5, "    ");
-            setStatic(board, obj, 4, label(ChatColor.AQUA, "PB"));
-            setupDynamicLine(board, obj, 3, "line_pb", "", "");
-            boards.put(p.getUniqueId(), board);
+        Scoreboard board=boards.get(p.getUniqueId());
+        if(board==null){
+            board=Bukkit.getScoreboardManager().getNewScoreboard();
+            Team ghostTeam=board.registerNewTeam("mm_ghosts");ghostTeam.setCanSeeFriendlyInvisibles(true);ghostTeam.addEntry(p.getName());
+            Objective obj=board.registerNewObjective("mm","dummy");obj.setDisplaySlot(DisplaySlot.SIDEBAR);
+            obj.setDisplayName(ChatColor.GOLD+""+ChatColor.BOLD+"Monster Maze");
+            boards.put(p.getUniqueId(),board);
         }
         return board;
     }
 
-    private String label(ChatColor color, String text) { return color + "" + ChatColor.BOLD + text; }
-    private void setupDynamicLine(Scoreboard board, Objective obj, int score, String teamName, String prefix, String suffix) {
-        Team team = board.registerNewTeam(teamName);
-        String entry = getUniqueEntry(score);
-        team.addEntry(entry);
-        team.setPrefix(prefix);
-        team.setSuffix(suffix);
-        obj.getScore(entry).setScore(score);
-    }
-    private void setStatic(Scoreboard board, Objective obj, int score, String text) { obj.getScore(text).setScore(score); }
-    private String getUniqueEntry(int score) { return ChatColor.values()[Math.abs(score) % 15].toString() + ChatColor.RESET; }
 
-    public void update(Player p, int alive, int stage, int phaseSeconds, boolean hasPad, String mode, String pbText) {
-        Scoreboard board = boardFor(p);
-        updateTeam(board, "line_mode", "", mode);
-        updateTeam(board, "line_alive", "", String.valueOf(alive));
-        updateTeam(board, "line_pad", "", hasPad ? ChatColor.WHITE + "" + phaseSeconds + " Seconds" : ChatColor.GRAY + "None");
-        updateTeam(board, "line_stage", "", String.valueOf(stage));
-        String pb = (pbText != null && !pbText.isEmpty()) ? ChatColor.WHITE + pbText : ChatColor.GRAY + "None";
-        updateTeam(board, "line_pb", "", pb);
+    private String label(ChatColor color, String text) { return color + "" + ChatColor.BOLD + text; }
+
+    public static final class PlayerDistance {
+        public final String name, distance;
+        public PlayerDistance(String name, String distance) { this.name=name==null?"?":name; this.distance=distance==null?"?":distance; }
+    }
+
+    public void update(Player p, int alive, int stage, int phaseSeconds, boolean hasPad, String mode, String pbText,
+                       List<PlayerDistance> standings) {
+        Scoreboard board=boardFor(p); Objective obj=board.getObjective("mm"); if(obj==null)return;
+        setLine(board,obj,"line_mode",getUniqueEntry(15),15,ChatColor.YELLOW+"Mode: ",ChatColor.WHITE+(mode==null?"?":mode));
+        obj.getScore(label(ChatColor.YELLOW,"Players:")).setScore(14);
+        int count=standings==null?0:Math.min(10,standings.size());
+        for(int i=0;i<10;i++){
+            String teamName="line_p"+i, entry=getUniqueEntry(i+1);
+            if(i<count){
+                PlayerDistance player=standings.get(i);String name=player.name.length()>14?player.name.substring(0,14):player.name;
+                setLine(board,obj,teamName,entry,13-i,ChatColor.YELLOW+name,ChatColor.GRAY+" "+player.distance+"b");
+            }else{
+                Team old=board.getTeam(teamName);if(old!=null){board.resetScores(entry);old.unregister();}
+            }
+        }
+        int padScore=13-count, stageScore=12-count, pbScore=11-count;
+        setLine(board,obj,"line_pad",getUniqueEntry(12),padScore,ChatColor.GREEN+"Pad: ",
+                hasPad?ChatColor.WHITE+phaseSeconds+"s":ChatColor.GRAY+"None");
+        setLine(board,obj,"line_stage",getUniqueEntry(13),stageScore,ChatColor.GOLD+"Stage: ",ChatColor.WHITE+String.valueOf(stage));
+        String pb=pbText!=null&&!pbText.isEmpty()?pbText:"None";
+        setLine(board,obj,"line_pb",getUniqueEntry(14),pbScore,ChatColor.AQUA+"PB: ",ChatColor.WHITE+pb);
         applyVisibility(p);
     }
+    private void setLine(Scoreboard board,Objective obj,String teamName,String entry,int score,String prefix,String suffix){
+        Team team=board.getTeam(teamName);if(team==null)team=board.registerNewTeam(teamName);
+        if(!team.hasEntry(entry)){
+            for(String previous:new java.util.ArrayList<String>(team.getEntries())){board.resetScores(previous);team.removeEntry(previous);}
+            team.addEntry(entry);
+        }
+        team.setPrefix(limit(prefix,16));team.setSuffix(limit(suffix,16));obj.getScore(entry).setScore(score);
+    }
+    private String limit(String value,int max){if(value==null)return "";return value.length()>max?value.substring(0,max):value;}
+    private String getUniqueEntry(int index){return ChatColor.values()[Math.abs(index)%15].toString()+ChatColor.RESET;}
 
     /** Apply the observer's mode without changing another observer's client view. */
     private void applyVisibility(Player observer) {
