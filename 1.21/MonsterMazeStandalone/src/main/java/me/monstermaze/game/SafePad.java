@@ -1,6 +1,7 @@
 package me.monstermaze.game;
 
 import me.monstermaze.MonsterMazePlugin;
+import me.monstermaze.util.MobThemeManager;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -37,6 +38,7 @@ public class SafePad implements Listener {
         if (plugin != null && plugin.getMapThemeApplier() != null) plugin.getMapThemeApplier().refresh();
         captureAndBuild();
         ensureBeacon();
+        if (plugin != null && plugin.getMobThemeManager() != null) plugin.getMobThemeManager().registerSafePad(center);
     }
 
     @EventHandler
@@ -122,6 +124,8 @@ public class SafePad implements Listener {
                 if (b.getType() != clay) b.setType(clay, false);
         }
         if (decayCount <= 0) { destroy(); return true; }
+        MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
+        if (plugin != null && plugin.getMobThemeManager() != null) plugin.getMobThemeManager().refreshSafePad(center);
         return false;
     }
 
@@ -130,6 +134,7 @@ public class SafePad implements Listener {
         for (int i = snapshots.size() - 1; i >= 0; i--) snapshots.get(i).restore();
         snapshots.clear();
         MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
+        if (plugin != null && plugin.getMobThemeManager() != null) plugin.getMobThemeManager().unregisterSafePad(center);
         if (plugin != null && plugin.getMapThemeApplier() != null) plugin.getMapThemeApplier().refresh();
     }
 
@@ -138,6 +143,8 @@ public class SafePad implements Listener {
         int cx = center.getBlockX(), cy = surfaceY, cz = center.getBlockZ();
         Block beacon = world.getBlockAt(cx, cy, cz);
         if (beacon.getType() == Material.BEACON) beacon.setType(Material.LIME_TERRACOTTA, false);
+        MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
+        if (plugin != null && plugin.getMobThemeManager() != null) plugin.getMobThemeManager().setSafePadBeaconActive(center, false);
         // Do not convert the iron base to quartz here. The quartz is only the decorative
         // frame around the pad; changing the 3x3 base to quartz creates a visible flash of
         // quartz when the active pad is removed. The snapshots retain the actual maze blocks

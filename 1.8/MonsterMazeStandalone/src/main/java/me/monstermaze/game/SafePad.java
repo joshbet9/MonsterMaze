@@ -1,5 +1,6 @@
 package me.monstermaze.game;
 
+import me.monstermaze.MonsterMazePlugin;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -36,6 +37,8 @@ public class SafePad implements Listener {
         this.surfaceY = pathLocation.getBlockY() - 1;
         this.qol = qol;
         captureAndBuild();
+        MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
+        if (plugin != null && plugin.getMobThemeManager() != null) plugin.getMobThemeManager().registerSafePad(center);
     }
 
     @EventHandler
@@ -134,6 +137,8 @@ public class SafePad implements Listener {
             if (b.getType() == Material.STAINED_CLAY) b.setData(clayData);
         }
         if (decayCount <= 0) { destroy(); return true; }
+        MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
+        if (plugin != null && plugin.getMobThemeManager() != null) plugin.getMobThemeManager().refreshSafePad(center);
         return false;
     }
 
@@ -141,6 +146,8 @@ public class SafePad implements Listener {
         active = false;
         for (int i = snapshots.size() - 1; i >= 0; i--) snapshots.get(i).restore();
         snapshots.clear();
+        MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
+        if (plugin != null && plugin.getMobThemeManager() != null) plugin.getMobThemeManager().unregisterSafePad(center);
     }
 
     public void turnOffBeacon() {
@@ -155,6 +162,8 @@ public class SafePad implements Listener {
             Block iron = world.getBlockAt(cx + x, cy - 1, cz + z);
             if (iron.getType() == Material.IRON_BLOCK) iron.setType(Material.QUARTZ_BLOCK);
         }
+        MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
+        if (plugin != null && plugin.getMobThemeManager() != null) plugin.getMobThemeManager().setSafePadBeaconActive(center, false);
     }
 
     private static class BlockSnapshot {

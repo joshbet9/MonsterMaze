@@ -1,5 +1,6 @@
 package me.monstermaze.util;
 
+import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.nms.AddonGhostSnowman;
 import net.minecraft.server.v1_8_R3.EntityInsentient;
 import net.minecraft.server.v1_8_R3.World;
@@ -10,6 +11,7 @@ import org.bukkit.entity.Creature;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Snowman;
+import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 
 import java.lang.reflect.Field;
@@ -164,8 +166,10 @@ public final class UtilEnt {
             WorldServer nmsWorld = ((CraftWorld) loc.getWorld()).getHandle();
             EntityInsentient handle = AddonGhostSnowman.class.getConstructor(World.class).newInstance(nmsWorld);
             handle.setPositionRotation(loc.getX(), loc.getY(), loc.getZ(), loc.getYaw(), loc.getPitch());
-            if (!nmsWorld.addEntity(handle, CreatureSpawnEvent.SpawnReason.CUSTOM)) return null;
             LivingEntity ent = (LivingEntity) handle.getBukkitEntity();
+            // Mark before addEntity emits the initial packet so the viewer-specific model is used immediately.
+            ent.setMetadata("monstermaze_mob", new FixedMetadataValue(MonsterMazePlugin.getInstance(), Boolean.TRUE));
+            if (!nmsWorld.addEntity(handle, CreatureSpawnEvent.SpawnReason.CUSTOM)) return null;
             ent.setRemoveWhenFarAway(false);
             return ent;
         } catch (Throwable t) {
