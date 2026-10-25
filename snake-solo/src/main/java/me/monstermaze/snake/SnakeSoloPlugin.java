@@ -258,10 +258,11 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
 
         if (active.ticks % 20L == 0L) {
             growTail(active, getConfig().getInt("growth-per-second", 1));
-            spawnFood(active);
             active.player.setLevel(Math.min(100, active.tail.size()));
             active.player.setExp(Math.min(0.999f, active.tail.size() / 180.0f));
         }
+        int foodSpawnInterval = Math.max(1, getConfig().getInt("green-slime-spawn-seconds", 1)) * 20;
+        if (active.ticks % foodSpawnInterval == 0L) spawnFood(active);
 
         eatFood(active);
         int elapsedSeconds = active.ticks / 20;
@@ -298,12 +299,22 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
             active.head.setVelocity(new Vector(0, 0, 0));
             return;
         }
-        float inputYaw = active.player.getLocation().getYaw();
+        float rawYaw = active.player.getLocation().getYaw();
+        float inputYaw;
+        if (active.currentDebuff == Debuff.TURN_LAG) {
+            // Replay the camera yaw from several ticks ago to create real input latency.
+            active.yawHistory.addLast(rawYaw);
+            int lagTicks = Math.max(1, getConfig().getInt("turn-lag-delay-ticks", 6));
+            if (active.yawHistory.size() > lagTicks) inputYaw = active.yawHistory.removeFirst();
+            else inputYaw = active.lastViewYaw;
+        } else {
+            active.yawHistory.clear();
+            inputYaw = rawYaw;
+        }
         float inputTurn = wrapDegrees(inputYaw - active.lastViewYaw);
         active.lastViewYaw = inputYaw;
         float turnLimit = 30.0f;
-        if (active.currentDebuff == Debuff.TURN_LAG) turnLimit = 6.0f;
-        else if (active.currentDebuff == Debuff.WEAKENED_TURN) turnLimit = 12.0f;
+        if (active.currentDebuff == Debuff.WEAKENED_TURN) turnLimit = 12.0f;
         float targetDelta = clamp(wrapDegrees(inputYaw - active.appliedYaw), -turnLimit, turnLimit);
         active.appliedYaw = wrapDegrees(active.appliedYaw + targetDelta);
 
@@ -827,6 +838,7 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
         float appliedYaw;
         float lastViewYaw;
         Vector lastDirection = new Vector(0, 0, 1);
+        final Deque<Float> yawHistory = new ArrayDeque<Float>();
         boolean hazardsEnabled;
         boolean hazardsDisabled;
         boolean roulette;

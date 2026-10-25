@@ -21,6 +21,7 @@ magma-min-interval-seconds: 5
 magma-cube-size: 2
 
 # Roulette debuff tuning. Each locked-in hit increases the next duration.
+turn-lag-delay-ticks: 6
 debuff-base-seconds: 4
 debuff-hit-increment-seconds: 2
 debuff-max-seconds: 12
