@@ -30,6 +30,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.util.logging.Level;
 
 public class MonsterMazePlugin extends JavaPlugin {
     private static MonsterMazePlugin instance;
@@ -92,7 +93,10 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.monsterEntityListener = new MonsterEntityListener(this, gameManager);
         if (Bukkit.getPluginManager().getPlugin("ProtocolLib") != null) {
             try { this.monsterDisguiseListener = new MonsterDisguiseListener(this); getLogger().info("ProtocolLib detected; Monster Maze ghost-mob disguises enabled."); }
-            catch (Throwable t) { getLogger().warning("ProtocolLib is present but ghost-mob disguises could not be enabled: " + t.getClass().getSimpleName()); }
+            catch (Throwable t) {
+                getLogger().log(Level.WARNING,
+                        "ProtocolLib is present but ghost-mob disguises could not be enabled; base mob rendering will remain active.", t);
+            }
         } else getLogger().warning("ProtocolLib not installed; Monster Maze mobs will render as Snow Golems.");
         this.mapThemeApplier.start();
         this.soloRunCompletionListener = new SoloRunCompletionListener(this);

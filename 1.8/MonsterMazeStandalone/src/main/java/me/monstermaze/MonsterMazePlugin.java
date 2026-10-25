@@ -25,6 +25,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.util.logging.Level;
 
 public class MonsterMazePlugin extends JavaPlugin {
     private static MonsterMazePlugin instance;
@@ -79,7 +80,8 @@ public class MonsterMazePlugin extends JavaPlugin {
                 this.monsterDisguiseListener = new MonsterDisguiseListener(this);
                 getLogger().info("ProtocolLib detected; per-player mob disguises enabled.");
             } catch (Throwable t) {
-                getLogger().warning("Could not enable per-player mob disguises: " + t.getClass().getSimpleName());
+                getLogger().log(Level.WARNING,
+                        "Could not enable per-player mob disguises; base mob rendering will remain active.", t);
             }
         } else {
             getLogger().warning("ProtocolLib not installed; mob model customization is unavailable in this server.");
