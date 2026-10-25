@@ -1,0 +1,28 @@
+# The plugin builds and owns this isolated world; it never edits Monster Maze maps.
+arena-world: snake_solo
+arena-radius: 48
+arena-built: false
+
+# Snake movement and growth
+base-speed: 0.19
+growth-per-second: 1
+green-slime-spawn-seconds: 1
+green-slime-growth: 2
+max-food-slimes: 30
+
+# Progressive late-game magma-cube hazard.
+# In the solo test the multiplayer "three players remain" trigger is intentionally
+# skipped: it would start the hazard immediately in a one-player session.
+magma-start-after-seconds: 120
+magma-first-interval-seconds: 15
+magma-frequency-step-seconds: 30
+magma-interval-decrease-seconds: 2
+magma-min-interval-seconds: 5
+magma-cube-size: 2
+
+# Roulette debuff tuning. Each locked-in hit increases the next duration.
+debuff-base-seconds: 4
+debuff-hit-increment-seconds: 2
+debuff-max-seconds: 12
+debuff-roulette-ticks: 40
+records: []

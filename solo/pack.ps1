@@ -15,6 +15,9 @@ $maps = Join-Path $here "maps"
 $sourceProject = Join-Path $repoRoot "1.8/MonsterMazeStandalone"
 $sourceJar = Join-Path $sourceProject "target/MonsterMazeStandalone.jar"
 $soloJar = Join-Path $here "server/plugins/MonsterMazeStandalone.jar"
+$snakeProject = Join-Path $repoRoot "snake-solo"
+$snakeSourceJar = Join-Path $snakeProject "target/SnakeSoloStandalone.jar"
+$snakeSoloJar = Join-Path $here "server/plugins/SnakeSoloStandalone.jar"
 $maven = "mvn"
 
 if ($env:MM_SOLO_JDK8_WINDOWS) {
@@ -59,10 +62,22 @@ if (-not $SkipBuild) {
     Write-Host "Using existing tested 1.8 plugin build (--SkipBuild)."
 }
 
+if (-not $SkipBuild) {
+    Write-Host "Building SnakeSoloStandalone prototype from $snakeProject ..."
+    Push-Location $snakeProject
+    try {
+        & $maven clean package -DskipTests
+        if ($LASTEXITCODE -ne 0) { throw "Snake solo Maven build failed with exit code $LASTEXITCODE." }
+    } finally { Pop-Location }
+} elseif (-not (Test-Path $snakeSourceJar)) {
+    throw "Snake solo JAR missing with -SkipBuild. Build it first: mvn -f snake-solo/pom.xml clean package"
+}
 if (-not (Test-Path $sourceJar)) { throw "Expected built plugin JAR was not found: $sourceJar" }
+if (-not (Test-Path $snakeSourceJar)) { throw "Expected Snake solo JAR was not found: $snakeSourceJar" }
 New-Item -ItemType Directory -Force -Path (Split-Path $soloJar) | Out-Null
 Copy-Item -Force $sourceJar $soloJar
-Write-Host "Copied canonical plugin JAR to solo/server/plugins/MonsterMazeStandalone.jar"
+Copy-Item -Force $snakeSourceJar $snakeSoloJar
+Write-Host "Copied Monster Maze and Snake Solo JARs to solo/server/plugins."
 
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 Copy-Item -Recurse -Force (Join-Path $here "launcher") (Join-Path $dist "launcher")
