@@ -63,7 +63,7 @@ public class GameScoreboard {
         }
         int padScore=13-count, stageScore=12-count, pbScore=11-count;
         setLine(board,obj,"line_pad",getUniqueEntry(12),padScore,ChatColor.GREEN+"Pad: ",
-                hasPad?ChatColor.WHITE+phaseSeconds+"s":ChatColor.GRAY+"None");
+                hasPad?ChatColor.WHITE+""+phaseSeconds+"s":ChatColor.GRAY+"None");
         setLine(board,obj,"line_stage",getUniqueEntry(13),stageScore,ChatColor.GOLD+"Stage: ",ChatColor.WHITE+String.valueOf(stage));
         String pb=pbText!=null&&!pbText.isEmpty()?pbText:"None";
         setLine(board,obj,"line_pb",getUniqueEntry(14),pbScore,ChatColor.AQUA+"PB: ",ChatColor.WHITE+pb);
