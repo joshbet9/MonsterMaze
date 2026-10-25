@@ -24,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /** Per-observer scoreboard and player-visibility state. */
 public class GameScoreboard {
     private final Map<UUID, Scoreboard> boards = new ConcurrentHashMap<UUID, Scoreboard>();
+    private final Map<UUID, Integer> layoutPlayerCounts = new ConcurrentHashMap<UUID, Integer>();
     private final ProtocolManager protocolManager = ProtocolLibrary.getProtocolManager();
 
     private Scoreboard boardFor(Player p) {
@@ -50,38 +51,48 @@ public class GameScoreboard {
                        List<PlayerDistance> standings) {
         Scoreboard board=boardFor(p);Objective obj=board.getObjective("mm");if(obj==null)return;
         int total=standings==null?0:standings.size();
-        boolean paging=total>14;int pageSize=paging?14:15;
-        int pages=paging?(total+pageSize-1)/pageSize:1;
-        int page=paging?(int)((System.currentTimeMillis()/5000L)%pages):0;
-        int offset=page*pageSize;int count=Math.max(0,Math.min(pageSize,total-offset));
-        boolean compact=total>10;
-        obj.setDisplayName(paging?ChatColor.GOLD+""+ChatColor.BOLD+"Monster Maze ("+(page+1)+"/"+pages+")":
+        // The sidebar can show at most 15 entries. Keep the original heading/value style,
+        // dedicate up to six rows to player distances, and page when there are more players.
+        final int pageSize=6;
+        int pages=Math.max(1,(total+pageSize-1)/pageSize);
+        int page=pages>1?(int)((System.currentTimeMillis()/5000L)%pages):0;
+        int offset=page*pageSize;
+        int count=Math.max(0,Math.min(pageSize,total-offset));
+        Integer previousCount=layoutPlayerCounts.put(p.getUniqueId(),Integer.valueOf(count));
+        if(previousCount==null||previousCount.intValue()!=count)clearDynamicLines(board);
+        obj.setDisplayName(pages>1?ChatColor.GOLD+""+ChatColor.BOLD+"Monster Maze ("+(page+1)+"/"+pages+")":
                 ChatColor.GOLD+""+ChatColor.BOLD+"Monster Maze");
-        if(compact){
-            removeLine(board,"line_mode");removeLine(board,"line_pad");removeLine(board,"line_stage");removeLine(board,"line_pb");
-            obj.getScore(label(ChatColor.YELLOW,"Players:")).setScore(15);
-        }else{
-            setLine(board,obj,"line_mode",getUniqueEntry(15),15,ChatColor.YELLOW+"Mode: ",ChatColor.WHITE+(mode==null?"?":mode));
-            obj.getScore(label(ChatColor.YELLOW,"Players:")).setScore(14);
+
+        int line=15;
+        setLine(board,obj,"line_mode_label",getUniqueEntry(line),line,label(ChatColor.YELLOW,"Mode"),"");line--;
+        setLine(board,obj,"line_mode_value",getUniqueEntry(line),line,"",ChatColor.WHITE+(mode==null?"?":mode));line--;
+        setLine(board,obj,"line_players_label",getUniqueEntry(line),line,label(ChatColor.YELLOW,"Players"),ChatColor.GRAY+" ("+total+")");line--;
+        for(int i=0;i<count;i++){
+            PlayerDistance player=standings.get(offset+i);
+            String name=player.name.length()>14?player.name.substring(0,14):player.name;
+            setLine(board,obj,"line_p"+i,getUniqueEntry(line),line,ChatColor.YELLOW+name,ChatColor.GRAY+" "+player.distance+"m");
+            line--;
         }
-        for(int i=0;i<15;i++){
-            String teamName="line_p"+i,entry=getUniqueEntry(i+1);
-            if(i<count){
-                PlayerDistance player=standings.get(offset+i);
-                String name=player.name.length()>14?player.name.substring(0,14):player.name;
-                int score=compact?14-i:13-i;
-                setLine(board,obj,teamName,entry,score,ChatColor.YELLOW+name,ChatColor.GRAY+" "+player.distance+"b");
-            }else removeLine(board,teamName);
-        }
-        if(!compact){
-            int padScore=13-count,stageScore=12-count,pbScore=11-count;
-            setLine(board,obj,"line_pad",getUniqueEntry(12),padScore,ChatColor.GREEN+"Pad: ",
-                    hasPad?ChatColor.WHITE+""+phaseSeconds+"s":ChatColor.GRAY+"None");
-            setLine(board,obj,"line_stage",getUniqueEntry(13),stageScore,ChatColor.GOLD+"Stage: ",ChatColor.WHITE+String.valueOf(stage));
-            String pb=pbText!=null&&!pbText.isEmpty()?pbText:"None";
-            setLine(board,obj,"line_pb",getUniqueEntry(14),pbScore,ChatColor.AQUA+"PB: ",ChatColor.WHITE+pb);
-        }
+        for(int i=count;i<pageSize;i++)removeLine(board,"line_p"+i);
+        setLine(board,obj,"line_pad_label",getUniqueEntry(line),line,label(ChatColor.GREEN,"Safe Pad"),"");line--;
+        setLine(board,obj,"line_pad_value",getUniqueEntry(line),line,"",hasPad?ChatColor.WHITE+""+phaseSeconds+" Seconds":ChatColor.GRAY+"None");line--;
+        setLine(board,obj,"line_stage_label",getUniqueEntry(line),line,label(ChatColor.GOLD,"Stage"),"");line--;
+        setLine(board,obj,"line_stage_value",getUniqueEntry(line),line,"",ChatColor.WHITE+String.valueOf(stage));line--;
+        String pb=pbText!=null&&!pbText.isEmpty()?pbText:"None";
+        setLine(board,obj,"line_pb_label",getUniqueEntry(line),line,label(ChatColor.AQUA,"PB"),"");line--;
+        setLine(board,obj,"line_pb_value",getUniqueEntry(line),line,"",ChatColor.WHITE+pb);
         applyVisibility(p);
+    }
+
+    private void clearDynamicLines(Scoreboard board) {
+        for(Team team:new java.util.ArrayList<Team>(board.getTeams())){
+            if(!team.getName().startsWith("line_"))continue;
+            for(String entry:new java.util.ArrayList<String>(team.getEntries())){
+                board.resetScores(entry);
+                team.removeEntry(entry);
+            }
+            team.unregister();
+        }
     }
 
     private void removeLine(Scoreboard board,String teamName){
@@ -187,6 +198,7 @@ public class GameScoreboard {
         for (Player p : players) {
             p.setScoreboard(main);
             boards.remove(p.getUniqueId());
+            layoutPlayerCounts.remove(p.getUniqueId());
         }
     }
 }

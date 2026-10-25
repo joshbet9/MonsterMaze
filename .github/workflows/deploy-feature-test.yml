@@ -252,31 +252,40 @@ jobs:
           sudo install -o monstermaze -g monstermaze -m 0644 "/tmp/mm21-protocollib-$sha.jar" "$root/1.21/plugins/ProtocolLib.jar"
           sudo systemctl start "${services[@]}"
 
-          for attempt in {1..20}; do
-            active18=0; active21=0
-            sudo systemctl is-active --quiet monstermaze-18.service && active18=1 || true
-            sudo systemctl is-active --quiet monstermaze-21.service && active21=1 || true
-            if [ "$active18" -eq 1 ] && [ "$active21" -eq 1 ]; then break; fi
-            sleep 2
+          enabled18=0
+          enabled21=0
+          startup_error=""
+          # A systemd service becomes active as soon as Java starts, before Bukkit
+          # finishes loading plugins. Wait for the plugin-enable messages instead.
+          for attempt in {1..90}; do
+            logs18="$(sudo journalctl -u monstermaze-18.service --since "$started_at" -n 400 --no-pager -o cat || true)"
+            logs21="$(sudo journalctl -u monstermaze-21.service --since "$started_at" -n 400 --no-pager -o cat || true)"
+
+            if printf '%s\n%s\n' "$logs18" "$logs21" | grep -Eqi 'Error occurred while enabling MonsterMazeStandalone|Could not load.*MonsterMazeStandalone|UnsupportedClassVersionError|Could not enable per-player mob disguises'; then
+              startup_error="Monster Maze startup error detected."
+              break
+            fi
+
+            printf '%s\n' "$logs18" | grep -qi 'Enabling MonsterMazeStandalone' && enabled18=1 || true
+            printf '%s\n' "$logs21" | grep -qi 'Enabling MonsterMazeStandalone' && enabled21=1 || true
+
+            if [ "$enabled18" -eq 1 ] && [ "$enabled21" -eq 1 ] &&
+               sudo systemctl is-active --quiet monstermaze-18.service &&
+               sudo systemctl is-active --quiet monstermaze-21.service; then
+              break
+            fi
+            sleep 1
           done
 
-          if ! sudo systemctl is-active --quiet monstermaze-18.service || ! sudo systemctl is-active --quiet monstermaze-21.service; then
+          if [ -n "$startup_error" ] ||
+             [ "$enabled18" -ne 1 ] || [ "$enabled21" -ne 1 ] ||
+             ! sudo systemctl is-active --quiet monstermaze-18.service ||
+             ! sudo systemctl is-active --quiet monstermaze-21.service; then
+            echo "${startup_error:-Monster Maze plugin enable check timed out or a service stopped.}"
+            sudo journalctl -u monstermaze-18.service --since "$started_at" -n 100 --no-pager || true
+            sudo journalctl -u monstermaze-21.service --since "$started_at" -n 100 --no-pager || true
             rollback
             exit 1
           fi
-
-          for service in "${services[@]}"; do
-            logs="$(sudo journalctl -u "$service" --since "$started_at" -n 250 --no-pager || true)"
-            if ! printf '%s\n' "$logs" | grep -qi 'Enabling MonsterMazeStandalone'; then
-              echo "MonsterMazeStandalone did not report an enable event in $service."
-              rollback
-              exit 1
-            fi
-            if printf '%s\n' "$logs" | grep -Eqi 'Error occurred while enabling MonsterMazeStandalone|Could not load.*MonsterMazeStandalone|UnsupportedClassVersionError|Could not enable per-player mob disguises'; then
-              echo "Monster Maze startup error detected in $service."
-              rollback
-              exit 1
-            fi
-          done
           echo "Test deployment succeeded for commit $sha. Backups retained in $backup."
           REMOTE

@@ -63,7 +63,11 @@ public final class MobThemeManager implements Listener {
     public void refreshPlayerPads(Player p){if(p==null||!p.isOnline())return;for(PadVisual d:pads.values())if(visibleTo(p,d))paintPad(p,d);}
     @SuppressWarnings("deprecation") public void unregisterSafePad(Location c){
         if(c==null)return;PadVisual d=pads.remove(key(c));if(d==null||d.center.getWorld()==null)return;World w=d.center.getWorld();int cx=d.center.getBlockX(),cz=d.center.getBlockZ();
-        for(Player p:Bukkit.getOnlinePlayers())if(visibleTo(p,d)){for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++){Location at=new Location(w,cx+x,d.surfaceY,cz+z);Block b=w.getBlockAt(at);p.sendBlockChange(at,b.getType(),b.getData());}Location tint=new Location(w,cx,d.surfaceY+3,cz);Block b=w.getBlockAt(tint);p.sendBlockChange(tint,b.getType(),b.getData());}
+        for(Player p:Bukkit.getOnlinePlayers())if(visibleTo(p,d)){
+            for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++){Location at=new Location(w,cx+x,d.surfaceY,cz+z);Block b=w.getBlockAt(at);p.sendBlockChange(at,b.getType(),b.getData());}
+            Location beamTint=new Location(w,cx,d.surfaceY+1,cz);Block beamBlock=w.getBlockAt(beamTint);p.sendBlockChange(beamTint,beamBlock.getType(),beamBlock.getData());
+            Location tint=new Location(w,cx,d.surfaceY+3,cz);Block b=w.getBlockAt(tint);p.sendBlockChange(tint,b.getType(),b.getData());
+        }
     }
     public void shutdown(){save();if(beaconBeamTask!=null)beaconBeamTask.cancel();}
     @EventHandler public void onThemeClick(PlayerInteractEvent e){
@@ -73,11 +77,28 @@ public final class MobThemeManager implements Listener {
         if(!plugin.hasPerPlayerMobDisguises()&&!warnedMissingDisguise){p.sendMessage(ChatColor.RED+"Mob appearance changes require ProtocolLib; Safe Pad and beacon colours still update.");warnedMissingDisguise=true;}
         p.sendMessage(ChatColor.LIGHT_PURPLE+"Mob theme: "+ChatColor.YELLOW+displayName(selected(p))+ChatColor.GRAY+" (personal view).");
     }
-    @EventHandler(priority=org.bukkit.event.EventPriority.MONITOR,ignoreCancelled=true)
-    public void refreshTintAfterTerracottaInteraction(final PlayerInteractEvent e){
-        if(e.getAction()!=Action.RIGHT_CLICK_BLOCK||e.getClickedBlock()==null||e.getClickedBlock().getType()!=Material.STAINED_CLAY)return;
+    @EventHandler(priority=org.bukkit.event.EventPriority.MONITOR)
+    public void refreshTintAfterPadInteraction(final PlayerInteractEvent e){
+        if(e.getAction()!=Action.RIGHT_CLICK_BLOCK||e.getClickedBlock()==null)return;
+        final Block clicked=e.getClickedBlock();
         final Player player=e.getPlayer();
-        for(long delay:new long[]{1L,3L,6L})Bukkit.getScheduler().runTaskLater(plugin,new Runnable(){@Override public void run(){if(player.isOnline())refreshPlayerPads(player);}},delay);
+        PadVisual matched=null;
+        for(PadVisual candidate:pads.values()){
+            if(candidate.center.getWorld().equals(clicked.getWorld())
+                    &&clicked.getY()==candidate.surfaceY
+                    &&Math.abs(clicked.getX()-candidate.center.getBlockX())<=2
+                    &&Math.abs(clicked.getZ()-candidate.center.getBlockZ())<=2){
+                matched=candidate;
+                break;
+            }
+        }
+        if(matched==null)return;
+        final PadVisual pad=matched;
+        for(final long delay:new long[]{1L,3L,6L,10L}){
+            Bukkit.getScheduler().runTaskLater(plugin,new Runnable(){@Override public void run(){
+                if(player.isOnline()&&pads.get(key(pad.center))==pad&&visibleTo(player,pad))paintPad(player,pad);
+            }},delay);
+        }
     }
     @EventHandler public void onInventoryClick(InventoryClickEvent e){if(!(e.getWhoClicked() instanceof Player))return;Player p=(Player)e.getWhoClicked();if(isSelector(e.getCurrentItem())||isSelector(e.getCursor())||e.getHotbarButton()==SLOT||(e.getClickedInventory()==p.getInventory()&&e.getSlot()==SLOT))e.setCancelled(true);}
     @EventHandler public void onDrop(PlayerDropItemEvent e){if(isSelector(e.getItemDrop().getItemStack()))e.setCancelled(true);}
@@ -90,6 +111,10 @@ public final class MobThemeManager implements Listener {
         World w=d.center.getWorld();int cx=d.center.getBlockX(),cz=d.center.getBlockZ();byte tint=colorData(palette(p));
         boolean mapDefault="map_default".equals(selected(p));
         for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++){Location at=new Location(w,cx+x,d.surfaceY,cz+z);Block b=w.getBlockAt(at);byte data=b.getData();if(!mapDefault&&b.getType()==Material.STAINED_CLAY&&data==5)data=tint;p.sendBlockChange(at,b.getType(),data);}
+        // A client-side stained-glass block gives this viewer's vanilla beacon beam the selected theme colour.
+        Location beamTint=new Location(w,cx,d.surfaceY+1,cz);Block actualBeamBlock=w.getBlockAt(beamTint);
+        if(d.beaconActive&&!mapDefault)p.sendBlockChange(beamTint,Material.STAINED_GLASS,colorData(palette(p)));
+        else p.sendBlockChange(beamTint,actualBeamBlock.getType(),actualBeamBlock.getData());
         Location above=new Location(w,cx,d.surfaceY+3,cz);Block actual=w.getBlockAt(above);p.sendBlockChange(above,actual.getType(),actual.getData());
     }
     private void renderBeaconBeams(){

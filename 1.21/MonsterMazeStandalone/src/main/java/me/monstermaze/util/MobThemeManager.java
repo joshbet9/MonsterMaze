@@ -92,6 +92,7 @@ public final class MobThemeManager implements Listener {
         World w=pad.center.getWorld(); int cx=pad.center.getBlockX(),cz=pad.center.getBlockZ();
         for(Player p:Bukkit.getOnlinePlayers())if(visibleTo(p,pad)) {
             for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++){Location at=new Location(w,cx+x,pad.surfaceY,cz+z);p.sendBlockChange(at,w.getBlockAt(at).getBlockData().clone());}
+            Location beamTint=new Location(w,cx,pad.surfaceY+1,cz);p.sendBlockChange(beamTint,w.getBlockAt(beamTint).getBlockData().clone());
             Location tint=new Location(w,cx,pad.surfaceY+3,cz);p.sendBlockChange(tint,w.getBlockAt(tint).getBlockData().clone());
         }
     }
@@ -105,11 +106,28 @@ public final class MobThemeManager implements Listener {
         if(!plugin.hasPerPlayerMobDisguises()&&!warnedMissingDisguise){p.sendMessage(ChatColor.RED+"Mob appearance changes require ProtocolLib; Safe Pad and beacon colours still update.");warnedMissingDisguise=true;}
         p.sendMessage(ChatColor.LIGHT_PURPLE+"Mob theme: "+ChatColor.YELLOW+displayName(selected(p))+ChatColor.GRAY+" (personal view).");
     }
-    @EventHandler(priority=org.bukkit.event.EventPriority.MONITOR,ignoreCancelled=true)
-    public void refreshTintAfterTerracottaInteraction(final PlayerInteractEvent e){
-        if(e.getAction()!=Action.RIGHT_CLICK_BLOCK||e.getClickedBlock()==null||!e.getClickedBlock().getType().name().endsWith("TERRACOTTA"))return;
+    @EventHandler(priority=org.bukkit.event.EventPriority.MONITOR)
+    public void refreshTintAfterPadInteraction(final PlayerInteractEvent e) {
+        if(e.getHand()!=EquipmentSlot.HAND||e.getAction()!=Action.RIGHT_CLICK_BLOCK||e.getClickedBlock()==null)return;
+        final Block clicked=e.getClickedBlock();
         final Player player=e.getPlayer();
-        for(long delay:new long[]{1L,3L,6L})Bukkit.getScheduler().runTaskLater(plugin,new Runnable(){@Override public void run(){if(player.isOnline())refreshPlayerPads(player);}},delay);
+        PadVisual matched=null;
+        for(PadVisual candidate:pads.values()) {
+            if(candidate.center.getWorld().equals(clicked.getWorld())
+                    && clicked.getY()==candidate.surfaceY
+                    && Math.abs(clicked.getX()-candidate.center.getBlockX())<=2
+                    && Math.abs(clicked.getZ()-candidate.center.getBlockZ())<=2) {
+                matched=candidate;
+                break;
+            }
+        }
+        if(matched==null)return;
+        final PadVisual pad=matched;
+        for(final long delay:new long[]{1L,3L,6L,10L}) {
+            Bukkit.getScheduler().runTaskLater(plugin,new Runnable(){@Override public void run(){
+                if(player.isOnline()&&pads.get(key(pad.center))==pad&&visibleTo(player,pad))paintPad(player,pad);
+            }},delay);
+        }
     }
     @EventHandler public void onInventoryClick(InventoryClickEvent e) {
         if(!(e.getWhoClicked() instanceof Player))return; Player p=(Player)e.getWhoClicked();
@@ -133,6 +151,12 @@ public final class MobThemeManager implements Listener {
             Location at=new Location(w,cx+x,pad.surfaceY,cz+z);Block real=w.getBlockAt(at);BlockData visual=real.getBlockData().clone();
             if(!mapDefault&&real.getType()==Material.LIME_TERRACOTTA)visual=tint.clone();p.sendBlockChange(at,visual);
         }
+        // A client-side stained-glass block gives this viewer's vanilla beacon beam the selected theme colour.
+        Location beamTint=new Location(w,cx,pad.surfaceY+1,cz);
+        Block actualBeamBlock=w.getBlockAt(beamTint);
+        if(pad.beaconActive&&!mapDefault)p.sendBlockChange(beamTint,glassMaterial(p).createBlockData());
+        else p.sendBlockChange(beamTint,actualBeamBlock.getBlockData().clone());
+        // Clear any prior overlay left at the upper visual marker.
         Location above=new Location(w,cx,pad.surfaceY+3,cz);Block actual=w.getBlockAt(above);p.sendBlockChange(above,actual.getBlockData().clone());
     }
     private Material padMaterial(Player p){Material m=Material.matchMaterial(color(palette(p))+"_TERRACOTTA");return m==null?Material.LIME_TERRACOTTA:m;}
