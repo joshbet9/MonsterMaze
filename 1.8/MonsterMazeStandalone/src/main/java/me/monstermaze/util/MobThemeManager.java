@@ -32,10 +32,8 @@ public final class MobThemeManager implements Listener {
     private final Map<UUID,String> choices=new LinkedHashMap<UUID,String>();
     private final Map<String,PadVisual> pads=new LinkedHashMap<String,PadVisual>();
     private boolean warnedMissingDisguise;
-    private final org.bukkit.scheduler.BukkitTask beaconBeamTask;
     public MobThemeManager(MonsterMazePlugin p){
         plugin=p;file=new File(p.getDataFolder(),"player-mob-themes.yml");load();Bukkit.getPluginManager().registerEvents(this,p);
-        beaconBeamTask=Bukkit.getScheduler().runTaskTimer(p,new Runnable(){@Override public void run(){renderBeaconBeams();}},2L,4L);
     }
     public String selected(Player p){if(p==null)return "map_default";String s=choices.get(p.getUniqueId());return normalize(s==null?"map_default":s);}
     public String forViewer(Player viewer,UUID id){String s=selected(viewer);if("map_default".equals(s))s=defaultTheme();return "random".equals(s)?randomConcrete(viewer.getUniqueId(),id):s;}
@@ -58,18 +56,20 @@ public final class MobThemeManager implements Listener {
         item.setItemMeta(meta);p.getInventory().setItem(SLOT,item);p.updateInventory();
     }
     public void registerSafePad(Location c){if(c==null||c.getWorld()==null)return;pads.put(key(c),new PadVisual(c.clone(),c.getBlockY()-1));refreshSafePad(c);}
-    public void setSafePadBeaconActive(Location c,boolean active){PadVisual p=c==null?null:pads.get(key(c));if(p==null)return;p.beaconActive=active;refreshSafePad(c);}
+    public void setSafePadBeaconActive(Location c,boolean active){
+        // Beacon beams retain vanilla Minecraft colouring; only the pad terracotta is themed.
+        refreshSafePad(c);
+    }
     public void refreshSafePad(Location c){PadVisual d=c==null?null:pads.get(key(c));if(d==null)return;for(Player p:Bukkit.getOnlinePlayers())if(visibleTo(p,d))paintPad(p,d);}
     public void refreshPlayerPads(Player p){if(p==null||!p.isOnline())return;for(PadVisual d:pads.values())if(visibleTo(p,d))paintPad(p,d);}
     @SuppressWarnings("deprecation") public void unregisterSafePad(Location c){
         if(c==null)return;PadVisual d=pads.remove(key(c));if(d==null||d.center.getWorld()==null)return;World w=d.center.getWorld();int cx=d.center.getBlockX(),cz=d.center.getBlockZ();
         for(Player p:Bukkit.getOnlinePlayers())if(visibleTo(p,d)){
             for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++){Location at=new Location(w,cx+x,d.surfaceY,cz+z);Block b=w.getBlockAt(at);p.sendBlockChange(at,b.getType(),b.getData());}
-            Location beamTint=new Location(w,cx,d.surfaceY+1,cz);Block beamBlock=w.getBlockAt(beamTint);p.sendBlockChange(beamTint,beamBlock.getType(),beamBlock.getData());
             Location tint=new Location(w,cx,d.surfaceY+3,cz);Block b=w.getBlockAt(tint);p.sendBlockChange(tint,b.getType(),b.getData());
         }
     }
-    public void shutdown(){save();if(beaconBeamTask!=null)beaconBeamTask.cancel();}
+    public void shutdown(){save();}
     @EventHandler public void onThemeClick(PlayerInteractEvent e){
         Action a=e.getAction();if(a!=Action.RIGHT_CLICK_AIR&&a!=Action.RIGHT_CLICK_BLOCK)return;Player p=e.getPlayer();
         if(p.getInventory().getHeldItemSlot()!=SLOT||!isSelector(p.getItemInHand()))return;e.setCancelled(true);
@@ -111,41 +111,9 @@ public final class MobThemeManager implements Listener {
         World w=d.center.getWorld();int cx=d.center.getBlockX(),cz=d.center.getBlockZ();byte tint=colorData(palette(p));
         boolean mapDefault="map_default".equals(selected(p));
         for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++){Location at=new Location(w,cx+x,d.surfaceY,cz+z);Block b=w.getBlockAt(at);byte data=b.getData();if(!mapDefault&&b.getType()==Material.STAINED_CLAY&&data==5)data=tint;p.sendBlockChange(at,b.getType(),data);}
-        // A client-side stained-glass block gives this viewer's vanilla beacon beam the selected theme colour.
-        Location beamTint=new Location(w,cx,d.surfaceY+1,cz);Block actualBeamBlock=w.getBlockAt(beamTint);
-        if(d.beaconActive&&!mapDefault)p.sendBlockChange(beamTint,Material.STAINED_GLASS,colorData(palette(p)));
-        else p.sendBlockChange(beamTint,actualBeamBlock.getType(),actualBeamBlock.getData());
         Location above=new Location(w,cx,d.surfaceY+3,cz);Block actual=w.getBlockAt(above);p.sendBlockChange(above,actual.getType(),actual.getData());
     }
-    private void renderBeaconBeams(){
-        for(Player viewer:Bukkit.getOnlinePlayers()){
-            if("map_default".equals(selected(viewer)))continue;
-            int[] rgb=beamRgb(palette(viewer));
-            
-            for(PadVisual pad:pads.values()){
-                if(!pad.beaconActive||!visibleTo(viewer,pad)||pad.center.getWorld()==null)continue;
-                World world=pad.center.getWorld();int top=Math.min(world.getMaxHeight()-1,pad.surfaceY+28);
-                for(int y=pad.surfaceY+1;y<=top;y+=2){
-                    Location point=new Location(world,pad.center.getBlockX()+0.5,y+0.05,pad.center.getBlockZ()+0.5);
-                    viewer.spigot().playEffect(point,org.bukkit.Effect.COLOURED_DUST,0,0,
-                            rgb[0]/255.0f,rgb[1]/255.0f,rgb[2]/255.0f,1.0f,0,64);
-                }
-            }
-        }
-    }
-    private static int[] beamRgb(String theme){
-        switch(normalize(theme)){
-            case "skeleton":return new int[]{225,225,225};case "spider":return new int[]{45,45,45};
-            case "silverfish":case "bat":case "wolf":return new int[]{135,135,135};
-            case "zombie":return new int[]{45,205,50};case "zombie_pigman":case "magma_cube":case "mooshroom":return new int[]{255,60,60};
-            case "enderman":case "witch":return new int[]{190,65,255};case "cave_spider":return new int[]{35,195,255};
-            case "blaze":case "villager":return new int[]{255,175,30};case "endermite":return new int[]{255,30,200};
-            case "guardian":return new int[]{25,225,225};case "pig":case "rabbit":return new int[]{255,125,185};
-            case "cow":case "horse":return new int[]{155,95,45};case "squid":return new int[]{45,85,255};
-            case "ocelot":return new int[]{255,230,20};case "sheep":case "chicken":case "snowman":return new int[]{245,245,245};
-            default:return new int[]{125,255,0};
-        }
-    }
+
     private boolean visibleTo(Player p,PadVisual d){if(p==null||!p.isOnline()||d.center.getWorld()==null||!p.getWorld().equals(d.center.getWorld()))return false;Location l=p.getLocation();return Math.abs(l.getX()-d.center.getX())<=192&&Math.abs(l.getZ()-d.center.getZ())<=192;}
     private String palette(Player p){String s=selected(p);if("map_default".equals(s))return s;return "random".equals(s)?randomConcrete(p.getUniqueId(),null):s;}
     private String defaultTheme(){try{String s=plugin.getMapManager()==null?null:plugin.getMapManager().activeMob();return normalize(s==null?"creeper":s);}catch(Throwable ignored){return "creeper";}}
@@ -157,5 +125,5 @@ public final class MobThemeManager implements Listener {
     private String key(Location l){return l.getWorld().getUID()+":"+l.getBlockX()+":"+l.getBlockY()+":"+l.getBlockZ();}
     private void load(){if(!file.exists())return;YamlConfiguration y=YamlConfiguration.loadConfiguration(file);for(String id:y.getKeys(false)){try{choices.put(UUID.fromString(id),normalize(y.getString(id)));}catch(IllegalArgumentException ignored){}}}
     private void save(){try{File parent=file.getParentFile();if(parent!=null&&!parent.exists())parent.mkdirs();YamlConfiguration y=new YamlConfiguration();for(Map.Entry<UUID,String> e:choices.entrySet())y.set(e.getKey().toString(),e.getValue());y.save(file);}catch(IOException ex){plugin.getLogger().warning("Could not save mob-theme choices: "+ex.getMessage());}}
-    private static final class PadVisual{final Location center;final int surfaceY;boolean beaconActive=true;PadVisual(Location c,int y){center=c;surfaceY=y;}}
+    private static final class PadVisual{final Location center;final int surfaceY;PadVisual(Location c,int y){center=c;surfaceY=y;}}
 }
