@@ -31,8 +31,10 @@ public final class MonsterDisguiseListener {
 
     private final ProtocolManager protocolManager;
     private final PacketAdapter adapter;
+    private final MonsterMazePlugin plugin;
 
     public MonsterDisguiseListener(MonsterMazePlugin plugin) {
+        this.plugin = plugin;
         protocolManager = ProtocolLibrary.getProtocolManager();
         adapter = new PacketAdapter(
                 plugin,
