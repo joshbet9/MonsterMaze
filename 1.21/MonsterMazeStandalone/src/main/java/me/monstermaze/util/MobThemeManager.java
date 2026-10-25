@@ -74,6 +74,19 @@ public final class MobThemeManager implements Listener {
         if(center==null||center.getWorld()==null)return;
         pads.put(key(center),new PadVisual(center.clone(),center.getBlockY()-1)); refreshSafePad(center);
     }
+    /** True only for the centre surface block tracked by a currently active or decaying safe pad. */
+    public boolean isSafePadCenterSurface(Location location) {
+        if(location==null||location.getWorld()==null)return false;
+        for(PadVisual pad:pads.values()) {
+            if(pad.center.getWorld()!=null
+                    &&pad.center.getWorld().equals(location.getWorld())
+                    &&pad.center.getBlockX()==location.getBlockX()
+                    &&pad.surfaceY==location.getBlockY()
+                    &&pad.center.getBlockZ()==location.getBlockZ())return true;
+        }
+        return false;
+    }
+
     public void setSafePadBeaconActive(Location center,boolean active) {
         // Beacon beams retain vanilla Minecraft colouring; only the pad terracotta is themed.
         refreshSafePad(center);

@@ -3,6 +3,7 @@ package me.monstermaze.world;
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.maze.MazeBlockData;
 import me.monstermaze.maze.MazeGenerator;
+import me.monstermaze.util.MobThemeManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -99,6 +100,8 @@ public final class MapThemeApplier {
     }
 
     private boolean isProtectedPadBlock(Block block) {
+        MobThemeManager mobThemes = plugin.getMobThemeManager();
+        if (mobThemes != null && mobThemes.isSafePadCenterSurface(block.getLocation())) return true;
         Material type = block.getType();
         return type == Material.BEACON
                 || type == Material.LIME_TERRACOTTA

@@ -149,7 +149,8 @@ public class SafePad implements Listener {
         World world = center.getWorld();
         int cx = center.getBlockX(), cy = surfaceY, cz = center.getBlockZ();
         Block surface = world.getBlockAt(cx, cy, cz);
-        if (surface.getType() == Material.GLASS) surface.setType(Material.LIME_TERRACOTTA, false);
+        // The map-theme task may already have replaced the glass with a maze block, so always lock the centre to clay until decay completes.
+        surface.setType(Material.LIME_TERRACOTTA, false);
         Block beacon = world.getBlockAt(cx, cy - 1, cz);
         if (beacon.getType() == Material.BEACON) beacon.setType(Material.AIR, false);
         MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();

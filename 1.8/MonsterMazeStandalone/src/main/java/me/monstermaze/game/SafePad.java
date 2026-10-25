@@ -150,10 +150,9 @@ public class SafePad implements Listener {
         World world = center.getWorld();
         int cx = center.getBlockX(), cy = surfaceY, cz = center.getBlockZ();
         Block surface = world.getBlockAt(cx, cy, cz);
-        if (surface.getType() == Material.GLASS) {
-            surface.setType(Material.STAINED_CLAY);
-            surface.setData((byte) 5);
-        }
+        // Always keep the pad centre as the original green stained clay until the decay cycle finishes.
+        surface.setType(Material.STAINED_CLAY);
+        surface.setData((byte) 5);
         Block beacon = world.getBlockAt(cx, cy - 1, cz);
         if (beacon.getType() == Material.BEACON) beacon.setType(Material.AIR);
         for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) {

@@ -51,8 +51,6 @@ public class GameScoreboard {
                        List<PlayerDistance> standings) {
         Scoreboard board=boardFor(p);Objective obj=board.getObjective("mm");if(obj==null)return;
         int total=standings==null?0:standings.size();
-        // The sidebar can show at most 15 entries. Keep the original heading/value style,
-        // dedicate up to six rows to player distances, and page when there are more players.
         final int pageSize=6;
         int pages=Math.max(1,(total+pageSize-1)/pageSize);
         int page=pages>1?(int)((System.currentTimeMillis()/5000L)%pages):0;
@@ -63,24 +61,30 @@ public class GameScoreboard {
         obj.setDisplayName(pages>1?ChatColor.GOLD+""+ChatColor.BOLD+"Monster Maze ("+(page+1)+"/"+pages+")":
                 ChatColor.GOLD+""+ChatColor.BOLD+"Monster Maze");
 
-        int line=15;
-        setLine(board,obj,"line_mode_label",getUniqueEntry(line),line,label(ChatColor.YELLOW,"Mode"),"");line--;
-        setLine(board,obj,"line_mode_value",getUniqueEntry(line),line,"",ChatColor.WHITE+(mode==null?"?":mode));line--;
-        setLine(board,obj,"line_players_label",getUniqueEntry(line),line,label(ChatColor.YELLOW,"Players"),ChatColor.GRAY+" ("+total+")");line--;
+        // Keep the classic one-line field layout and reserve blank rows between sections.
+        // Six player rows fit alongside four real spacer rows within the sidebar's 15-line limit.
+        setLine(board,obj,"line_mode",getUniqueEntry(15),15,ChatColor.YELLOW+""+ChatColor.BOLD+"Mode: ",
+                ChatColor.WHITE+(mode==null?"?":mode));
+        setSpacer(obj,14);
+        setLine(board,obj,"line_players",getUniqueEntry(13),13,label(ChatColor.YELLOW,"Players:"),
+                ChatColor.GRAY+" ("+total+")");
         for(int i=0;i<count;i++){
             PlayerDistance player=standings.get(offset+i);
             String name=player.name.length()>14?player.name.substring(0,14):player.name;
-            setLine(board,obj,"line_p"+i,getUniqueEntry(line),line,ChatColor.YELLOW+name,ChatColor.GRAY+" "+player.distance+"m");
-            line--;
+            int score=12-i;
+            setLine(board,obj,"line_p"+i,getUniqueEntry(score),score,ChatColor.YELLOW+name,
+                    ChatColor.GRAY+" "+player.distance+"m");
         }
         for(int i=count;i<pageSize;i++)removeLine(board,"line_p"+i);
-        setLine(board,obj,"line_pad_label",getUniqueEntry(line),line,label(ChatColor.GREEN,"Safe Pad"),"");line--;
-        setLine(board,obj,"line_pad_value",getUniqueEntry(line),line,"",hasPad?ChatColor.WHITE+""+phaseSeconds+" Seconds":ChatColor.GRAY+"None");line--;
-        setLine(board,obj,"line_stage_label",getUniqueEntry(line),line,label(ChatColor.GOLD,"Stage"),"");line--;
-        setLine(board,obj,"line_stage_value",getUniqueEntry(line),line,"",ChatColor.WHITE+String.valueOf(stage));line--;
+        setSpacer(obj,6);
+        setLine(board,obj,"line_pad",getUniqueEntry(5),5,ChatColor.GREEN+""+ChatColor.BOLD+"Safe Pad: ",
+                hasPad?ChatColor.WHITE+""+phaseSeconds+"s":ChatColor.GRAY+"None");
+        setSpacer(obj,4);
+        setLine(board,obj,"line_stage",getUniqueEntry(3),3,ChatColor.GOLD+""+ChatColor.BOLD+"Stage: ",
+                ChatColor.WHITE+String.valueOf(stage));
+        setSpacer(obj,2);
         String pb=pbText!=null&&!pbText.isEmpty()?pbText:"None";
-        setLine(board,obj,"line_pb_label",getUniqueEntry(line),line,label(ChatColor.AQUA,"PB"),"");line--;
-        setLine(board,obj,"line_pb_value",getUniqueEntry(line),line,"",ChatColor.WHITE+pb);
+        setLine(board,obj,"line_pb",getUniqueEntry(1),1,ChatColor.AQUA+""+ChatColor.BOLD+"PB: ",ChatColor.WHITE+pb);
         applyVisibility(p);
     }
 
@@ -99,6 +103,10 @@ public class GameScoreboard {
         Team team=board.getTeam(teamName);if(team==null)return;
         for(String entry:new java.util.ArrayList<String>(team.getEntries())){board.resetScores(entry);team.removeEntry(entry);}
         team.unregister();
+    }
+
+    private void setSpacer(Objective obj,int score){
+        obj.getScore(getUniqueEntry(score)).setScore(score);
     }
 
     private void setLine(Scoreboard board,Objective obj,String teamName,String entry,int score,String prefix,String suffix){
