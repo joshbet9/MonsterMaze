@@ -112,7 +112,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         getLogger().info("Debug mode: " + debug);
         getLogger().info("Run recording: " + recordRuns);
         getLogger().info("Run backend: " + (backendClient.isEnabled() ? "enabled" : "Solo/local webhook mode"));
-        getLogger().info("Players join into the active map lobby. Admin: /mm start");
+        getLogger().info("Players join the game selector. Select Monster Maze to enter its lobby; admin: /mm start");
     }
     @Override public void onDisable() { if (competitiveMatchTracker != null) competitiveMatchTracker.shutdown(); if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown(); if (gameManager != null) gameManager.forceStop(); }
     public static MonsterMazePlugin getInstance() { return instance; }
