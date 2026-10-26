@@ -42,7 +42,6 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
     public static final String HUB_WORLD_NAME = "mm_sandbox";
     private static final String SELECTOR_TITLE = ChatColor.DARK_PURPLE + "Game Selector";
     private static final String SANDBOX_PREFIX = ChatColor.DARK_AQUA + "Sandbox: ";
-    private static final String COSMETIC_PLUGIN = "MinigameCosmeticPrototypes";
 
     private final MonsterMazePlugin plugin;
     private final GameManager game;
@@ -236,11 +235,6 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
         }
         if (slot == 11) {
             player.closeInventory();
-            if (Bukkit.getPluginManager().getPlugin(COSMETIC_PLUGIN) == null) {
-                player.sendMessage(ChatColor.RED + "Playable test modes require MinigameCosmeticPrototypes on a Spigot 1.8.8 server.");
-                openSandboxMenu(player, key);
-                return;
-            }
             player.performCommand("arcadetest start " + key);
         } else if (slot == 15) {
             openGameSelector(player);
@@ -281,11 +275,6 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
     private void runPreview(final Player player, final String gameKey) {
         player.closeInventory();
         final int previewSequence = invalidatePendingPreview(player);
-        if (Bukkit.getPluginManager().getPlugin(COSMETIC_PLUGIN) == null) {
-            player.sendMessage(ChatColor.RED + "The cosmetic preview plugin is unavailable on this server. These prototype previews currently target Spigot 1.8.8.");
-            openSandboxMenu(player, gameKey);
-            return;
-        }
         Location preview = getHubSpawn();
         if (preview == null) {
             openSandboxMenu(player, gameKey);
