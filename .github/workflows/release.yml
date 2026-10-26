@@ -298,6 +298,21 @@ jobs:
           if ((Get-Item 'MonsterMaze-Server-1.8.zip').Length -le 0) { throw '1.8 server artifact is empty.' }
           if ((Get-Item 'MonsterMaze-Server-1.21.zip').Length -le 0) { throw '1.21 server artifact is empty.' }
 
+      - name: Verify cosmetic plugin is bundled only with the compatible 1.8 hosted server
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip18 = [System.IO.Compression.ZipFile]::OpenRead('MonsterMaze-Server-1.8.zip')
+          try {
+            $hasCosmetics18 = @($zip18.Entries | Where-Object { $_.FullName -eq 'plugins/MinigameCosmeticPrototypes.jar' }).Count -eq 1
+          } finally { $zip18.Dispose() }
+          if (-not $hasCosmetics18) { throw 'Hosted 1.8 server ZIP is missing MinigameCosmeticPrototypes.jar.' }
+          $zip21 = [System.IO.Compression.ZipFile]::OpenRead('MonsterMaze-Server-1.21.zip')
+          try {
+            $hasCosmetics21 = @($zip21.Entries | Where-Object { $_.FullName -eq 'plugins/MinigameCosmeticPrototypes.jar' }).Count -gt 0
+          } finally { $zip21.Dispose() }
+          if ($hasCosmetics21) { throw 'The legacy 1.8 cosmetics plugin must not be bundled with Paper 1.21.' }
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
