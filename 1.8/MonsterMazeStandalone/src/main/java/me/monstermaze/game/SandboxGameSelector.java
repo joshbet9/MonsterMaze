@@ -140,9 +140,11 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
         menu.setItem(15, item(Material.DRAGON_EGG, ChatColor.LIGHT_PURPLE + "Evolution",
                 "Open its isolated preview sandbox.", "Full Evolution gameplay is not included yet."));
         menu.setItem(16, item(Material.GLASS, ChatColor.WHITE + "Micro Battles",
-                "Open its isolated preview sandbox.", "Full Micro Battles gameplay is not included yet."));
-        menu.setItem(22, item(Material.BOOK, ChatColor.GRAY + "Sandbox",
-                "Other game entries are prototype-only.", "They do not start fake or incomplete game rounds."));
+                "Open its playable test mode.", "Test centre glass and per-viewer border particles."));
+        menu.setItem(17, item(Material.SHEARS, ChatColor.GREEN + "Snake",
+                "Open its playable test mode.", "Test ability-colour lines and classic rainbow Super Snake."));
+        menu.setItem(22, item(Material.BOOK, ChatColor.GRAY + "Cosmetic Test Modes",
+                "These are isolated, generated gameplay arenas.", "They do not change the Monster Maze round."));
         player.openInventory(menu);
     }
 
@@ -150,10 +152,10 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
         invalidatePendingPreview(player);
         selectedSandboxGame.put(player.getUniqueId(), gameKey);
         Inventory menu = Bukkit.createInventory(null, 27, SANDBOX_PREFIX + displayName(gameKey));
-        menu.setItem(11, item(Material.EXPERIENCE_BOTTLE, ChatColor.GREEN + "Preview cosmetic",
-                "Show the current visual prototype.", "Temporary effect; the sandbox restores its sample."));
-        menu.setItem(13, item(Material.BOOK, ChatColor.YELLOW + "Prototype sandbox",
-                "This game has a selector and preview only.", "Its live game loop is not present in this repository."));
+        menu.setItem(11, item(Material.IRON_SWORD, ChatColor.GREEN + "Start playable test round",
+                "Start a generated test arena for " + displayName(gameKey) + ".", "Use /arcadetest stop to end the round."));
+        menu.setItem(13, item(Material.BOOK, ChatColor.YELLOW + "Cosmetic test mode",
+                "A playable adaptation for checking cosmetics.", "Original Mineplex maps and all Arcade systems are not included."));
         menu.setItem(15, item(Material.ARROW, ChatColor.AQUA + "Back to game selector",
                 "Return to the game-selection layer."));
         menu.setItem(22, item(Material.IRON_SWORD, ChatColor.GREEN + "Enter Monster Maze",
@@ -220,7 +222,7 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
                     sendToHub(player);
                     openSandboxMenu(player, key);
                     player.sendMessage(ChatColor.YELLOW + displayName(key)
-                            + " is sandbox/preview-only; no live game round is started.");
+                            + " opens an isolated playable cosmetic test mode.");
                 }
             }
             return;
@@ -232,7 +234,13 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
             return;
         }
         if (slot == 11) {
-            runPreview(player, key);
+            player.closeInventory();
+            if (Bukkit.getPluginManager().getPlugin(COSMETIC_PLUGIN) == null) {
+                player.sendMessage(ChatColor.RED + "Playable test modes require MinigameCosmeticPrototypes on a Spigot 1.8.8 server.");
+                openSandboxMenu(player, key);
+                return;
+            }
+            player.performCommand("arcadetest start " + key);
         } else if (slot == 15) {
             openGameSelector(player);
         } else if (slot == 22) {
@@ -317,6 +325,7 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
         if (slot == 14) return "dragonescape";
         if (slot == 15) return "evolution";
         if (slot == 16) return "microbattles";
+        if (slot == 17) return "snake";
         return null;
     }
 
@@ -326,6 +335,7 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
         if ("microbattles".equals(key)) return "Micro Battles";
         if ("evolution".equals(key)) return "Evolution";
         if ("runner".equals(key)) return "Runner";
+        if ("snake".equals(key)) return "Snake";
         return "Game";
     }
 
