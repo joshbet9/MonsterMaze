@@ -132,13 +132,13 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
         menu.setItem(10, item(Material.IRON_SWORD, ChatColor.GREEN + "Monster Maze",
                 "Open the existing Monster Maze lobby.", "All existing Monster Maze features are kept."));
         menu.setItem(12, item(Material.SLIME_BALL, ChatColor.YELLOW + "Runner",
-                "Open its isolated preview sandbox.", "Full Runner gameplay is not included yet."));
+                "Open its playable test mode.", "Try the custom clay palette and finish-line behaviour."));
         menu.setItem(13, item(Material.GOLD_INGOT, ChatColor.GOLD + "Bacon Brawl",
-                "Open its isolated preview sandbox.", "Full Bacon Brawl gameplay is not included yet."));
+                "Open its playable test mode.", "Fight for kills and check the kill-leader pig accessory."));
         menu.setItem(14, item(Material.ENDER_PEARL, ChatColor.AQUA + "Dragon Escape",
-                "Open its isolated preview sandbox.", "Full Dragon Escape gameplay is not included yet."));
+                "Open its playable test mode.", "Race across gaps and test beacon colours."));
         menu.setItem(15, item(Material.DRAGON_EGG, ChatColor.LIGHT_PURPLE + "Evolution",
-                "Open its isolated preview sandbox.", "Full Evolution gameplay is not included yet."));
+                "Open its playable test mode.", "Earn kills to evolve and trigger the dragon-egg effect."));
         menu.setItem(16, item(Material.GLASS, ChatColor.WHITE + "Micro Battles",
                 "Open its playable test mode.", "Test centre glass and per-viewer border particles."));
         menu.setItem(17, item(Material.SHEARS, ChatColor.GREEN + "Snake",
