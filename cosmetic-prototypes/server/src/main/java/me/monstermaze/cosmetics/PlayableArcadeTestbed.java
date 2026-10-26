@@ -41,7 +41,6 @@ import org.bukkit.util.Vector;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -656,7 +655,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
             // In this testbed, the mounted sheep follows the player's look direction.
             // Speed increases the step; Reverse moves backwards for its two-second window.
             boolean reversing = isSnakeReversing(id);
-            if (!reversing || isSnakeAbilityActive(id, "reverse")) {
+            if (head.isValid()) {
                 Vector direction = player.getLocation().getDirection().setY(0.0D);
                 if (direction.lengthSquared() < 0.001D) direction = head.getLocation().getDirection().setY(0.0D);
                 if (direction.lengthSquared() > 0.001D) {
