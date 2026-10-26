@@ -150,14 +150,18 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
             getCommand("cosmeticproto").setExecutor(this);
         }
         getServer().getPluginManager().registerEvents(this, this);
+        testbed = new PlayableArcadeTestbed(this);
+        getServer().getPluginManager().registerEvents(testbed, this);
+        if (getCommand("arcadetest") != null) getCommand("arcadetest").setExecutor(testbed);
         new BukkitRunnable() {
             @Override public void run() { tickMicroBattlesParticles(); }
         }.runTaskTimer(this, 4L, 4L);
-        getLogger().info("Server-side cosmetic prototype harness loaded. It does not hook into the production Solo packer.");
+        getLogger().info("Playable 1.8.8 arcade cosmetic testbed loaded in an isolated world.");
     }
 
     @Override
     public void onDisable() {
+        if (testbed != null) testbed.shutdown();
         for (Map.Entry<UUID, MicroBattlesArena> entry : new ArrayList<Map.Entry<UUID, MicroBattlesArena>>(microBattlesArenas.entrySet())) {
             Player player = Bukkit.getPlayer(entry.getKey());
             if (player != null) restoreMicroBattlesGlass(player, entry.getValue());
@@ -211,6 +215,39 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
             if (!unused.isEmpty()) return unused.get(random.nextInt(unused.size())).byteValue();
         }
         return baseUsedByMap ? colour.inverse : colour.base;
+    }
+
+    /**
+     * Returns the Snake ability colour for an equipped cosmetic line. Null means
+     * no Snake line is active; the caller should preserve the classic rainbow
+     * effect for Super Snake or the player's normal tail colour for other abilities.
+     */
+    public DyeColor getSnakeAbilityColour(UUID playerId, String ability) {
+        if (playerId == null || ability == null) return null;
+        String line = getEquipped(playerId, "snake");
+        if (line == null || !SNAKE_LINES.contains(line)) return null;
+        if ("elemental".equals(line)) {
+            if ("super".equals(ability)) return DyeColor.BLUE;
+            if ("speed".equals(ability)) return DyeColor.YELLOW;
+            if ("reverse".equals(ability)) return DyeColor.PURPLE;
+        } else if ("neon".equals(line)) {
+            if ("super".equals(ability)) return DyeColor.CYAN;
+            if ("speed".equals(ability)) return DyeColor.LIME;
+            if ("reverse".equals(ability)) return DyeColor.MAGENTA;
+        } else if ("sunset".equals(line)) {
+            if ("super".equals(ability)) return DyeColor.RED;
+            if ("speed".equals(ability)) return DyeColor.ORANGE;
+            if ("reverse".equals(ability)) return DyeColor.PINK;
+        }
+        return null;
+    }
+
+    /** Convenience for a self-contained local test server: grant every test choice. */
+    public void unlockAllFor(UUID playerId) {
+        if (playerId == null) return;
+        for (String game : Arrays.asList("runner", "baconbrawl", "dragonescape", "evolution", "microbattles", "snake")) {
+            for (String choice : choicesFor(game)) setUnlocked(playerId, game, choice, true);
+        }
     }
 
     /** Registers the pig/entity used to represent this Bacon Brawl player. */
@@ -545,7 +582,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         }
         String game = normalizeGame(args[2]);
         if (game == null) {
-            sender.sendMessage(ChatColor.RED + "Unknown game. Use runner, baconbrawl, dragonescape or evolution.");
+            sender.sendMessage(ChatColor.RED + "Unknown game. Use runner, baconbrawl, dragonescape, evolution, microbattles or snake.");
             return;
         }
         List<String> choices = choicesFor(game);
@@ -602,7 +639,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         }
         String game = normalizeGame(args[1]);
         if (game == null) {
-            sender.sendMessage(ChatColor.RED + "Unknown game. Use runner, baconbrawl, dragonescape or evolution.");
+            sender.sendMessage(ChatColor.RED + "Unknown game. Use runner, baconbrawl, dragonescape, evolution, microbattles or snake.");
             return;
         }
         Player player = (Player) sender;
@@ -636,8 +673,10 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         } else if ("evolution".equals(game)) {
             spawnDragonEggParticles(player.getLocation().add(0, 1.0, 0));
             player.sendMessage(ChatColor.GREEN + "Triggered the Evolution dragon-egg particle preview.");
-        } else {
+        } else if ("microbattles".equals(game)) {
             previewMicroBattles(player);
+        } else {
+            player.sendMessage(ChatColor.YELLOW + "Snake cosmetics are exercised in a playable round: /arcadetest start snake.");
         }
     }
 
@@ -809,6 +848,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         if ("dragonescape".equals(game)) return "dragonescape";
         if ("evolution".equals(game)) return "evolution";
         if ("microbattles".equals(game)) return "microbattles";
+        if ("snake".equals(game)) return "snake";
         return null;
     }
 
@@ -822,6 +862,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         if ("dragonescape".equals(game)) return new ArrayList<String>(GLASS_COLOURS.keySet());
         if ("evolution".equals(game)) return new ArrayList<String>(EVOLUTION_CHOICES);
         if ("microbattles".equals(game)) return new ArrayList<String>(MICRO_BATTLES_THEMES.keySet());
+        if ("snake".equals(game)) return new ArrayList<String>(SNAKE_LINES);
         return Collections.emptyList();
     }
 
@@ -852,6 +893,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         sender.sendMessage(ChatColor.YELLOW + "Dragon Escape (beacon colours): " + join(choicesFor("dragonescape")));
         sender.sendMessage(ChatColor.YELLOW + "Evolution (evolving particles): " + join(choicesFor("evolution")));
         sender.sendMessage(ChatColor.YELLOW + "Micro Battles (per-client centre glass + border particles): " + join(choicesFor("microbattles")));
+        sender.sendMessage(ChatColor.YELLOW + "Snake (ability-colour lines; no line keeps rainbow Super Snake): " + join(choicesFor("snake")));
     }
 
     private void showStatus(CommandSender sender) {
@@ -860,7 +902,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
             return;
         }
         UUID id = ((Player) sender).getUniqueId();
-        for (String game : Arrays.asList("runner", "baconbrawl", "dragonescape", "evolution", "microbattles")) {
+        for (String game : Arrays.asList("runner", "baconbrawl", "dragonescape", "evolution", "microbattles", "snake")) {
             String equipped = getEquipped(id, game);
             int unlocked = 0;
             for (String choice : choicesFor(game)) if (isUnlocked(id, game, choice)) unlocked++;
@@ -877,6 +919,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         sender.sendMessage(ChatColor.YELLOW + "/cosmeticproto off <game>" + ChatColor.GRAY + " - unequip a game cosmetic");
         sender.sendMessage(ChatColor.YELLOW + "/cosmeticproto status" + ChatColor.GRAY + " - show current unlocks/equipment");
         sender.sendMessage(ChatColor.YELLOW + "/cosmeticproto preview <runner|baconbrawl|dragonescape|evolution|microbattles> [map-colours]" + ChatColor.GRAY + " - preview a visual effect");
+        sender.sendMessage(ChatColor.YELLOW + "/arcadetest start <game>" + ChatColor.GRAY + " - start a playable test round in the isolated 1.8.8 world");
     }
 
     private String join(List<String> values) {
