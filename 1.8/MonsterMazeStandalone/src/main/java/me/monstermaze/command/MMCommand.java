@@ -40,7 +40,7 @@ public class MMCommand implements CommandExecutor {
                     && player.getWorld() != center.getWorld() && !gm.isRunning()) {
                 player.closeInventory();
                 gm.sendToLobby(player);
-                final StringBuilder forwarded = new StringBuilder("mm");
+                final StringBuilder forwarded = new StringBuilder("mmmodern");
                 for (String arg : args) forwarded.append(" ").append(arg);
                 final String replay = forwarded.toString();
                 org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
@@ -61,7 +61,7 @@ public class MMCommand implements CommandExecutor {
         if(sub.equals("clb")||sub.equals("competitive")||sub.equals("competitiveleaderboard")){if(!(sender instanceof Player)){sender.sendMessage(ChatColor.RED+"Players only.");return true;}competitiveUI.showLeaderboard((Player)sender,args.length>=2?args[1]:"mmcl");return true;}
         if(sub.equals("challenge")||sub.equals("competition")){if(!(sender instanceof Player)){sender.sendMessage(ChatColor.RED+"Players only.");return true;}plugin.getChallengeManager().show((Player)sender,args.length>=2&&args[1].equalsIgnoreCase("lb"));return true;}
         if(sub.equals("tournament")||sub.equals("tourney")){if(!(sender instanceof Player)){sender.sendMessage(ChatColor.RED+"Players only.");return true;}Player p=(Player)sender;if(args.length>=2&&args[1].equalsIgnoreCase("match"))tournamentManager.showMatch(p);else tournamentManager.show(p,args.length>=2&&(args[1].equalsIgnoreCase("lb")||args[1].equalsIgnoreCase("leaderboard")));return true;}
-        if(sub.equals("kit")||sub.equals("kits")){if(!(sender instanceof Player)){sender.sendMessage(ChatColor.RED+"Players only.");return true;}Player p=(Player)sender;if(sub.equals("kits")){showKits(p,gm);return true;}if(args.length<2){if(gm.isLive()){sender.sendMessage(ChatColor.RED+"Can't change kit mid-game.");return true;}gm.getKitManager().openSelector(p);return true;}KitType kit=KitType.byName(args[1]);if(kit==null&&args[1].equalsIgnoreCase("body"))kit=KitType.BODY_BUILDER;if(kit==null){sender.sendMessage(ChatColor.RED+"Unknown kit. Try /mm kits");return true;}if(gm.isLive()){sender.sendMessage(ChatColor.RED+"Can't change kit mid-game.");return true;}gm.getKitManager().setKit(p,kit);return true;}
+        if(sub.equals("kit")||sub.equals("kits")){if(!(sender instanceof Player)){sender.sendMessage(ChatColor.RED+"Players only.");return true;}Player p=(Player)sender;if(sub.equals("kits")){showKits(p,gm);return true;}if(args.length<2){if(gm.isLive()){sender.sendMessage(ChatColor.RED+"Can't change kit mid-game.");return true;}gm.getKitManager().openSelector(p);return true;}KitType kit=KitType.byName(args[1]);if(kit==null&&args[1].equalsIgnoreCase("body"))kit=KitType.BODY_BUILDER;if(kit==null){sender.sendMessage(ChatColor.RED+"Unknown kit. Try /mmmodern kits");return true;}if(gm.isLive()){sender.sendMessage(ChatColor.RED+"Can't change kit mid-game.");return true;}gm.getKitManager().setKit(p,kit);return true;}
         if(sub.equals("pb")||sub.equals("lb")||sub.equals("leaderboard")){if(!(sender instanceof Player)){sender.sendMessage(ChatColor.RED+"Players only.");return true;}Player p=(Player)sender;if(sub.equals("pb"))showPB(p);else showLeaderboard(p,args);return true;}
         if(sub.equals("exportpbs")||sub.equals("exportpb")||sub.equals("export")){if(!(sender instanceof Player)){sender.sendMessage(ChatColor.RED+"Players only.");return true;}exportPBs((Player)sender);return true;}
 
@@ -74,11 +74,11 @@ public class MMCommand implements CommandExecutor {
         }
 
         if(sub.equals("start")){return start(sender,args,gm);}
-        if(sub.equals("mode")){if(args.length<2){sender.sendMessage(ChatColor.YELLOW+"Usage: /mm mode <original|speed|modern>");sender.sendMessage(ChatColor.AQUA+"Current: "+plugin.getMode().color+plugin.getMode().id);for(MazeMode m:MazeMode.values())sender.sendMessage(ChatColor.GRAY+" - "+m.color+m.id+ChatColor.GRAY+": "+m.description);return true;}if(gm.isRunning()){sender.sendMessage(ChatColor.RED+"Change the mode when no game is running.");return true;}MazeMode mode=MazeMode.byName(args[1]);if(mode==null){sender.sendMessage(ChatColor.RED+"Unknown mode. Try original, speed, or modern.");return true;}plugin.setMode(mode);gm.rerenderLeaderboardBoard();sender.sendMessage(ChatColor.GREEN+"Mode set to "+mode.color+mode.id+ChatColor.GREEN+". It will apply on the next /mm start.");return true;}
-        if(sub.equals("pattern")||sub.equals("maze")){if(args.length<2){sender.sendMessage(ChatColor.YELLOW+"Usage: /mm pattern <1|2|3|random>");sender.sendMessage(ChatColor.GRAY+"Current: "+formatPattern(gm.getMazeGenerator().getForcedPattern()));return true;}if(gm.isRunning()){sender.sendMessage(ChatColor.RED+"Change the pattern when no game is running.");return true;}String pa=args[1].toLowerCase();if(pa.equals("random")){gm.getMazeGenerator().setForcedPattern(-1);sender.sendMessage(ChatColor.GREEN+"Maze pattern set to random for the next game.");return true;}try{int pattern=Integer.parseInt(pa);if(pattern<1||pattern>3)throw new NumberFormatException();gm.getMazeGenerator().setForcedPattern(pattern-1);sender.sendMessage(ChatColor.GREEN+"Maze pattern set to "+ChatColor.WHITE+pattern+ChatColor.GREEN+" for the next game.");}catch(NumberFormatException e){sender.sendMessage(ChatColor.RED+"Invalid pattern. Use 1, 2, 3, or random.");}return true;}
-        if(sub.equals("map")||sub.equals("arena")){if(args.length<2){sender.sendMessage(ChatColor.YELLOW+"Usage: /mm map <name>");sender.sendMessage(ChatColor.GRAY+"Available: "+String.join(", ",plugin.getMapManager().knownMaps()));return true;}if(gm.isRunning()){sender.sendMessage(ChatColor.RED+"Change the map when no game is running.");return true;}List<Player> lobbyPlayers=gm.getState()==GameState.IDLE?findLobbyPlayers(gm.getLobbySpawn()):new ArrayList<Player>();String want=args[1].toLowerCase();if(!plugin.getMapManager().setActiveMap(want)){sender.sendMessage(ChatColor.RED+"Unknown map '"+args[1]+"'. Try: "+String.join(", ",plugin.getMapManager().knownMaps()));return true;}plugin.getMapManager().ensureActiveWorld();gm.applyMap();for(Player p:lobbyPlayers)gm.sendToLobby(p);sender.sendMessage(ChatColor.GREEN+"Map set to "+ChatColor.WHITE+want+ChatColor.GREEN+". Lobby moved; run /mm start.");return true;}
+        if(sub.equals("mode")){if(args.length<2){sender.sendMessage(ChatColor.YELLOW+"Usage: /mmmodern mode <original|speed|modern>");sender.sendMessage(ChatColor.AQUA+"Current: "+plugin.getMode().color+plugin.getMode().id);for(MazeMode m:MazeMode.values())sender.sendMessage(ChatColor.GRAY+" - "+m.color+m.id+ChatColor.GRAY+": "+m.description);return true;}if(gm.isRunning()){sender.sendMessage(ChatColor.RED+"Change the mode when no game is running.");return true;}MazeMode mode=MazeMode.byName(args[1]);if(mode==null){sender.sendMessage(ChatColor.RED+"Unknown mode. Try original, speed, or modern.");return true;}plugin.setMode(mode);gm.rerenderLeaderboardBoard();sender.sendMessage(ChatColor.GREEN+"Mode set to "+mode.color+mode.id+ChatColor.GREEN+". It will apply on the next /mmmodern start.");return true;}
+        if(sub.equals("pattern")||sub.equals("maze")){if(args.length<2){sender.sendMessage(ChatColor.YELLOW+"Usage: /mmmodern pattern <1|2|3|random>");sender.sendMessage(ChatColor.GRAY+"Current: "+formatPattern(gm.getMazeGenerator().getForcedPattern()));return true;}if(gm.isRunning()){sender.sendMessage(ChatColor.RED+"Change the pattern when no game is running.");return true;}String pa=args[1].toLowerCase();if(pa.equals("random")){gm.getMazeGenerator().setForcedPattern(-1);sender.sendMessage(ChatColor.GREEN+"Maze pattern set to random for the next game.");return true;}try{int pattern=Integer.parseInt(pa);if(pattern<1||pattern>3)throw new NumberFormatException();gm.getMazeGenerator().setForcedPattern(pattern-1);sender.sendMessage(ChatColor.GREEN+"Maze pattern set to "+ChatColor.WHITE+pattern+ChatColor.GREEN+" for the next game.");}catch(NumberFormatException e){sender.sendMessage(ChatColor.RED+"Invalid pattern. Use 1, 2, 3, or random.");}return true;}
+        if(sub.equals("map")||sub.equals("arena")){if(args.length<2){sender.sendMessage(ChatColor.YELLOW+"Usage: /mmmodern map <name>");sender.sendMessage(ChatColor.GRAY+"Available: "+String.join(", ",plugin.getMapManager().knownMaps()));return true;}if(gm.isRunning()){sender.sendMessage(ChatColor.RED+"Change the map when no game is running.");return true;}List<Player> lobbyPlayers=gm.getState()==GameState.IDLE?findLobbyPlayers(gm.getLobbySpawn()):new ArrayList<Player>();String want=args[1].toLowerCase();if(!plugin.getMapManager().setActiveMap(want)){sender.sendMessage(ChatColor.RED+"Unknown map '"+args[1]+"'. Try: "+String.join(", ",plugin.getMapManager().knownMaps()));return true;}plugin.getMapManager().ensureActiveWorld();gm.applyMap();for(Player p:lobbyPlayers)gm.sendToLobby(p);sender.sendMessage(ChatColor.GREEN+"Map set to "+ChatColor.WHITE+want+ChatColor.GREEN+". Lobby moved; run /mmmodern start.");return true;}
         if(sub.equals("status")){sender.sendMessage(ChatColor.AQUA+"State: "+ChatColor.WHITE+gm.getState());sender.sendMessage(ChatColor.AQUA+"Stage: "+ChatColor.WHITE+gm.getStage());sender.sendMessage(ChatColor.AQUA+"Alive: "+ChatColor.WHITE+gm.getAlivePlayers().size());sender.sendMessage(ChatColor.AQUA+"Map: "+ChatColor.WHITE+plugin.getMapManager().getActiveMap());sender.sendMessage(ChatColor.AQUA+"Next pattern: "+ChatColor.WHITE+formatPattern(gm.getMazeGenerator().getForcedPattern()));return true;}
-        sender.sendMessage(ChatColor.RED+"Unknown command. Use /mm for help.");return true;
+        sender.sendMessage(ChatColor.RED+"Unknown command. Use /mmmodern for help.");return true;
     }
 
     private boolean start(CommandSender sender,String[] args,GameManager gm){
@@ -97,7 +97,7 @@ public class MMCommand implements CommandExecutor {
             return true;
         }
         if(args.length>=2){try{int pattern=Integer.parseInt(args[1]);if(pattern<1||pattern>3)throw new NumberFormatException();gm.getMazeGenerator().setForcedPattern(pattern-1);}catch(NumberFormatException e){sender.sendMessage(ChatColor.RED+"Invalid maze pattern. Use 1, 2, 3, challenge, or mmr.");return true;}}
-        if(sender instanceof Player)gm.startGame(((Player)sender).getLocation());else gm.startGame();sender.sendMessage(ChatColor.GREEN+"Starting Monster Maze...");return true;
+        if(sender instanceof Player)gm.startGame(((Player)sender).getLocation());else gm.startGame();sender.sendMessage(ChatColor.GREEN+"Starting Monster Maze Modern...");return true;
     }
 
     private void startMMR(final Player player, final GameManager gm){
@@ -139,30 +139,30 @@ public class MMCommand implements CommandExecutor {
     private static class MMRTarget{final String mode;final String kit;final int pattern;final double percentage;MMRTarget(String mode,String kit,int pattern,double percentage){this.mode=mode;this.kit=kit;this.pattern=pattern;this.percentage=percentage;}}
 
     private void showHelp(CommandSender sender,GameManager gm){
-        sender.sendMessage(ChatColor.GOLD+"=== Monster Maze ===");
+        sender.sendMessage(ChatColor.GOLD+"=== Monster Maze Modern ===");
         sender.sendMessage(ChatColor.YELLOW+"Player Commands");
-        sender.sendMessage(ChatColor.WHITE+"/mm start [1|2|3]"+ChatColor.GRAY+" - start a run");
-        sender.sendMessage(ChatColor.WHITE+"/mm start challenge"+ChatColor.GRAY+" - play this week's challenge");
-        sender.sendMessage(ChatColor.WHITE+"/mm start mmr"+ChatColor.GRAY+" - start your weakest MMR configuration");
-        sender.sendMessage(ChatColor.WHITE+"/mm map <name>"+ChatColor.GRAY+" - choose the map");
-        sender.sendMessage(ChatColor.WHITE+"/mm pattern <1|2|3|random>"+ChatColor.GRAY+" - choose the maze");
-        sender.sendMessage(ChatColor.WHITE+"/mm mode <original|speed|modern>"+ChatColor.GRAY+" - choose the mode");
-        sender.sendMessage(ChatColor.WHITE+"/mm gui"+ChatColor.GRAY+" - open kit selector");
-        sender.sendMessage(ChatColor.WHITE+"/mm kit <kit>"+ChatColor.GRAY+" - choose a kit");
-        sender.sendMessage(ChatColor.WHITE+"/mm kits"+ChatColor.GRAY+" - list kits");
-        sender.sendMessage(ChatColor.WHITE+"/mm status"+ChatColor.GRAY+" - current server state");
-        sender.sendMessage(ChatColor.WHITE+"/mm pb"+ChatColor.GRAY+" - personal bests");
-        sender.sendMessage(ChatColor.WHITE+"/mm lb [1|2|3]"+ChatColor.GRAY+" - leaderboard");
-        sender.sendMessage(ChatColor.WHITE+"/mm stats"+ChatColor.GRAY+" - competitive stats");
-        sender.sendMessage(ChatColor.WHITE+"/mm clb [mmcl|mmr|elo|weekly|tournament]"+ChatColor.GRAY+" - competitive leaderboard");
-        sender.sendMessage(ChatColor.WHITE+"/mm challenge [lb]"+ChatColor.GRAY+" - weekly challenge");
-        sender.sendMessage(ChatColor.WHITE+"/mm tournament [match|lb]"+ChatColor.GRAY+" - tournament info");
-        if(sender.hasPermission("monstermaze.admin")){sender.sendMessage(ChatColor.RED+"Admin Commands");sender.sendMessage(ChatColor.RED+"/mm stop | /mm force | /mm setcenter | /mm void | /mm build");}
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern start [1|2|3]"+ChatColor.GRAY+" - start a run");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern start challenge"+ChatColor.GRAY+" - play this week's challenge");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern start mmr"+ChatColor.GRAY+" - start your weakest MMR configuration");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern map <name>"+ChatColor.GRAY+" - choose the map");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern pattern <1|2|3|random>"+ChatColor.GRAY+" - choose the maze");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern mode <original|speed|modern>"+ChatColor.GRAY+" - choose the mode");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern gui"+ChatColor.GRAY+" - open kit selector");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern kit <kit>"+ChatColor.GRAY+" - choose a kit");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern kits"+ChatColor.GRAY+" - list kits");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern status"+ChatColor.GRAY+" - current server state");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern pb"+ChatColor.GRAY+" - personal bests");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern lb [1|2|3]"+ChatColor.GRAY+" - leaderboard");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern stats"+ChatColor.GRAY+" - competitive stats");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern clb [mmcl|mmr|elo|weekly|tournament]"+ChatColor.GRAY+" - competitive leaderboard");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern challenge [lb]"+ChatColor.GRAY+" - weekly challenge");
+        sender.sendMessage(ChatColor.WHITE+"/mmmodern tournament [match|lb]"+ChatColor.GRAY+" - tournament info");
+        if(sender.hasPermission("monstermaze.admin")){sender.sendMessage(ChatColor.RED+"Admin Commands");sender.sendMessage(ChatColor.RED+"/mmmodern stop | /mmmodern force | /mmmodern setcenter | /mmmodern void | /mmmodern build");}
         sender.sendMessage(ChatColor.AQUA+"Current: "+plugin.getMode().color+plugin.getMode().id+ChatColor.GRAY+" | Map: "+plugin.getMapManager().getActiveMap()+ChatColor.GRAY+" | Next: "+formatPattern(gm.getMazeGenerator().getForcedPattern()));
     }
 
     private List<Player> findLobbyPlayers(Location lobby){List<Player> players=new ArrayList<Player>();if(lobby==null||lobby.getWorld()==null)return players;for(Player p:org.bukkit.Bukkit.getOnlinePlayers()){if(p.getGameMode()==org.bukkit.GameMode.SPECTATOR)continue;if(p.getWorld()!=lobby.getWorld())continue;if(p.getLocation().distanceSquared(lobby)<=64*64)players.add(p);}return players;}
-    private void showKits(Player p,GameManager gm){p.sendMessage(ChatColor.GOLD+"Kits:");boolean qol=plugin.getMode()!=MazeMode.ORIGINAL;for(KitType k:KitType.available(qol))p.sendMessage(ChatColor.GRAY+" - "+k.display+ChatColor.DARK_GRAY+" (/mm kit "+k.name().toLowerCase()+")");}
+    private void showKits(Player p,GameManager gm){p.sendMessage(ChatColor.GOLD+"Kits:");boolean qol=plugin.getMode()!=MazeMode.ORIGINAL;for(KitType k:KitType.available(qol))p.sendMessage(ChatColor.GRAY+" - "+k.display+ChatColor.DARK_GRAY+" (/mmmodern kit "+k.name().toLowerCase()+")");}
     private String formatPattern(int pattern){return pattern<0?"random":"Maze "+(pattern+1);}
     private void exportPBs(Player p){if(!plugin.isSoloMode()){p.sendMessage(ChatColor.RED+"PB export is only available in Solo Mode.");return;}LeaderboardManager lb=plugin.getLeaderboards();RunRecorder recorder=plugin.getRunRecorder();int exported=0;for(MazeMode mode:MazeMode.values())for(int pat=0;pat<LeaderboardManager.PATTERN_COUNT;pat++)for(KitType kit:KitType.values()){int stage=lb.getKitPB(mode,pat,p.getUniqueId(),kit.id);if(stage<1)continue;if(recorder.recordHistorical(p,mode,pat,kit.id,stage))exported++;}if(exported==0)p.sendMessage(ChatColor.YELLOW+"No stored personal bests found to export.");else{p.sendMessage(ChatColor.GREEN+"Exported "+exported+" stored personal best(s) for submission.");p.sendMessage(ChatColor.GRAY+"Run the Solo submitter to send them to Discord.");}}
     private void showPB(Player p){LeaderboardManager lb=plugin.getLeaderboards();MazeMode mode=plugin.getMode();p.sendMessage(ChatColor.GOLD+"=== Personal Bests ("+mode.color+mode.id+ChatColor.GOLD+") ===");boolean any=false;for(int pat=0;pat<LeaderboardManager.PATTERN_COUNT;pat++){LeaderboardManager.PBInfo best=lb.getBest(mode,pat,p.getUniqueId());if(best!=null)any=true;p.sendMessage(ChatColor.YELLOW+LeaderboardManager.patternName(pat)+":"+(best!=null?ChatColor.WHITE+" Stage "+best.stage+kitSuffix(best.kit):ChatColor.GRAY+" no PB yet"));if(best!=null)for(KitType k:KitType.available(mode!=MazeMode.ORIGINAL)){int per=lb.getKitPB(mode,pat,p.getUniqueId(),k.id);if(per>0)p.sendMessage("   "+k.display+ChatColor.GRAY+": "+ChatColor.WHITE+"Stage "+per);}}if(!any)p.sendMessage(ChatColor.GRAY+"Play a game to set a personal best!");}
