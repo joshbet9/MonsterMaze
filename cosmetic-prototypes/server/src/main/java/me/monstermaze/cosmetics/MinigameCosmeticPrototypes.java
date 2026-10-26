@@ -42,7 +42,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 
 /**
  * Isolated server-side visual prototype harness. It exposes methods a future
- * game adapter can call; this repository does not contain the four source games.
+ * game adapter can call; this repository does not contain the five source games.
  */
 public final class MinigameCosmeticPrototypes extends JavaPlugin implements CommandExecutor, Listener {
     private static final String ADMIN_PERMISSION = "minigamecosmetics.admin";
