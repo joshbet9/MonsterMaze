@@ -820,6 +820,18 @@ public void startGame(Location preferCenter, int requestedPattern) {
         }
     }
 
+    private void titleArenaPlayers(String title, String subtitle, int fadeIn, int stay, int fadeOut) {
+        if (center == null || center.getWorld() == null) {
+            TextUtil.titleAll(title, subtitle, fadeIn, stay, fadeOut);
+            return;
+        }
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (player.getWorld() == center.getWorld()) {
+                TextUtil.title(player, title, subtitle, fadeIn, stay, fadeOut);
+            }
+        }
+    }
+
     private void broadcast(String msg) {
         if (center == null || center.getWorld() == null) {
             Bukkit.broadcastMessage(msg);
