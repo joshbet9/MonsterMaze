@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.bukkit.Bukkit;
+import org.bukkit.DyeColor;
 import org.bukkit.ChatColor;
 import org.bukkit.Effect;
 import org.bukkit.Location;
@@ -41,8 +42,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
 
 /**
- * Isolated server-side visual prototype harness. It exposes methods a future
- * game adapter can call; this repository does not contain the five source games.
+ * Server-side cosmetic prototypes plus an isolated playable 1.8.8 testbed.
+ * The testbed supplies generated gameplay arenas rather than importing the full
+ * Mineplex Arcade framework and its external service dependencies.
  */
 public final class MinigameCosmeticPrototypes extends JavaPlugin implements CommandExecutor, Listener {
     private static final String ADMIN_PERMISSION = "minigamecosmetics.admin";
@@ -55,6 +57,10 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
     private static final Map<String, Material> PIG_ACCESSORIES = new LinkedHashMap<String, Material>();
     private static final List<String> EVOLUTION_CHOICES = Collections.unmodifiableList(
             Arrays.asList("dragon-egg"));
+    private static final List<String> SNAKE_LINES = Collections.unmodifiableList(
+            Arrays.asList("elemental", "neon", "sunset"));
+
+    private PlayableArcadeTestbed testbed;
 
     private final Random random = new Random();
     private final Map<UUID, Pig> baconPigs = new LinkedHashMap<UUID, Pig>();
