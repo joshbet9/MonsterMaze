@@ -15,8 +15,6 @@ $maps = Join-Path $here "maps"
 $sourceProject = Join-Path $repoRoot "1.8/MonsterMazeStandalone"
 $sourceJar = Join-Path $sourceProject "target/MonsterMazeStandalone.jar"
 $soloJar = Join-Path $here "server/plugins/MonsterMazeStandalone.jar"
-$cosmeticSourceJar = Join-Path $repoRoot "cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar"
-$cosmeticSoloJar = Join-Path $here "server/plugins/MinigameCosmeticPrototypes.jar"
 $maven = "mvn"
 
 if ($env:MM_SOLO_JDK8_WINDOWS) {
@@ -65,12 +63,6 @@ if (-not (Test-Path $sourceJar)) { throw "Expected built plugin JAR was not foun
 New-Item -ItemType Directory -Force -Path (Split-Path $soloJar) | Out-Null
 Copy-Item -Force $sourceJar $soloJar
 Write-Host "Copied canonical plugin JAR to solo/server/plugins/MonsterMazeStandalone.jar"
-if (Test-Path -LiteralPath $cosmeticSourceJar) {
-    Copy-Item -Force $cosmeticSourceJar $cosmeticSoloJar
-    Write-Host "Copied server-side minigame cosmetic prototype plugin into the 1.8 Solo package."
-} else {
-    Write-Host "Cosmetic prototype JAR is not built; this package will not include it."
-}
 
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 Copy-Item -Recurse -Force (Join-Path $here "launcher") (Join-Path $dist "launcher")
