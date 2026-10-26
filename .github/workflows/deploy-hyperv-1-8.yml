@@ -89,8 +89,8 @@ jobs:
           test -n "$SSH_KNOWN_HOSTS" || { echo 'HYPERV_SSH_KNOWN_HOSTS is not configured.' >&2; exit 1; }
           mkdir -p "$HOME/.ssh"
           chmod 700 "$HOME/.ssh"
-          printf '%s\\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/monstermaze_hyperv"
-          printf '%s\\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/monstermaze_hyperv"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/monstermaze_hyperv" "$HOME/.ssh/known_hosts"
 
       - name: Upload tested plugin to Hyper-V
