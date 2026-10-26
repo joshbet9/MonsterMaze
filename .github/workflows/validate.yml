@@ -302,7 +302,15 @@ jobs:
           set -euo pipefail
           mvn -B -f cosmetic-prototypes/server/pom.xml clean package
           test -s cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar
-          jar tf cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar | grep -q '^plugin.yml      - name: Run production Solo packer
+          jar tf cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar | grep -q '^plugin.yml$'
+      - name: Upload playable arcade cosmetic test plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: MinigameCosmeticPrototypes-1.8.8
+          path: cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar
+          if-no-files-found: error
+          retention-days: 14
+      - name: Run production Solo packer
         shell: pwsh
         working-directory: solo
         env:
