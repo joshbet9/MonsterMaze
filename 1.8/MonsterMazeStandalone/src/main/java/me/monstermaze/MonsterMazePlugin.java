@@ -77,18 +77,22 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.statusHeartbeatReporter = new StatusHeartbeatReporter(this);
         gameManager.applyMap();
         // Keep all playable cosmetic test modes inside the main 1.8 plugin. No sidecar plugin is required.
-        this.cosmeticPrototypes = new MinigameCosmeticPrototypes(this);
-        this.cosmeticPrototypes.enable();
+        // On a shared Reborn server, use Reborn's native Arcade modules for cosmetic testing;
+        // do not start the standalone cosmetic prototype handlers beside them.
+        if (!isCohostedMode()) {
+            this.cosmeticPrototypes = new MinigameCosmeticPrototypes(this);
+            this.cosmeticPrototypes.enable();
+        }
         new LobbyListener(this, gameManager, voidWorlds);
         new BuildBypassListener(this);
         Bukkit.getPluginManager().registerEvents(new DebugSoloModeListener(this), this);
-        getCommand("mm").setExecutor(new MMCommand(this));
-        getCommand("mmdebug").setExecutor(new MMDebugCommand(this));
-        getCommand("pause").setExecutor(new PauseCommand(this));
+        getCommand("mmmodern").setExecutor(new MMCommand(this));
+        getCommand("mmmoderndebug").setExecutor(new MMDebugCommand(this));
+        getCommand("mmmpause").setExecutor(new PauseCommand(this));
         // Idle players are routed to the game selector by LobbyListener.
         statusHeartbeatReporter.start();
         getLogger().info("MonsterMazeStandalone enabled ('" + mapManager.getActiveMap() + "' map).");
-        getLogger().info("Players join the game selector. Select Monster Maze to enter its lobby; admin: /mm start");
+        getLogger().info("Cohosted game access: /mmmodernmenu; admin: /mmmodern start");
         getLogger().info("Solo mode: " + soloMode + ", debug mode: " + debug);
         getLogger().info("Run backend: " + (backendClient.isEnabled() ? "enabled" : "Solo/local webhook mode"));
     }
