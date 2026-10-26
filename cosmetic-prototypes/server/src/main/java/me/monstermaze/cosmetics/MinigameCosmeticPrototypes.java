@@ -304,6 +304,152 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
     }
 
     /**
+     * Register a player's active Micro Battles map. The map geometry is shared,
+     * but this method sends the chosen glass data only to this player's connection.
+     * Border points are used for per-viewer particle packets near the map edge.
+     */
+    public void registerMicroBattlesArena(Player player, Block middleGlass, List<Location> closeBorderPoints) {
+        if (player == null || middleGlass == null || player.getWorld() != middleGlass.getWorld()) return;
+        if (middleGlass.getType() != Material.GLASS && middleGlass.getType() != Material.STAINED_GLASS) return;
+
+        UUID playerId = player.getUniqueId();
+        MicroBattlesArena old = microBattlesArenas.remove(playerId);
+        if (old != null) restoreMicroBattlesGlass(player, old);
+
+        List<Location> points = new ArrayList<Location>();
+        if (closeBorderPoints != null) {
+            for (Location point : closeBorderPoints) {
+                if (point != null && point.getWorld() == middleGlass.getWorld()) points.add(point.clone());
+            }
+        }
+        MicroBattlesArena arena = new MicroBattlesArena(
+                middleGlass.getLocation(), middleGlass.getType(), middleGlass.getData(), points);
+        microBattlesArenas.put(playerId, arena);
+        refreshMicroBattlesGlass(player);
+    }
+
+    /** Restore the map's real centre glass for that client and forget the arena. */
+    public void clearMicroBattlesArena(Player player) {
+        if (player == null) return;
+        MicroBattlesArena arena = microBattlesArenas.remove(player.getUniqueId());
+        if (arena != null) restoreMicroBattlesGlass(player, arena);
+    }
+
+    /** Re-applies a changed equip selection to the registered client's view only. */
+    public void refreshMicroBattlesGlass(Player player) {
+        if (player == null) return;
+        MicroBattlesArena arena = microBattlesArenas.get(player.getUniqueId());
+        if (arena == null) return;
+        MicroBattlesTheme theme = MICRO_BATTLES_THEMES.get(getEquipped(player.getUniqueId(), "microbattles"));
+        if (theme == null) {
+            restoreMicroBattlesGlass(player, arena);
+            return;
+        }
+        if (player.getWorld() != arena.center.getWorld()) {
+            arena.applied = false;
+            arena.appliedTheme = null;
+            return;
+        }
+        player.sendBlockChange(arena.center, Material.STAINED_GLASS, theme.glassData);
+        arena.applied = true;
+        arena.appliedTheme = theme.key;
+    }
+
+    @EventHandler
+    public void onCosmeticPlayerQuit(PlayerQuitEvent event) {
+        if (event != null && event.getPlayer() != null) {
+            microBattlesArenas.remove(event.getPlayer().getUniqueId());
+        }
+    }
+
+    private void tickMicroBattlesParticles() {
+        for (Map.Entry<UUID, MicroBattlesArena> entry :
+                new ArrayList<Map.Entry<UUID, MicroBattlesArena>>(microBattlesArenas.entrySet())) {
+            Player player = Bukkit.getPlayer(entry.getKey());
+            MicroBattlesArena arena = entry.getValue();
+            if (player == null || !player.isOnline()) continue;
+
+            MicroBattlesTheme theme = MICRO_BATTLES_THEMES.get(getEquipped(entry.getKey(), "microbattles"));
+            if (theme == null) {
+                if (arena.applied) restoreMicroBattlesGlass(player, arena);
+                continue;
+            }
+            if (player.getWorld() != arena.center.getWorld()) {
+                arena.applied = false;
+                arena.appliedTheme = null;
+                continue;
+            }
+            if (!arena.applied || !theme.key.equals(arena.appliedTheme)) {
+                refreshMicroBattlesGlass(player);
+            }
+
+            int emitted = 0;
+            for (Location border : arena.borderPoints) {
+                if (border.getWorld() != player.getWorld()) continue;
+                if (player.getLocation().distanceSquared(border) > 64.0D) continue;
+                sendParticleToPlayer(player, theme, border.clone().add(0.5D, 0.8D, 0.5D));
+                if (++emitted >= 4) break;
+            }
+        }
+    }
+
+    private void restoreMicroBattlesGlass(Player player, MicroBattlesArena arena) {
+        if (player == null || arena == null) return;
+        if (arena.applied && player.getWorld() == arena.center.getWorld()) {
+            player.sendBlockChange(arena.center, arena.originalMaterial, arena.originalData);
+        }
+        arena.applied = false;
+        arena.appliedTheme = null;
+    }
+
+    private void sendParticleToPlayer(Player player, MicroBattlesTheme theme, Location location) {
+        if (player == null || !player.isOnline() || location == null
+                || location.getWorld() == null || location.getWorld() != player.getWorld()) return;
+        PacketPlayOutWorldParticles packet = new PacketPlayOutWorldParticles(
+                theme.particle, false,
+                (float) location.getX(), (float) location.getY(), (float) location.getZ(),
+                0.12F, 0.12F, 0.12F, 0.015F, 2);
+        ((CraftPlayer) player).getHandle().playerConnection.sendPacket(packet);
+    }
+
+    private void previewMicroBattles(final Player player) {
+        final MicroBattlesTheme theme = MICRO_BATTLES_THEMES.get(getEquipped(player.getUniqueId(), "microbattles"));
+        final MicroBattlesTheme previewTheme = theme == null
+                ? MICRO_BATTLES_THEMES.get("aqua") : theme;
+        final Block target = player.getTargetBlock(new HashSet<Byte>(), 6);
+        if (target == null || (target.getType() != Material.GLASS && target.getType() != Material.STAINED_GLASS)) {
+            player.sendMessage(ChatColor.RED + "Aim at a glass block within six blocks, then run /cosmeticproto preview microbattles.");
+            return;
+        }
+
+        final Location targetLocation = target.getLocation();
+        player.sendBlockChange(targetLocation, Material.STAINED_GLASS, previewTheme.glassData);
+        final Location origin = player.getLocation().clone();
+        player.sendMessage(ChatColor.GREEN + "Micro Battles preview: " + previewTheme.key
+                + " glass tint + matching private border particles. Preview lasts 12 seconds.");
+
+        new BukkitRunnable() {
+            private int elapsed;
+            @Override public void run() {
+                if (!player.isOnline() || player.getWorld() != targetLocation.getWorld()) {
+                    cancel();
+                    return;
+                }
+                for (int i = 0; i < 8; i++) {
+                    double angle = Math.PI * 2.0D * i / 8.0D;
+                    Location particleLocation = origin.clone().add(Math.cos(angle) * 3.2D, 0.6D, Math.sin(angle) * 3.2D);
+                    sendParticleToPlayer(player, previewTheme, particleLocation);
+                }
+                elapsed += 4;
+                if (elapsed >= 20 * 12) {
+                    player.sendBlockChange(targetLocation, target.getType(), target.getData());
+                    cancel();
+                }
+            }
+        }.runTaskTimer(this, 0L, 4L);
+    }
+
+    /**
      * Call when an Evolution game confirms the player has evolved. The dragon-egg
      * cosmetic uses the portal/teleport particle effect emitted by a dragon egg.
      */
