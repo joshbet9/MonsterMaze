@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: hyperv-monstermaze-18
+  group: hyperv-monstermaze-18-deploy-v2
   cancel-in-progress: false
 
 jobs:
@@ -112,6 +112,7 @@ jobs:
 
       - name: Install plugin and restart only the Hyper-V 1.8 server
         shell: bash
+        timeout-minutes: 5
         env:
           HYPERV_SSH_HOST: ${{ secrets.HYPERV_SSH_HOST }}
           HYPERV_SSH_USER: ${{ secrets.HYPERV_SSH_USER }}
@@ -151,7 +152,7 @@ jobs:
             trap - EXIT
             if [[ "$status" -ne 0 ]]; then
               echo "Deployment failed; restoring the previous plugin and restarting the service." >&2
-              systemctl stop "$SERVICE" || true
+              timeout 60 systemctl stop "$SERVICE" || true
               if [[ -s "$PLUGIN_BACKUP" ]]; then
                 cp -p "$PLUGIN_BACKUP" "$PLUGIN" || true
                 chown monstermaze:monstermaze "$PLUGIN" || true
@@ -160,25 +161,35 @@ jobs:
                 cp -p "$SIDECAR_BACKUP" "$SIDECAR" || true
                 chown monstermaze:monstermaze "$SIDECAR" || true
               fi
-              systemctl start "$SERVICE" || true
+              timeout 60 systemctl start "$SERVICE" || true
               sleep 3
-              journalctl -u "$SERVICE" -n 80 --no-pager || true
+              timeout 10 journalctl -u "$SERVICE" -n 40 --no-pager || true
             fi
             rm -f "$INCOMING"
             exit "$status"
           }
           trap rollback EXIT
 
-          systemctl stop "$SERVICE"
+          echo "Stopping $SERVICE before replacing the plugin."
+          timeout 60 systemctl stop "$SERVICE"
           install -o monstermaze -g monstermaze -m 0644 "$INCOMING" "$PLUGIN"
           # The embedded testbed replaces the old standalone plugin; keep its
           # backup outside the plugins directory and remove only the old JAR.
           rm -f "$SIDECAR"
-          systemctl start "$SERVICE"
-          sleep 10
-          systemctl is-active --quiet "$SERVICE"
-          if ! grep -Fq 'MonsterMazeStandalone enabled.' "$ROOT/logs/latest.log"; then
-            echo "The server is active but the expected plugin startup line was not found." >&2
+          echo "Starting $SERVICE with the embedded testbed."
+          timeout 60 systemctl start "$SERVICE"
+
+          ready=0
+          for attempt in $(seq 1 60); do
+            if systemctl is-active --quiet "$SERVICE" \
+              && grep -Fq 'MonsterMazeStandalone enabled' "$ROOT/logs/latest.log" 2>/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" -ne 1 ]]; then
+            echo "The plugin startup marker was not found after 60 seconds; rollback will run." >&2
             tail -n 120 "$ROOT/logs/latest.log" >&2 || true
             exit 1
           fi
