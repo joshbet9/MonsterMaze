@@ -261,6 +261,8 @@ public class GameManager implements Listener {
 
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     if (p.getGameMode() == GameMode.SPECTATOR) continue;
+                    // The selector sandbox is a separate world and is never a game participant.
+                    if (center != null && p.getWorld() != center.getWorld()) continue;
                     alive.add(p.getUniqueId());
                     preparePlayer(p);
                     p.teleport(center.clone().add(0.5, 1, 0.5));
@@ -406,9 +408,15 @@ public class GameManager implements Listener {
         kitManager.clearSelectors();
         destroyAllPads();
         mazeGenerator.returnToLobby();
-        scoreboard.clear(new ArrayList<Player>(Bukkit.getOnlinePlayers()));
+        List<Player> roundPlayers = new ArrayList<Player>();
+        if (center != null && center.getWorld() != null) {
+            for (Player online : Bukkit.getOnlinePlayers()) {
+                if (online.getWorld() == center.getWorld()) roundPlayers.add(online);
+            }
+        }
+        scoreboard.clear(roundPlayers);
 
-        for (Player p : Bukkit.getOnlinePlayers()) {
+        for (Player p : roundPlayers) {
             p.setExp(0); p.setLevel(0);
             kitManager.resetPlayerState(p);
             p.setGameMode(GameMode.SURVIVAL);
@@ -430,7 +438,7 @@ public class GameManager implements Listener {
         if (center != null) {
             kitManager.spawnSelectors(mazeGenerator.getLobbyCenter());
             refreshLeaderboardBoard();
-            for (Player p : Bukkit.getOnlinePlayers()) {
+            for (Player p : roundPlayers) {
                 kitManager.openSelector(p);
             }
         }
@@ -842,7 +850,16 @@ public class GameManager implements Listener {
         }
     }
 
-    private void broadcast(String msg) { Bukkit.broadcastMessage(msg); }
+    private void broadcast(String msg) {
+        if (center == null || center.getWorld() == null) {
+            Bukkit.broadcastMessage(msg);
+            return;
+        }
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (player.getWorld() == center.getWorld()) player.sendMessage(msg);
+        }
+        Bukkit.getConsoleSender().sendMessage(msg);
+    }
 
     // -------------------- Events --------------------
 
