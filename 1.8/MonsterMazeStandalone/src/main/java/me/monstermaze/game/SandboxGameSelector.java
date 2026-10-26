@@ -34,8 +34,9 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * An isolated selector/sandbox world. Monster Maze still uses its original lobby;
- * other games are clearly marked cosmetic previews until their real game modules exist.
+ * An isolated selector/sandbox world. Monster Maze keeps its existing game flow;
+ * other entries launch playable cosmetic test adaptations in a separate 1.8.8 world.
+ * They are not full imports of the production Mineplex Reborn Arcade modules.
  */
 public final class SandboxGameSelector implements Listener, CommandExecutor {
     public static final String HUB_WORLD_NAME = "mm_sandbox";
