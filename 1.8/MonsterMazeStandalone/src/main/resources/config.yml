@@ -16,3 +16,15 @@ map: eyeofender
 # Example:
 # mob-overrides:
 #   siberian: creeper
+
+# Set true when this plugin shares a Mineplex Reborn server. It preserves the host's join/lobby flow.
+cohosted-mode: false
+
+# Optional behaviour ported from the Mineplex Reborn Monster Maze source.
+monstermaze:
+  safe-pad-enhancements:
+    # Repair only the central objective beacon; do not rebuild clay/base blocks.
+    enabled: false
+    # Optional starting stained-clay colour (Minecraft 1.8 dye data 0-15).
+    surface-colour-enabled: false
+    surface-colour-data: 5
