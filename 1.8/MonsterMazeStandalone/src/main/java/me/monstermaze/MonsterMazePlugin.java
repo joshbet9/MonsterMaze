@@ -1,6 +1,7 @@
 package me.monstermaze;
 
 import me.monstermaze.command.MMCommand;
+import me.monstermaze.cosmetics.MinigameCosmeticPrototypes;
 import me.monstermaze.command.MMDebugCommand;
 import me.monstermaze.command.PauseCommand;
 import me.monstermaze.command.DebugSoloModeListener;
@@ -40,6 +41,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private ChallengeManager challengeManager;
     private CompetitiveMatchTracker competitiveMatchTracker;
     private StatusHeartbeatReporter statusHeartbeatReporter;
+    private MinigameCosmeticPrototypes cosmeticPrototypes;
 
     @Override
     public void onEnable() {
@@ -74,23 +76,25 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.soloRunCompletionListener = new SoloRunCompletionListener(this);
         this.statusHeartbeatReporter = new StatusHeartbeatReporter(this);
         gameManager.applyMap();
+        // Keep all playable cosmetic test modes inside the main 1.8 plugin. No sidecar plugin is required.
+        this.cosmeticPrototypes = new MinigameCosmeticPrototypes(this);
+        this.cosmeticPrototypes.enable();
         new LobbyListener(this, gameManager, voidWorlds);
         new BuildBypassListener(this);
         Bukkit.getPluginManager().registerEvents(new DebugSoloModeListener(this), this);
         getCommand("mm").setExecutor(new MMCommand(this));
         getCommand("mmdebug").setExecutor(new MMDebugCommand(this));
         getCommand("pause").setExecutor(new PauseCommand(this));
-        Bukkit.getScheduler().runTaskLater(this, new Runnable() {
-            @Override public void run() { for (Player p : Bukkit.getOnlinePlayers()) gameManager.sendToLobby(p); }
-        }, 20L);
+        // Idle players are routed to the game selector by LobbyListener.
         statusHeartbeatReporter.start();
         getLogger().info("MonsterMazeStandalone enabled ('" + mapManager.getActiveMap() + "' map).");
-        getLogger().info("Players join into the lobby. Admin: /mm start");
+        getLogger().info("Players join the game selector. Select Monster Maze to enter its lobby; admin: /mm start");
         getLogger().info("Solo mode: " + soloMode + ", debug mode: " + debug);
         getLogger().info("Run backend: " + (backendClient.isEnabled() ? "enabled" : "Solo/local webhook mode"));
     }
 
     @Override public void onDisable() {
+        if (cosmeticPrototypes != null) cosmeticPrototypes.disable();
         if (competitiveMatchTracker != null) competitiveMatchTracker.shutdown();
         if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown();
         if (gameManager != null) gameManager.forceStop();

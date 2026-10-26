@@ -43,6 +43,36 @@ init_server() {
   mkdir -p "$ROOT/logs" "$ROOT/plugins/MonsterMazeStandalone/solo-runs"
 }
 
+# The live server directory can be backed by a persistent volume. Do not assume
+# replacing the Docker image updates that volume: copy release-managed plugin
+# JARs from the new image template before Java starts, while leaving all plugin
+# configuration, player records, worlds and other persistent data untouched.
+sync_release_managed_plugins() {
+  local source_plugins="$TEMPLATE/plugins"
+  local source_jar target_jar
+  if [ ! -d "$source_plugins" ]; then
+    echo "Plugin template directory missing: $source_plugins" >&2
+    exit 1
+  fi
+  mkdir -p "$ROOT/plugins"
+  shopt -s nullglob
+  for source_jar in "$source_plugins"/*.jar; do
+    [ -f "$source_jar" ] || continue
+    target_jar="$ROOT/plugins/${source_jar##*/}"
+    if [ ! -f "$target_jar" ] || ! cmp -s "$source_jar" "$target_jar"; then
+      cp -f "$source_jar" "$target_jar"
+      echo "Synchronized release-managed plugin: ${source_jar##*/}"
+    fi
+  done
+  shopt -u nullglob
+
+  # The cosmetic prototype uses the legacy Spigot 1.8.8 API/NMS and must never
+  # remain installed on the Paper 1.21 server if a previous deployment left it behind.
+  if [ "$PLATFORM" = "1.21" ]; then
+    rm -f "$ROOT/plugins/MinigameCosmeticPrototypes.jar"
+  fi
+}
+
 apply_deployment_config() {
   local plugin_config="$ROOT/plugins/MonsterMazeStandalone/config.yml"
   local solo_mode
@@ -71,6 +101,7 @@ apply_deployment_config() {
 }
 
 init_server
+sync_release_managed_plugins
 apply_deployment_config
 
 # The 1.8 Solo template contains the Linux-safe Netty setting verified during

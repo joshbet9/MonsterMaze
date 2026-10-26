@@ -76,6 +76,7 @@ foreach ($map in $requiredMaps) {
 
 $stripServer = @(
     (Join-Path $dist "server/world"), (Join-Path $dist "server/world_nether"), (Join-Path $dist "server/world_the_end"),
+    (Join-Path $dist "server/mm_sandbox"),
     (Join-Path $dist "server/logs"), (Join-Path $dist "server/plugins/MonsterMazeStandalone/solo-runs")
 )
 $strip = @($stripServer + @(

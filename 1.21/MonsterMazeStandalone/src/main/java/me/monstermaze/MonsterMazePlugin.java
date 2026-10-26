@@ -104,7 +104,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new DebugSoloModeListener(this), this);
         getCommand("mm").setExecutor(new MMCommand(this));
         getCommand("pause").setExecutor(new PauseCommand(this));
-        Bukkit.getScheduler().runTaskLater(this, new Runnable() { @Override public void run() { for (Player p : Bukkit.getOnlinePlayers()) gameManager.sendToLobby(p); } }, 20L);
+        // Idle players are routed to the game selector by LobbyListener.
         statusHeartbeatReporter.start();
         getLogger().info("MonsterMazeStandalone enabled.");
         getLogger().info("Active map: " + mapManager.getActiveMap());
@@ -112,7 +112,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         getLogger().info("Debug mode: " + debug);
         getLogger().info("Run recording: " + recordRuns);
         getLogger().info("Run backend: " + (backendClient.isEnabled() ? "enabled" : "Solo/local webhook mode"));
-        getLogger().info("Players join into the active map lobby. Admin: /mm start");
+        getLogger().info("Players join the game selector. Select Monster Maze to enter its lobby; admin: /mm start");
     }
     @Override public void onDisable() { if (competitiveMatchTracker != null) competitiveMatchTracker.shutdown(); if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown(); if (gameManager != null) gameManager.forceStop(); }
     public static MonsterMazePlugin getInstance() { return instance; }

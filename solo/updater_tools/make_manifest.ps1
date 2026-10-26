@@ -17,7 +17,6 @@ $UPDATEABLE = @(
     "server/bukkit.yml", "server/eula.txt", "server/server.properties", "server/spigot.yml",
     "HOW_TO_PLAY.txt", "README.md"
 )
-
 $RELEASE_ASSETS = @{
     "server/plugins/MonsterMazeStandalone.jar" = "MonsterMaze-Solo-1.8-plugin.jar"
 }

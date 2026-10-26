@@ -242,6 +242,8 @@ public void startGame(Location preferCenter, int requestedPattern) {
 
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     if (p.getGameMode() == GameMode.SPECTATOR) continue;
+                    // The selector sandbox is a separate world and is never a game participant.
+                    if (center != null && p.getWorld() != center.getWorld()) continue;
                     alive.add(p.getUniqueId());
                     preparePlayer(p);
                     p.teleport(center.clone().add(0.5, 1, 0.5));
@@ -311,7 +313,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
                         if (state != GameState.STARTING) { cancel(); return; }
                         if (t <= 0) { beginLive(); cancel(); return; }
                         broadcast(ChatColor.YELLOW + "Starting in " + ChatColor.WHITE + t + "...");
-                        TextUtil.titleAll("", ChatColor.YELLOW + "" + t, 0, 15, 5);
+                        titleArenaPlayers("", ChatColor.YELLOW + "" + t, 0, 15, 5);
                         t--;
                     }
                 }.runTaskTimer(plugin, 10L, 20L);
@@ -328,7 +330,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
         leaderboardBoard.clear();
         for (Player p : getAlivePlayers()) p.closeInventory();
 
-        TextUtil.titleAll("", ChatColor.YELLOW + "" + ChatColor.BOLD + "Get to the Safe Pad!", 5, 40, 5);
+        titleArenaPlayers("", ChatColor.YELLOW + "" + ChatColor.BOLD + "Get to the Safe Pad!", 5, 40, 5);
         broadcast(ChatColor.GREEN + "" + ChatColor.BOLD + "GO!");
 
         secondTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
@@ -387,9 +389,18 @@ public void startGame(Location preferCenter, int requestedPattern) {
         kitManager.clearSelectors();
         destroyAllPads();
         mazeGenerator.returnToLobby();
-        scoreboard.clear(new ArrayList<Player>(Bukkit.getOnlinePlayers()));
+        List<Player> roundPlayers = new ArrayList<Player>();
+        if (center != null && center.getWorld() != null) {
+            for (Player online : Bukkit.getOnlinePlayers()) {
+                if (online.getWorld() == center.getWorld()) roundPlayers.add(online);
+            }
+        } else {
+            // Preserve the prior shutdown cleanup fallback if the arena center was never configured.
+            roundPlayers.addAll(Bukkit.getOnlinePlayers());
+        }
+        scoreboard.clear(roundPlayers);
 
-        for (Player p : Bukkit.getOnlinePlayers()) {
+        for (Player p : roundPlayers) {
             p.setExp(0); p.setLevel(0);
             p.getInventory().clear();
             p.getInventory().setArmorContents(null);
@@ -414,7 +425,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
         if (center != null) {
             kitManager.spawnSelectors(mazeGenerator.getLobbyCenter());
             refreshLeaderboardBoard();
-            for (Player p : Bukkit.getOnlinePlayers()) {
+            for (Player p : roundPlayers) {
                 kitManager.openSelector(p);
             }
         }
@@ -502,17 +513,17 @@ public void startGame(Location preferCenter, int requestedPattern) {
 
         if (phaseTimer == 20 || phaseTimer == 15 || phaseTimer == 10
                 || phaseTimer == 5 || phaseTimer == 4) {
-            TextUtil.titleAll("", ChatColor.GREEN + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
+            titleArenaPlayers("", ChatColor.GREEN + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
         }
         if (phaseTimer == 3) {
-            TextUtil.titleAll("", ChatColor.YELLOW + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
+            titleArenaPlayers("", ChatColor.YELLOW + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
         }
         if (phaseTimer == 2) {
-            TextUtil.titleAll("", ChatColor.GOLD + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
+            titleArenaPlayers("", ChatColor.GOLD + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
             spawnSafePad(); // next pad appears
         }
         if (phaseTimer == 1) {
-            TextUtil.titleAll("", ChatColor.RED + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
+            titleArenaPlayers("", ChatColor.RED + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
         }
 
         if (phaseTimer == 0) {
@@ -809,7 +820,28 @@ public void startGame(Location preferCenter, int requestedPattern) {
         }
     }
 
-    private void broadcast(String msg) { Bukkit.broadcastMessage(msg); }
+    private void titleArenaPlayers(String title, String subtitle, int fadeIn, int stay, int fadeOut) {
+        if (center == null || center.getWorld() == null) {
+            TextUtil.titleAll(title, subtitle, fadeIn, stay, fadeOut);
+            return;
+        }
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (player.getWorld() == center.getWorld()) {
+                TextUtil.title(player, title, subtitle, fadeIn, stay, fadeOut);
+            }
+        }
+    }
+
+    private void broadcast(String msg) {
+        if (center == null || center.getWorld() == null) {
+            Bukkit.broadcastMessage(msg);
+            return;
+        }
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (player.getWorld() == center.getWorld()) player.sendMessage(msg);
+        }
+        Bukkit.getConsoleSender().sendMessage(msg);
+    }
 
     // -------------------- Events --------------------
 

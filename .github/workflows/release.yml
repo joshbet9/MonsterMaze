@@ -289,6 +289,27 @@ jobs:
           if ((Get-Item 'MonsterMaze-Server-1.8.zip').Length -le 0) { throw '1.8 server artifact is empty.' }
           if ((Get-Item 'MonsterMaze-Server-1.21.zip').Length -le 0) { throw '1.21 server artifact is empty.' }
 
+      - name: Verify arcade test modes are embedded in the 1.8 plugin without a sidecar
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $plugin18 = [System.IO.Compression.ZipFile]::OpenRead('MonsterMaze-Solo-1.8-plugin.jar')
+          try {
+            $hasTestbed = @($plugin18.Entries | Where-Object { $_.FullName -eq 'me/monstermaze/cosmetics/PlayableArcadeTestbed.class' }).Count -eq 1
+            $hasCosmeticCommands = @($plugin18.Entries | Where-Object { $_.FullName -eq 'plugin.yml' }).Count -eq 1
+          } finally { $plugin18.Dispose() }
+          if (-not $hasTestbed -or -not $hasCosmeticCommands) { throw '1.8 MonsterMazeStandalone JAR is missing embedded arcade testbed code or plugin metadata.' }
+          $zip18 = [System.IO.Compression.ZipFile]::OpenRead('MonsterMaze-Server-1.8.zip')
+          try {
+            $hasSeparatePlugin18 = @($zip18.Entries | Where-Object { $_.FullName -eq 'plugins/MinigameCosmeticPrototypes.jar' }).Count -gt 0
+          } finally { $zip18.Dispose() }
+          if ($hasSeparatePlugin18) { throw '1.8 hosted server must not include a separate cosmetic test plugin.' }
+          $zip21 = [System.IO.Compression.ZipFile]::OpenRead('MonsterMaze-Server-1.21.zip')
+          try {
+            $hasSeparatePlugin21 = @($zip21.Entries | Where-Object { $_.FullName -eq 'plugins/MinigameCosmeticPrototypes.jar' }).Count -gt 0
+          } finally { $zip21.Dispose() }
+          if ($hasSeparatePlugin21) { throw 'The legacy 1.8 cosmetics plugin must not be bundled with Paper 1.21.' }
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:

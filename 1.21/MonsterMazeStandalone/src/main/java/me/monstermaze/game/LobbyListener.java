@@ -4,55 +4,64 @@ import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.world.VoidWorldManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 
-/**
- * Always put players in the Monster Maze void lobby on join/respawn (when idle).
- */
+/** Routes idle players through the isolated game selector while preserving the original MM lobby. */
 public class LobbyListener implements Listener {
-
     private final MonsterMazePlugin plugin;
     private final GameManager game;
     private final VoidWorldManager voids;
+    private final SandboxGameSelector selector;
 
     public LobbyListener(MonsterMazePlugin plugin, GameManager game, VoidWorldManager voids) {
         this.plugin = plugin;
         this.game = game;
         this.voids = voids;
+        this.selector = new SandboxGameSelector(plugin, game);
         Bukkit.getPluginManager().registerEvents(this, plugin);
         if (plugin.isSoloMode()) {
             new SoloIntegrityListener(plugin);
         }
+        // Route players already online through the selector after server/plugin startup settles.
+        Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+            @Override public void run() {
+                for (Player player : Bukkit.getOnlinePlayers()) {
+                    if (!player.isOnline() || game.isLive()) continue;
+                    selector.sendToHub(player);
+                    selector.openGameSelector(player);
+                }
+            }
+        }, 20L);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onJoin(PlayerJoinEvent event) {
-        final org.bukkit.entity.Player player = event.getPlayer();
+        final Player player = event.getPlayer();
         // Solo /mm commands do not require OP. Keeping the player non-op prevents
         // vanilla/admin commands from compromising the PB environment.
         if (plugin.isSoloMode() && player.isOp()) {
             player.setOp(false);
         }
 
-        // Defer one tick so join completes cleanly
         Bukkit.getScheduler().runTask(plugin, new Runnable() {
-            @Override
-            public void run() {
+            @Override public void run() {
                 if (!player.isOnline()) return;
                 if (game.isLive()) {
-                    // Mid-game joiners become spectators at center
-                    Location c = game.getCenter();
-                    if (c != null) {
-                        player.teleport(c.clone().add(0, 15, 0));
+                    // Mid-game joiners remain spectators, exactly as in the original lobby flow.
+                    Location center = game.getCenter();
+                    if (center != null) {
+                        player.teleport(center.clone().add(0, 15, 0));
                         player.setGameMode(org.bukkit.GameMode.SPECTATOR);
                     }
                     return;
                 }
-                game.sendToLobby(player);
+                selector.sendToHub(player);
+                selector.openGameSelector(player);
             }
         });
     }
@@ -60,9 +69,22 @@ public class LobbyListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onRespawn(PlayerRespawnEvent event) {
         if (game.isLive()) return;
-        Location lobby = game.getLobbySpawn();
-        if (lobby != null) {
-            event.setRespawnLocation(lobby);
+        final Player player = event.getPlayer();
+        Location center = game.getCenter();
+        if (center != null && player.getWorld() == center.getWorld()) {
+            // A player who died in Monster Maze still respawns in its original lobby.
+            Location lobby = game.getLobbySpawn();
+            if (lobby != null) event.setRespawnLocation(lobby);
+            return;
         }
+        Location spawn = selector.getHubSpawn();
+        if (spawn != null) event.setRespawnLocation(spawn);
+        Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+            @Override public void run() {
+                if (!player.isOnline() || game.isLive()) return;
+                selector.sendToHub(player);
+                selector.openGameSelector(player);
+            }
+        }, 1L);
     }
 }

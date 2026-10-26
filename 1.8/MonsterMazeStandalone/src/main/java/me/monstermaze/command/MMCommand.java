@@ -32,6 +32,28 @@ public class MMCommand implements CommandExecutor {
 
     @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         GameManager gm=plugin.getGameManager();
+        if (sender instanceof Player && args.length > 0 && "start".equalsIgnoreCase(args[0])) {
+            final Player player = (Player) sender;
+            Location center = gm.getCenter();
+            if (center != null && center.getWorld() != null
+                    && "mm_sandbox".equals(player.getWorld().getName())
+                    && player.getWorld() != center.getWorld() && !gm.isRunning()) {
+                player.closeInventory();
+                gm.sendToLobby(player);
+                final StringBuilder forwarded = new StringBuilder("mm");
+                for (String arg : args) forwarded.append(" ").append(arg);
+                final String replay = forwarded.toString();
+                org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+                    @Override public void run() {
+                        if (player.isOnline() && gm.getCenter() != null
+                                && player.getWorld() == gm.getCenter().getWorld()) {
+                            player.performCommand(replay);
+                        }
+                    }
+                }, 2L);
+                return true;
+            }
+        }
         if(args.length==0){showHelp(sender,gm);return true;}
         String sub=args[0].toLowerCase();
         if(sub.equals("gui")){if(!(sender instanceof Player)){sender.sendMessage(ChatColor.RED+"Players only.");return true;}if(gm.isLive()){sender.sendMessage(ChatColor.RED+"Can't change kit mid-game.");return true;}gm.getKitManager().openSelector((Player)sender);return true;}

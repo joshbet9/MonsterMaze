@@ -60,11 +60,17 @@ jobs:
           java -Xmx2G -jar "$RUNNER_TEMP/BuildTools.jar" --rev 1.8.8 --output-dir "$RUNNER_TEMP/spigot"
           test -f "$RUNNER_TEMP/spigot/spigot-1.8.8.jar"
           mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file -Dfile="$RUNNER_TEMP/spigot/spigot-1.8.8.jar" -DgroupId=org.spigotmc -DartifactId=spigot -Dversion=1.8.8-R0.1-SNAPSHOT -Dpackaging=jar
-      - name: Build and test
+      - name: Build and verify embedded arcade testbed
         working-directory: 1.8/MonsterMazeStandalone
+        shell: bash
         env:
           MAVEN_OPTS: '-Xmx2G'
-        run: mvn -B clean package
+        run: |
+          set -euo pipefail
+          mvn -B clean package
+          jar tf target/MonsterMazeStandalone.jar | grep -q '^me/monstermaze/cosmetics/PlayableArcadeTestbed.class$'
+          jar tf target/MonsterMazeStandalone.jar | grep -q '^me/monstermaze/cosmetics/MinigameCosmeticPrototypes.class$'
+          jar tf target/MonsterMazeStandalone.jar | grep -q '^plugin.yml$'
 
   build-1-21:
     name: Build Minecraft 1.21.x
@@ -181,6 +187,30 @@ jobs:
             exit 1
           fi
 
+  sandbox-selector:
+    name: Validate isolated game selector and cross-world separation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check both plugin targets retain the existing Monster Maze lobby path
+        shell: bash
+        run: |
+          set -euo pipefail
+          for version in 1.8 1.21; do
+            base="$version/MonsterMazeStandalone/src/main/java/me/monstermaze"
+            test -f "$base/game/SandboxGameSelector.java"
+            grep -q 'HUB_WORLD_NAME = "mm_sandbox"' "$base/game/SandboxGameSelector.java"
+            grep -q 'new SandboxGameSelector(plugin, game)' "$base/game/LobbyListener.java"
+            grep -q '  games:' "$version/MonsterMazeStandalone/src/main/resources/plugin.yml"
+            grep -q 'if (center != null && p.getWorld() != center.getWorld()) continue;' "$base/game/GameManager.java"
+            grep -q 'List<Player> roundPlayers' "$base/game/GameManager.java"
+          done
+          grep -q 'new MinigameCosmeticPrototypes(this)' 1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/MonsterMazePlugin.java
+          grep -q 'new PlayableArcadeTestbed(this)' 1.8/MonsterMazeStandalone/src/main/java/me/monstermaze/cosmetics/MinigameCosmeticPrototypes.java
+          grep -q 'me/monstermaze/cosmetics/PlayableArcadeTestbed.class' .github/workflows/release.yml
+          ! grep -q 'MonsterMaze-Solo-1.8-Cosmetics.jar' .github/workflows/release.yml
+
   repository-hygiene:
     name: Repository hygiene
     runs-on: ubuntu-latest
@@ -291,7 +321,20 @@ jobs:
           test -f solo/solo-dist.zip
           unzip -l solo/solo-dist.zip | grep -q 'runtime/jdk8/bin/java.exe'
           unzip -l solo/solo-dist.zip | grep -q 'server/plugins/MonsterMazeStandalone.jar'
+          ! unzip -l solo/solo-dist.zip | grep -q 'server/mm_sandbox/'
+          ! unzip -l solo/solo-dist.zip | grep -q 'server/plugins/MinigameCosmeticPrototypes.jar'
           unzip -l solo/solo-dist.zip | grep -q 'version.json'
+          unzip -p solo/solo-dist.zip server/plugins/MonsterMazeStandalone.jar > "$RUNNER_TEMP/MonsterMazeStandalone-packaged.jar"
+          jar tf "$RUNNER_TEMP/MonsterMazeStandalone-packaged.jar" | grep -q '^me/monstermaze/cosmetics/PlayableArcadeTestbed.class$'
+          python - <<'PY'
+          import json
+          with open('solo/solo-dist/version.json', encoding='utf-8') as f:
+              manifest = json.load(f)
+          entry = manifest['files'].get('server/plugins/MonsterMazeStandalone.jar')
+          assert entry, 'Main MonsterMaze plugin is missing from the update manifest.'
+          assert len(entry['sha256']) == 64, 'Main plugin SHA-256 is missing or malformed.'
+          assert 'server/plugins/MinigameCosmeticPrototypes.jar' not in manifest['files'], 'Obsolete separate cosmetic plugin remains in the manifest.'
+          PY
 
   release-package-1-21:
     name: Validate release packaging 1.21
@@ -363,4 +406,6 @@ jobs:
           test -f solo/1.21/solo-1.21-dist.zip
           unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'runtime/jdk21/bin/java.exe'
           unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'server/plugins/MonsterMazeStandalone.jar'
+          ! unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'server/plugins/MinigameCosmeticPrototypes.jar'
+          ! unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'server/mm_sandbox/'
           unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'version.json'

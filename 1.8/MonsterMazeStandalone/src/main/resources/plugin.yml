@@ -4,6 +4,18 @@ main: me.monstermaze.MonsterMazePlugin
 author: You
 description: Standalone Monster Maze for local testing (ported from Mineplex)
 commands:
+  games:
+    aliases: [gameselect, gamemenu]
+    description: Open the sandbox game selector
+    usage: /games
+  cosmeticproto:
+    aliases: [gamecosmetic, gamecosmetics]
+    description: Unlock, equip and preview minigame cosmetic prototypes
+    usage: /cosmeticproto <list|status|unlock|equip|off|preview>
+  arcadetest:
+    aliases: [arcadegame, arcadegames]
+    description: Join and start playable 1.8.8 arcade cosmetic test rounds
+    usage: /arcadetest <join|start|stop|unlock|leave|list|status>
   mm:
     description: Monster Maze commands
     usage: /mm <start|stop|setcenter|status|kit|kits|pb|lb|challenge>
@@ -15,6 +27,9 @@ commands:
     description: Pause or resume the current Monster Maze round
     usage: /pause
 permissions:
+  minigamecosmetics.admin:
+    description: Allows prototype cosmetic unlocks and testing
+    default: op
   monstermaze.admin:
     description: Allows control of Monster Maze
     default: op
