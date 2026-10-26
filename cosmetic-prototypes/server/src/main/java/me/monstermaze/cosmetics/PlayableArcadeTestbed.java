@@ -289,7 +289,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
             player.setFoodLevel(20);
             player.getInventory().clear();
             player.getInventory().setArmorContents(null);
-            player.getActivePotionEffects().clear();
+            for (PotionEffect effect : new ArrayList<PotionEffect>(player.getActivePotionEffects())) player.removePotionEffect(effect.getType());
         }
         if (participants.isEmpty()) {
             mode = null;
@@ -482,13 +482,15 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
             player.getInventory().setItem(2, namedItem(Material.COOKIE, ChatColor.LIGHT_PURPLE + "Reverse", "Right-click: temporary collision immunity"));
             List<Sheep> tail = new ArrayList<Sheep>();
             List<Location> history = new ArrayList<Location>();
-            history.add(spawn.clone());
+            Vector back = spawn.getDirection().setY(0.0D).normalize().multiply(-0.65D);
+            for (int n = 60; n >= 0; n--) history.add(spawn.clone().add(back.clone().multiply(n)));
             snakeTails.put(id, tail);
             snakeHistory.put(id, history);
             snakeTailTarget.put(id, Integer.valueOf(4));
             snakeBaseColour.put(id, DyeColor.getByDyeData((byte) (slot % 16)));
             for (int n = 1; n <= 4; n++) {
-                Location tailLoc = spawn.clone().add(-n * 1.3D, 0.0D, 0.0D);
+                int trailIndex = Math.max(0, history.size() - 1 - (n * 4));
+                Location tailLoc = history.get(trailIndex).clone();
                 Sheep sheep = (Sheep) world.spawnEntity(tailLoc, EntityType.SHEEP);
                 sheep.setColor(snakeBaseColour.get(id));
                 sheep.setRemoveWhenFarAway(false);
@@ -721,7 +723,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         snakeAbilityUntil.put(id, Long.valueOf(ticks + 40L));
         if ("speed".equals(ability)) player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 40, 1, false, false), true);
         player.getWorld().spigot().playEffect(player.getLocation().add(0.0D, 1.0D, 0.0D),
-                "super".equals(ability) ? Effect.PORTAL : Effect.HAPPY_VILLAGER, 0, 0, 0.35F, 0.5F, 0.35F, 0.05F, 18, 48);
+                "super".equals(ability) ? Effect.PORTAL : Effect.POTION_BREAK, 0, 0, 0.35F, 0.5F, 0.35F, 0.05F, 18, 48);
         player.sendMessage(ChatColor.GREEN + "Snake ability activated: " + ability + ". The tail colour updates for every player viewing you.");
     }
 
@@ -815,7 +817,6 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         }
         if (mode == Mode.SNAKE) {
             event.setCancelled(true);
-            if (isSnakeInvulnerable(id)) player.setNoDamageTicks(20);
         }
     }
 
@@ -917,16 +918,6 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         snakeAbilityUntil.remove(id);
         Pig pig = baconPigs.remove(id);
         if (pig != null && pig.isValid()) pig.remove();
-        if (world != null) {
-            for (Entity entity : new ArrayList<Entity>(world.getEntities())) {
-                if (entity instanceof Slime && snakeFood.contains((Slime) entity) && mode != Mode.SNAKE) continue;
-            }
-        }
-        snakeFood.removeIf(s -> {
-            if (s == null || !s.isValid()) return true;
-            if (mode != Mode.SNAKE) { s.remove(); return true; }
-            return false;
-        });
         Player player = Bukkit.getPlayer(id);
         if (player != null) cosmetics.clearMicroBattlesArena(player);
     }
@@ -980,7 +971,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         RUNNER("runner", "Runner", 128),
         BACONBRAWL("baconbrawl", "Bacon Brawl", 256),
         DRAGONESCAPE("dragonescape", "Dragon Escape", 384),
-        MICROBATTTLES("microbattles", "Micro Battles", 512),
+        MICROBATTLES("microbattles", "Micro Battles", 512),
         EVOLUTION("evolution", "Evolution", 640),
         SNAKE("snake", "Snake", 768);
 
@@ -997,7 +988,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         static Mode parse(String value) {
             String normalized = value.toLowerCase(Locale.ROOT).replace("-", "").replace("_", "").replace(" ", "");
             for (Mode mode : values()) if (mode.key.replace("-", "").equals(normalized)) return mode;
-            if ("micro".equals(normalized) || "microbattle".equals(normalized)) return MICROBATTTLES;
+            if ("micro".equals(normalized) || "microbattle".equals(normalized)) return MICROBATTLES;
             if ("bacon".equals(normalized)) return BACONBRAWL;
             if ("dragon".equals(normalized)) return DRAGONESCAPE;
             return null;
