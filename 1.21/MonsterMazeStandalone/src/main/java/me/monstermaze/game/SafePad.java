@@ -23,6 +23,7 @@ public class SafePad implements Listener {
     private final Location center;
     private final int surfaceY;
     private final boolean qol;
+    private final Material surfaceMaterial;
     private final List<BlockSnapshot> snapshots = new ArrayList<BlockSnapshot>();
     private int decayCount = 11;
     private boolean active = true;
@@ -34,9 +35,27 @@ public class SafePad implements Listener {
         this.surfaceY = pathLocation.getBlockY() - 1;
         this.qol = qol;
         MonsterMazePlugin plugin = MonsterMazePlugin.getInstance();
+        this.surfaceMaterial = resolveSurfaceMaterial(plugin);
         if (plugin != null && plugin.getMapThemeApplier() != null) plugin.getMapThemeApplier().refresh();
         captureAndBuild();
         ensureBeacon();
+    }
+
+    private static Material resolveSurfaceMaterial(MonsterMazePlugin plugin) {
+        if (plugin == null || !plugin.getConfig().getBoolean(
+                "monstermaze.safe-pad-enhancements.surface-colour-enabled", false)) {
+            return Material.LIME_TERRACOTTA;
+        }
+        int colour = plugin.getConfig().getInt("monstermaze.safe-pad-enhancements.surface-colour-data", 5);
+        Material[] colours = {
+                Material.WHITE_TERRACOTTA, Material.ORANGE_TERRACOTTA, Material.MAGENTA_TERRACOTTA,
+                Material.LIGHT_BLUE_TERRACOTTA, Material.YELLOW_TERRACOTTA, Material.LIME_TERRACOTTA,
+                Material.PINK_TERRACOTTA, Material.GRAY_TERRACOTTA, Material.LIGHT_GRAY_TERRACOTTA,
+                Material.CYAN_TERRACOTTA, Material.PURPLE_TERRACOTTA, Material.BLUE_TERRACOTTA,
+                Material.BROWN_TERRACOTTA, Material.GREEN_TERRACOTTA, Material.RED_TERRACOTTA,
+                Material.BLACK_TERRACOTTA
+        };
+        return colour >= 0 && colour < colours.length ? colours[colour] : Material.LIME_TERRACOTTA;
     }
 
     @EventHandler
@@ -53,7 +72,7 @@ public class SafePad implements Listener {
         World world = center.getWorld();
         int cx = center.getBlockX(), cy = surfaceY, cz = center.getBlockZ();
         for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) {
-            if (x != 0 || z != 0) setBlock(world.getBlockAt(cx + x, cy, cz + z), Material.LIME_TERRACOTTA);
+            if (x != 0 || z != 0) setBlock(world.getBlockAt(cx + x, cy, cz + z), surfaceMaterial);
         }
         setBlock(world.getBlockAt(cx, cy, cz), Material.BEACON);
         for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++)
@@ -96,6 +115,17 @@ public class SafePad implements Listener {
     public Location getLocation() { return center.clone(); }
     public boolean isActive() { return active; }
 
+    /** Restore only the central objective beacon, never the pad base or surrounding surface. */
+    public boolean restoreObjectiveBeaconIfMissing() {
+        if (!active || center == null || center.getWorld() == null) return false;
+        Block beacon = center.getWorld().getBlockAt(center.getBlockX(), surfaceY, center.getBlockZ());
+        if (beacon.getType() == Material.BEACON) return false;
+        beacon.setType(Material.BEACON, false);
+        BlockState state = beacon.getState();
+        state.update(true, true);
+        return true;
+    }
+
     public boolean isOn(Entity entity) {
         Location loc = entity.getLocation();
         int by = surfaceY;
@@ -117,8 +147,9 @@ public class SafePad implements Listener {
         int cx = center.getBlockX(), cy = surfaceY, cz = center.getBlockZ();
         for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) {
             Block b = world.getBlockAt(cx + x, cy, cz + z);
-            if (b.getType() == Material.LIME_TERRACOTTA || b.getType() == Material.YELLOW_TERRACOTTA
-                    || b.getType() == Material.ORANGE_TERRACOTTA || b.getType() == Material.RED_TERRACOTTA)
+            if (b.getType() == surfaceMaterial || b.getType() == Material.LIME_TERRACOTTA
+                    || b.getType() == Material.YELLOW_TERRACOTTA || b.getType() == Material.ORANGE_TERRACOTTA
+                    || b.getType() == Material.RED_TERRACOTTA)
                 if (b.getType() != clay) b.setType(clay, false);
         }
         if (decayCount <= 0) { destroy(); return true; }
@@ -137,7 +168,7 @@ public class SafePad implements Listener {
         World world = center.getWorld();
         int cx = center.getBlockX(), cy = surfaceY, cz = center.getBlockZ();
         Block beacon = world.getBlockAt(cx, cy, cz);
-        if (beacon.getType() == Material.BEACON) beacon.setType(Material.LIME_TERRACOTTA, false);
+        if (beacon.getType() == Material.BEACON) beacon.setType(surfaceMaterial, false);
         // Do not convert the iron base to quartz here. The quartz is only the decorative
         // frame around the pad; changing the 3x3 base to quartz creates a visible flash of
         // quartz when the active pad is removed. The snapshots retain the actual maze blocks
