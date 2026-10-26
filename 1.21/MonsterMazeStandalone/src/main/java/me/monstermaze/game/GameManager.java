@@ -313,7 +313,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
                         if (state != GameState.STARTING) { cancel(); return; }
                         if (t <= 0) { beginLive(); cancel(); return; }
                         broadcast(ChatColor.YELLOW + "Starting in " + ChatColor.WHITE + t + "...");
-                        TextUtil.titleAll("", ChatColor.YELLOW + "" + t, 0, 15, 5);
+                        titleArenaPlayers("", ChatColor.YELLOW + "" + t, 0, 15, 5);
                         t--;
                     }
                 }.runTaskTimer(plugin, 10L, 20L);
@@ -330,7 +330,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
         leaderboardBoard.clear();
         for (Player p : getAlivePlayers()) p.closeInventory();
 
-        TextUtil.titleAll("", ChatColor.YELLOW + "" + ChatColor.BOLD + "Get to the Safe Pad!", 5, 40, 5);
+        titleArenaPlayers("", ChatColor.YELLOW + "" + ChatColor.BOLD + "Get to the Safe Pad!", 5, 40, 5);
         broadcast(ChatColor.GREEN + "" + ChatColor.BOLD + "GO!");
 
         secondTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
@@ -513,17 +513,17 @@ public void startGame(Location preferCenter, int requestedPattern) {
 
         if (phaseTimer == 20 || phaseTimer == 15 || phaseTimer == 10
                 || phaseTimer == 5 || phaseTimer == 4) {
-            TextUtil.titleAll("", ChatColor.GREEN + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
+            titleArenaPlayers("", ChatColor.GREEN + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
         }
         if (phaseTimer == 3) {
-            TextUtil.titleAll("", ChatColor.YELLOW + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
+            titleArenaPlayers("", ChatColor.YELLOW + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
         }
         if (phaseTimer == 2) {
-            TextUtil.titleAll("", ChatColor.GOLD + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
+            titleArenaPlayers("", ChatColor.GOLD + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
             spawnSafePad(); // next pad appears
         }
         if (phaseTimer == 1) {
-            TextUtil.titleAll("", ChatColor.RED + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
+            titleArenaPlayers("", ChatColor.RED + "" + ChatColor.BOLD + phaseTimer, 5, 40, 5);
         }
 
         if (phaseTimer == 0) {
