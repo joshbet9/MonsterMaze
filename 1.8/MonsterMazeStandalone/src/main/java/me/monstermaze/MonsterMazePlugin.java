@@ -83,7 +83,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         // Idle players are routed to the game selector by LobbyListener.
         statusHeartbeatReporter.start();
         getLogger().info("MonsterMazeStandalone enabled ('" + mapManager.getActiveMap() + "' map).");
-        getLogger().info("Players join into the lobby. Admin: /mm start");
+        getLogger().info("Players join the game selector. Select Monster Maze to enter its lobby; admin: /mm start");
         getLogger().info("Solo mode: " + soloMode + ", debug mode: " + debug);
         getLogger().info("Run backend: " + (backendClient.isEnabled() ? "enabled" : "Solo/local webhook mode"));
     }
