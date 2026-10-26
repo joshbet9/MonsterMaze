@@ -180,7 +180,8 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
     /**
      * Returns the stained-clay data value a Runner game adapter should place.
      * The no-cosmetic behaviour deliberately remains generic red clay (data 14).
-     * If the selected base colour is part of the map palette, use its inverse.
+     * If the selected base colour is in the map palette, use its inverse; if
+     * both members of the pair are present, prefer a random third unused colour.
      */
     public byte getRunnerClayData(UUID playerId, Set<Byte> mapPalette) {
         String selected = getEquipped(playerId, "runner");
@@ -663,8 +664,14 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         }
         restoreAfter(snapshots, 20 * 12);
         String choice = selected == null ? "default red" : selected.name;
-        String inversion = selected != null && palette.contains(selected.base) ? " (inverted for map palette)" : "";
-        player.sendMessage(ChatColor.GREEN + "Runner clay preview: " + choice + inversion + ", stained-clay data " + data + ". Temporary sample lasts 12 seconds.");
+        String paletteNote = "";
+        if (selected != null && palette.contains(selected.base) && palette.contains(selected.inverse)) {
+            paletteNote = " (random third colour because both paired colours occur in the map palette)";
+        } else if (selected != null && palette.contains(selected.base)) {
+            paletteNote = " (inverted for map palette)";
+        }
+        player.sendMessage(ChatColor.GREEN + "Runner clay preview: " + choice + paletteNote
+                + ", stained-clay data " + data + ". Temporary sample lasts 12 seconds.");
     }
 
     private void previewBaconBrawl(final Player player) {
