@@ -24,7 +24,7 @@ The `arcade_cosmetic_test` world is created automatically when a player joins or
 
 - `/games` — on the 1.8.8 Monster Maze server selector, choose Runner, Bacon Brawl, Dragon Escape, Micro Battles, Evolution or Snake, then select **Start playable test round**.
 - `/arcadetest join` — enter the isolated test world.
-- `/arcadetest start <runner|baconbrawl|dragonescape|microbattles|evolution|snake>` — start or replace the current test round. Players already in the test world are included.
+- `/arcadetest start <runner|baconbrawl|dragonescape|microbattles|evolution|snake> [runner-map-palette]` — start or replace the current test round. Players already in the test world are included. The optional comma-separated palette is for Runner testing, e.g. `lightblue,red`.
 - `/arcadetest stop` — stop a round and return players to the test-world hub.
 - `/arcadetest leave` — return to the location and inventory held before entering the test world.
 - `/arcadetest unlock` — unlock all cosmetic choices for yourself while in the test world, so a Solo test server does not require OP privileges.
@@ -44,7 +44,7 @@ Cosmetics are persistent per-player test selections. Use:
 
 Players run along separate lanes. Stained-clay colour is selected per player, and the blocks behind them disappear. The eight cosmetic pairs are `white`, `orange`, `magenta`, `lightblue`, `yellow`, `lime`, `pink` and `gray`. If the selected base colour is already in the map palette, the inverse is used. If both pair colours are in the palette, a random third colour distinct from both is used. Without a cosmetic, the generic red clay is retained.
 
-The generated test palette contains red and blue clay to exercise the palette-aware selection path. The existing visual-preview command can still be used with a custom palette.
+The generated test arena defaults to a simulated red/blue map palette. For a deterministic way to exercise the “both colours in the pair are present” fallback, equip `lightblue` and start `/arcadetest start runner lightblue,red`. Both lightblue (data 3) and red (data 14, its inverse) are declared in that test palette, so the routine randomly chooses a third colour distinct from both. Likewise, equip `orange` and use `/arcadetest start runner orange,blue` to test that pair. The random choice can be seen in the running lane; the short `/cosmeticproto preview runner <palette>` remains available for a quick visual check.
 
 ### Bacon Brawl
 
@@ -64,7 +64,7 @@ Players fight in an arena and evolve their weapon as they earn kills. The equipp
 
 ### Snake
 
-Players steer around an arena with visible sheep tails, grow their tail by collecting slimes, and are eliminated by hitting tails or leaving the arena. The test abilities are Redstone (Super Snake), Feather (Speed) and Cookie (Reverse/collision immunity); each lasts two seconds. The selected Snake line controls each ability's tail colour, and the sheep entities synchronise their colours server-side so other players see them too.
+Players steer the mounted sheep around an arena with visible trailing sheep segments, grow their tail by collecting slimes, and are eliminated by hitting tails or leaving the arena. Redstone activates Super Snake, Feather activates Speed, and Cookie temporarily reverses travel direction; each ability lasts two seconds. The ability windows also suppress tail-collision elimination, which makes visual testing easier than the original fully competitive round. The selected Snake line controls the visible head/tail colour for each ability, and sheep entities change colour server-side so all other players see the same cosmetic.
 
 Snake lines:
 - `elemental`: Super Snake blue, Speed yellow, Reverse purple.
@@ -72,6 +72,19 @@ Snake lines:
 - `sunset`: Super Snake red, Speed orange, Reverse pink.
 
 When no Snake line is equipped, Super Snake keeps the classic random rainbow effect. Unequipping `snake` therefore preserves the legacy behaviour.
+
+## Example first-time setup
+
+Run these in order on the 1.8.8 test server:
+
+```text
+/arcadetest join
+/arcadetest unlock
+/cosmeticproto equip snake elemental
+/arcadetest start snake
+```
+
+To test the Runner pair-colour fallback, stop the round, equip the desired Runner colour, and then use a palette override such as `/arcadetest start runner lightblue,red`. All six test modes share one disposable local test world; only one mode runs at a time.
 
 ## Scope note
 
