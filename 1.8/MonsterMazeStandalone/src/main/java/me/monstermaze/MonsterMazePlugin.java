@@ -80,9 +80,7 @@ public class MonsterMazePlugin extends JavaPlugin {
         getCommand("mm").setExecutor(new MMCommand(this));
         getCommand("mmdebug").setExecutor(new MMDebugCommand(this));
         getCommand("pause").setExecutor(new PauseCommand(this));
-        Bukkit.getScheduler().runTaskLater(this, new Runnable() {
-            @Override public void run() { for (Player p : Bukkit.getOnlinePlayers()) gameManager.sendToLobby(p); }
-        }, 20L);
+        // Idle players are routed to the game selector by LobbyListener.
         statusHeartbeatReporter.start();
         getLogger().info("MonsterMazeStandalone enabled ('" + mapManager.getActiveMap() + "' map).");
         getLogger().info("Players join into the lobby. Admin: /mm start");
