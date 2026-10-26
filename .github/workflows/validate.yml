@@ -320,6 +320,7 @@ jobs:
           test -f solo/solo-dist.zip
           unzip -l solo/solo-dist.zip | grep -q 'runtime/jdk8/bin/java.exe'
           unzip -l solo/solo-dist.zip | grep -q 'server/plugins/MonsterMazeStandalone.jar'
+          ! unzip -l solo/solo-dist.zip | grep -q 'server/mm_sandbox/'
           unzip -l solo/solo-dist.zip | grep -q 'server/plugins/MinigameCosmeticPrototypes.jar'
           unzip -l solo/solo-dist.zip | grep -q 'version.json'
           python - <<'PY'
@@ -403,4 +404,5 @@ jobs:
           unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'runtime/jdk21/bin/java.exe'
           unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'server/plugins/MonsterMazeStandalone.jar'
           ! unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'server/plugins/MinigameCosmeticPrototypes.jar'
+          ! unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'server/mm_sandbox/'
           unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'version.json'
