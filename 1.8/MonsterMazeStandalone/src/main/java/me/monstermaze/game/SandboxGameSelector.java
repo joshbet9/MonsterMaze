@@ -40,7 +40,7 @@ import java.util.UUID;
  */
 public final class SandboxGameSelector implements Listener, CommandExecutor {
     public static final String HUB_WORLD_NAME = "mm_sandbox";
-    private static final String SELECTOR_TITLE = ChatColor.DARK_PURPLE + "Game Selector";
+    private static final String SELECTOR_TITLE = ChatColor.DARK_PURPLE + "Monster Maze Modern Selector";
     private static final String SANDBOX_PREFIX = ChatColor.DARK_AQUA + "Sandbox: ";
 
     private final MonsterMazePlugin plugin;
@@ -53,8 +53,8 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
         this.plugin = plugin;
         this.game = game;
         Bukkit.getPluginManager().registerEvents(this, plugin);
-        if (plugin.getCommand("games") != null) {
-            plugin.getCommand("games").setExecutor(this);
+        if (plugin.getCommand("mmmodernmenu") != null) {
+            plugin.getCommand("mmmodernmenu").setExecutor(this);
         }
         ensureHubWorld();
     }
@@ -129,8 +129,9 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
         invalidatePendingPreview(player);
         selectedSandboxGame.remove(player.getUniqueId());
         Inventory menu = Bukkit.createInventory(null, 27, SELECTOR_TITLE);
-        menu.setItem(10, item(Material.IRON_SWORD, ChatColor.GREEN + "Monster Maze",
-                "Open the existing Monster Maze lobby.", "All existing Monster Maze features are kept."));
+        menu.setItem(10, item(Material.IRON_SWORD, ChatColor.GREEN + "Monster Maze Modern",
+                "Enter the standalone enhanced Monster Maze.", "The original Reborn Arcade Monster Maze remains separate."));
+        if (!plugin.isCohostedMode()) {
         menu.setItem(12, item(Material.SLIME_BALL, ChatColor.YELLOW + "Runner",
                 "Open its playable test mode.", "Try the custom clay palette and finish-line behaviour."));
         menu.setItem(13, item(Material.GOLD_INGOT, ChatColor.GOLD + "Bacon Brawl",
@@ -145,6 +146,7 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
                 "Open its playable test mode.", "Test ability-colour lines and classic rainbow Super Snake."));
         menu.setItem(22, item(Material.BOOK, ChatColor.GRAY + "Cosmetic Test Modes",
                 "These are isolated, generated gameplay arenas.", "They do not change the Monster Maze round."));
+        }
         player.openInventory(menu);
     }
 
@@ -185,14 +187,14 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player)) {
-            sender.sendMessage("Run /games in-game to open the game selector.");
+            sender.sendMessage("Run /mmmodernmenu in-game to open the Monster Maze Modern selector.");
             return true;
         }
         Player player = (Player) sender;
         Location center = game.getCenter();
         if (game.isRunning() && center != null && center.getWorld() != null
                 && player.getWorld() == center.getWorld()) {
-            player.sendMessage(ChatColor.RED + "The game selector is unavailable while you are in the Monster Maze arena during a round.");
+            player.sendMessage(ChatColor.RED + "The selector is unavailable while Monster Maze Modern is running.");
             return true;
         }
         sendToHub(player);
@@ -260,12 +262,12 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
             if (center != null) {
                 player.teleport(center.clone().add(0, 15, 0));
                 player.setGameMode(GameMode.SPECTATOR);
-                player.sendMessage(ChatColor.YELLOW + "Monster Maze is already live; you joined as a spectator.");
+                player.sendMessage(ChatColor.YELLOW + "Monster Maze Modern is already live; you joined as a spectator.");
             }
             return;
         }
         if (game.isRunning()) {
-            player.sendMessage(ChatColor.RED + "Monster Maze is starting. Wait for this round to finish.");
+            player.sendMessage(ChatColor.RED + "Monster Maze Modern is starting. Wait for this round to finish.");
             sendToHub(player);
             return;
         }
