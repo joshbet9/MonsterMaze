@@ -1,0 +1,4 @@
+# Player unlocks and equipped choices are stored under their UUID.
+# This plugin is a standalone visual/test harness; it is not loaded by the production Solo packer.
+unlocks: {}
+equipped: {}
