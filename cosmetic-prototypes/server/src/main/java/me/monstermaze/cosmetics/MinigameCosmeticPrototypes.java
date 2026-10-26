@@ -151,8 +151,30 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         String selected = getEquipped(playerId, "runner");
         RunnerColour colour = RUNNER_COLOURS.get(selected);
         if (colour == null) return (byte) DEFAULT_RUNNER_RED;
-        if (mapPalette != null && mapPalette.contains(colour.base)) return colour.inverse;
-        return colour.base;
+
+        boolean baseUsedByMap = mapPalette != null && mapPalette.contains(colour.base);
+        boolean inverseUsedByMap = mapPalette != null && mapPalette.contains(colour.inverse);
+        if (baseUsedByMap && inverseUsedByMap) {
+            // Both colours in this cosmetic's pair already occur on the map.
+            // Prefer a random third clay colour that is absent from the map palette.
+            List<Byte> unused = new ArrayList<Byte>();
+            for (Byte candidate : ALL_CLAY_COLOURS.values()) {
+                if (candidate == null) continue;
+                if (candidate.byteValue() == colour.base || candidate.byteValue() == colour.inverse) continue;
+                if (!mapPalette.contains(candidate)) unused.add(candidate);
+            }
+            // If the map uses every colour, still make the output distinct from the pair.
+            if (unused.isEmpty()) {
+                for (Byte candidate : ALL_CLAY_COLOURS.values()) {
+                    if (candidate != null && candidate.byteValue() != colour.base
+                            && candidate.byteValue() != colour.inverse) {
+                        unused.add(candidate);
+                    }
+                }
+            }
+            if (!unused.isEmpty()) return unused.get(random.nextInt(unused.size())).byteValue();
+        }
+        return baseUsedByMap ? colour.inverse : colour.base;
     }
 
     /** Registers the pig/entity used to represent this Bacon Brawl player. */
