@@ -1,0 +1,39 @@
+name: Build Minigame Cosmetic Prototypes
+
+on:
+  push:
+    branches:
+      - feat/minigame-cosmetic-prototypes
+    paths:
+      - "cosmetic-prototypes/server/**"
+      - ".github/workflows/build-minigame-cosmetic-prototypes.yml"
+  pull_request:
+    paths:
+      - "cosmetic-prototypes/server/**"
+      - ".github/workflows/build-minigame-cosmetic-prototypes.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-server-prototypes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "8"
+          cache: maven
+      - name: Build server-side prototype plugin
+        run: mvn -B -f cosmetic-prototypes/server/pom.xml package
+      - name: Upload prototype plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: minigame-cosmetic-prototypes-server
+          path: cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar
+          if-no-files-found: error
+          retention-days: 14
