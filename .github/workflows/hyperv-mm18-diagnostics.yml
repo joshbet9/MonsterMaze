@@ -1,4 +1,5 @@
 name: Inspect Hyper-V Monster Maze 1.8 deployment
+# Read-only operational checks; this workflow never starts or stops the server.
 
 on:
   push:
