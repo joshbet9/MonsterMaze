@@ -416,6 +416,13 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         int dz = dx == 0 ? dominantZ(player.getLocation().getDirection()) : 0;
         if (dx == 0 && dz == 0) dx = 1;
 
+        for (int i = 0; i < 8; i++) {
+            Block block = start.getWorld().getBlockAt(start.getBlockX() + dx * i, start.getBlockY(), start.getBlockZ() + dz * i);
+            if (block.getType() != Material.AIR) {
+                player.sendMessage(ChatColor.RED + "Runner preview needs eight consecutive air blocks in front of you; move to a clear area and try again.");
+                return;
+            }
+        }
         final List<BlockSnapshot> snapshots = new ArrayList<BlockSnapshot>();
         for (int i = 0; i < 8; i++) {
             Block block = start.getWorld().getBlockAt(start.getBlockX() + dx * i, start.getBlockY(), start.getBlockZ() + dz * i);
@@ -448,10 +455,23 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
 
     private void previewDragonEscape(final Player player) {
         Location start = previewStart(player.getLocation(), 6.0, 2.0);
-        final List<BlockSnapshot> snapshots = new ArrayList<BlockSnapshot>();
         int x = start.getBlockX();
         int y = start.getBlockY();
         int z = start.getBlockZ();
+        for (int ox = -1; ox <= 1; ox++) {
+            for (int oz = -1; oz <= 1; oz++) {
+                if (start.getWorld().getBlockAt(x + ox, y, z + oz).getType() != Material.AIR) {
+                    player.sendMessage(ChatColor.RED + "Dragon Escape preview needs a clear 3x3 air area in front of you; move to an open area and try again.");
+                    return;
+                }
+            }
+        }
+        if (start.getWorld().getBlockAt(x, y + 1, z).getType() != Material.AIR
+                || start.getWorld().getBlockAt(x, y + 2, z).getType() != Material.AIR) {
+            player.sendMessage(ChatColor.RED + "Dragon Escape preview needs two clear blocks above its temporary platform.");
+            return;
+        }
+        final List<BlockSnapshot> snapshots = new ArrayList<BlockSnapshot>();
         for (int ox = -1; ox <= 1; ox++) {
             for (int oz = -1; oz <= 1; oz++) {
                 placeTemporary(start.getWorld().getBlockAt(x + ox, y, z + oz), Material.IRON_BLOCK, (byte) 0, snapshots);
