@@ -1,10 +1,7 @@
 name: Restart Hyper-V Monster Maze servers now
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/restart-hyperv-now.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
