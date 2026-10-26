@@ -181,6 +181,28 @@ jobs:
             exit 1
           fi
 
+  sandbox-selector:
+    name: Validate isolated game selector and cross-world separation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check both plugin targets retain the existing Monster Maze lobby path
+        shell: bash
+        run: |
+          set -euo pipefail
+          for version in 1.8 1.21; do
+            base="$version/MonsterMazeStandalone/src/main/java/me/monstermaze"
+            test -f "$base/game/SandboxGameSelector.java"
+            grep -q 'HUB_WORLD_NAME = "mm_sandbox"' "$base/game/SandboxGameSelector.java"
+            grep -q 'new SandboxGameSelector(plugin, game)' "$base/game/LobbyListener.java"
+            grep -q '  games:' "$version/MonsterMazeStandalone/src/main/resources/plugin.yml"
+            grep -q 'if (center != null && p.getWorld() != center.getWorld()) continue;' "$base/game/GameManager.java"
+            grep -q 'List<Player> roundPlayers' "$base/game/GameManager.java"
+          done
+          grep -q 'mvn -B -f cosmetic-prototypes/server/pom.xml clean package' .github/workflows/release.yml
+          grep -q 'MonsterMaze-Solo-1.8-Cosmetics.jar' .github/workflows/release.yml
+
   repository-hygiene:
     name: Repository hygiene
     runs-on: ubuntu-latest
@@ -380,4 +402,5 @@ jobs:
           test -f solo/1.21/solo-1.21-dist.zip
           unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'runtime/jdk21/bin/java.exe'
           unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'server/plugins/MonsterMazeStandalone.jar'
+          ! unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'server/plugins/MinigameCosmeticPrototypes.jar'
           unzip -l solo/1.21/solo-1.21-dist.zip | grep -q 'version.json'
