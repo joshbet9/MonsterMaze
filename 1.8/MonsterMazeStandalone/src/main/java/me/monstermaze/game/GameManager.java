@@ -413,6 +413,9 @@ public class GameManager implements Listener {
             for (Player online : Bukkit.getOnlinePlayers()) {
                 if (online.getWorld() == center.getWorld()) roundPlayers.add(online);
             }
+        } else {
+            // Preserve the prior shutdown cleanup fallback if the arena center was never configured.
+            roundPlayers.addAll(Bukkit.getOnlinePlayers());
         }
         scoreboard.clear(roundPlayers);
 
