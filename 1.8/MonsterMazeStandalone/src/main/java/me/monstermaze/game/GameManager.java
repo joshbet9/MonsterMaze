@@ -39,10 +39,12 @@ import org.bukkit.scheduler.BukkitTask;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -93,7 +95,7 @@ public class GameManager implements Listener {
     private int liveTick;
     private float lastExpPct = -1;
     private int lastLevel = -1;
-    private Location lastCompassTarget;
+    private final Map<UUID, Location> lastCompassTargets = new HashMap<UUID, Location>();
 
     public GameManager(MonsterMazePlugin plugin) {
         this.plugin = plugin;
@@ -249,6 +251,7 @@ public class GameManager implements Listener {
         spectators.clear();
         playersOnPad.clear();
         padLockIns.clear();
+        lastCompassTargets.clear();
         safePadNavigation.clear();
         curSafe = 1;
         phaseTimer = 60;
@@ -426,6 +429,7 @@ public class GameManager implements Listener {
         kitManager.clearSelectors();
         safePadNavigation.clear();
         padLockIns.clear();
+        lastCompassTargets.clear();
         playersOnPad.clear();
         destroyAllPads();
         mazeGenerator.returnToLobby();
@@ -767,6 +771,7 @@ public class GameManager implements Listener {
 
     private void eliminate(Player player, String message) {
         if (!alive.remove(player.getUniqueId())) return;
+        lastCompassTargets.remove(player.getUniqueId());
         padLockIns.remove(player.getUniqueId());
         recordPB(player);
         spectators.add(player.getUniqueId());
@@ -843,19 +848,28 @@ public class GameManager implements Listener {
     public boolean tryBumpCooldown(Player player) { return true; }
 
     private void updateCompasses() {
-        SafePad target = safePad != null ? safePad : nextSafePad;
-        if (target == null) return;
-        Location loc = target.getLocation();
-        // PERF: the pad moves once per stage; only resend the compass packet on change.
-        if (lastCompassTarget != null
-                && lastCompassTarget.getWorld() == loc.getWorld()
-                && lastCompassTarget.getBlockX() == loc.getBlockX()
-                && lastCompassTarget.getBlockY() == loc.getBlockY()
-                && lastCompassTarget.getBlockZ() == loc.getBlockZ()) {
-            return;
+        for (Player player : getAlivePlayers()) {
+            // Players who have locked in on this stage's pad are already safe.
+            // Once the preview pad appears, point those players at it immediately.
+            SafePad target = padLockIns.contains(player.getUniqueId()) && nextSafePad != null
+                    ? nextSafePad
+                    : (safePad != null ? safePad : nextSafePad);
+            if (target == null) continue;
+
+            Location loc = target.getLocation();
+            UUID playerId = player.getUniqueId();
+            Location last = lastCompassTargets.get(playerId);
+            // Each player's target can differ depending on their Safe Pad lock-in.
+            if (last != null
+                    && last.getWorld() == loc.getWorld()
+                    && last.getBlockX() == loc.getBlockX()
+                    && last.getBlockY() == loc.getBlockY()
+                    && last.getBlockZ() == loc.getBlockZ()) {
+                continue;
+            }
+            player.setCompassTarget(loc);
+            lastCompassTargets.put(playerId, loc.clone());
         }
-        lastCompassTarget = loc;
-        for (Player p : getAlivePlayers()) p.setCompassTarget(loc);
     }
 
     private void updateExpBars(List<Player> aliveNow) {
@@ -937,7 +951,11 @@ public class GameManager implements Listener {
         Collections.sort(ranking,new Comparator<DistanceEntry>(){@Override public int compare(DistanceEntry left,DistanceEntry right){
             int distance=Double.compare(left.distance,right.distance);return distance!=0?distance:left.player.getName().compareToIgnoreCase(right.player.getName());
         }});
-        for(DistanceEntry entry:ranking)lines.add(new GameScoreboard.PlayerDistance(entry.player.getName(),formatDistance(entry.distance)));
+        for(DistanceEntry entry:ranking) {
+            String displayDistance = padLockIns.contains(entry.player.getUniqueId())
+                    ? "SAFE" : formatDistance(entry.distance);
+            lines.add(new GameScoreboard.PlayerDistance(entry.player.getName(), displayDistance));
+        }
         return lines;
     }
 
@@ -960,6 +978,7 @@ public class GameManager implements Listener {
         Player player = event.getPlayer();
         UUID id = player.getUniqueId();
         padLockIns.remove(id);
+        lastCompassTargets.remove(id);
         
         for (Player online : Bukkit.getOnlinePlayers()) {
             online.showPlayer(player);

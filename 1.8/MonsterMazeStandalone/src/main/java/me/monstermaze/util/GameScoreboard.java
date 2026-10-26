@@ -73,8 +73,11 @@ public class GameScoreboard {
             PlayerDistance player=standings.get(offset+i);
             String name=player.name.length()>14?player.name.substring(0,14):player.name;
             int score=12-i;
+            String distanceSuffix = "SAFE".equalsIgnoreCase(player.distance)
+                    ? ChatColor.GREEN + " SAFE"
+                    : ChatColor.GRAY + " " + player.distance + "m";
             setLine(board,obj,"line_p"+i,getUniqueEntry(score),score,ChatColor.YELLOW+name,
-                    ChatColor.GRAY+" "+player.distance+"m");
+                    distanceSuffix);
         }
         for(int i=count;i<pageSize;i++)removeLine(board,"line_p"+i);
         setSpacer(obj,6);
