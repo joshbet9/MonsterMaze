@@ -24,23 +24,27 @@ public class LobbyListener implements Listener {
         this.voids = voids;
         this.selector = new SandboxGameSelector(plugin, game);
         Bukkit.getPluginManager().registerEvents(this, plugin);
-        if (plugin.isSoloMode()) {
+        if (!plugin.isCohostedMode() && plugin.isSoloMode()) {
             new SoloIntegrityListener(plugin);
         }
-        // Route players already online through the selector after server/plugin startup settles.
-        Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
-            @Override public void run() {
-                for (Player player : Bukkit.getOnlinePlayers()) {
-                    if (!player.isOnline() || game.isLive()) continue;
-                    selector.sendToHub(player);
-                    selector.openGameSelector(player);
+        // On a shared Mineplex Reborn server, never take over its existing lobby.
+        // The standalone game remains explicitly accessible via /games or /mm.
+        if (!plugin.isCohostedMode()) {
+            Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+                @Override public void run() {
+                    for (Player player : Bukkit.getOnlinePlayers()) {
+                        if (!player.isOnline() || game.isLive()) continue;
+                        selector.sendToHub(player);
+                        selector.openGameSelector(player);
+                    }
                 }
-            }
-        }, 20L);
+            }, 20L);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onJoin(PlayerJoinEvent event) {
+        if (plugin.isCohostedMode()) return;
         final Player player = event.getPlayer();
         // Solo /mm commands do not require OP. Keeping the player non-op prevents
         // vanilla/admin commands from compromising the PB environment.
@@ -71,6 +75,9 @@ public class LobbyListener implements Listener {
         if (game.isLive()) return;
         final Player player = event.getPlayer();
         Location center = game.getCenter();
+        // In cohosted mode, only handle respawns originating in the standalone MM arena.
+        if (plugin.isCohostedMode()
+                && (center == null || player.getWorld() != center.getWorld())) return;
         if (center != null && player.getWorld() == center.getWorld()) {
             // A player who died in Monster Maze still respawns in its original lobby.
             Location lobby = game.getLobbySpawn();
