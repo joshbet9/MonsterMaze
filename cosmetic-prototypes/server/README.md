@@ -1,58 +1,78 @@
-# Minigame Cosmetic Prototypes (server-side)
+# Playable Arcade Cosmetic Testbed (Spigot 1.8.8)
 
-An isolated Spigot 1.8.8 plugin for prototyping cosmetics for Runner, Bacon Brawl, Dragon Escape, Evolution and Micro Battles. It is deliberately kept separate from the production Monster Maze and Snake Solo modules. The corresponding game loops are not included in this repository, so the prototype exposes adapter hooks rather than pretending those games are already integrated.
+This is a **playable test environment** for the Runner, Bacon Brawl, Dragon Escape, Micro Battles, Evolution and Snake cosmetic ideas. It is a separate 1.8.8 plugin and creates its own `arcade_cosmetic_test` world, so test rounds do not change the Monster Maze map or its round state.
 
-The 1.8 and 1.21 Monster Maze standalone servers also provide a `/games` pre-lobby selector in a separate protected `mm_sandbox` world. Choosing Monster Maze transfers the player to its original lobby. Other choices remain in the sandbox and offer preview-only menus; on Spigot 1.8.8 those menus can invoke this plugin's visual previews. The full Runner, Bacon Brawl, Dragon Escape, Evolution and Micro Battles game loops are not available here, and the selector intentionally does not fake a playable round.
+## Why this lives beside Monster Maze
 
-## Build and install for testing
+The recovered Mineplex Arcade game classes depend on the original Arcade framework, custom combat/stat/event APIs, map loader and patched server libraries. Moving the whole framework into Monster Maze just to test cosmetics would be a much larger migration and would add the original server's service dependencies.
 
-From the repository root:
+Instead, this testbed ports the essential playable loop needed to test each cosmetic and Snake's ability visuals, using generated test arenas. It is **not** a complete or map-faithful replacement for the full Mineplex Reborn Arcade games; those exact game classes still belong in the Mineplex Reborn runtime. This provides a convenient local gameplay test without requiring Redis, MySQL or the original API service.
+
+## Build and install
+
+Requires a Spigot 1.8.8 server. From the repository root:
 
 ```powershell
-mvn -f cosmetic-prototypes/server/pom.xml package
+mvn -f cosmetic-prototypes/server/pom.xml clean package
 ```
 
-For local preview testing, copy `cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar` into a Spigot 1.8.8 test server's `plugins` directory and restart it.
+Copy `cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar` into the test server's `plugins` directory and restart. This plugin deliberately targets legacy Spigot 1.8.8; it is not intended to load on Paper 1.21.
 
-For normal releases, the standard `vX.Y.Z` GitHub Actions release workflow now builds this JAR, stages it into the 1.8 Solo distribution and hosted 1.8 server image, publishes `MonsterMaze-Solo-1.8-Cosmetics.jar`, and includes its checksum/URL in the Solo updater manifest. The updater can therefore replace the plugin without manually copying it. It is intentionally **not** bundled into Paper 1.21 because this prototype targets the legacy Spigot 1.8.8 API/NMS.
+The `arcade_cosmetic_test` world is created automatically when a player joins or starts a mode.
 
-## Unlock and equip
+## Start a playable round
 
-- `/cosmeticproto list` — show the prototype choices.
-- `/cosmeticproto unlock <online-player> <game> <choice|all>` — operator-only test entitlement.
-- `/cosmeticproto equip <game> <choice>` — equip an unlocked choice for yourself.
-- `/cosmeticproto off <game>` — unequip for that game.
-- `/cosmeticproto status` — show current test entitlements/equipment.
-- `/cosmeticproto preview <game> [map-palette]` — preview a visual effect.
+- `/games` — on the 1.8.8 Monster Maze server selector, choose Runner, Bacon Brawl, Dragon Escape, Micro Battles, Evolution or Snake, then select **Start playable test round**.
+- `/arcadetest join` — enter the isolated test world.
+- `/arcadetest start <runner|baconbrawl|dragonescape|microbattles|evolution|snake>` — start or replace the current test round. Players already in the test world are included.
+- `/arcadetest stop` — stop a round and return players to the test-world hub.
+- `/arcadetest leave` — return to the location and inventory held before entering the test world.
+- `/arcadetest unlock` — unlock all cosmetic choices for yourself while in the test world, so a Solo test server does not require OP privileges.
+- `/arcadetest status` and `/arcadetest list` — show current round details and valid mode keys.
 
-Game keys are `runner`, `baconbrawl`, `dragonescape`, `evolution` and `microbattles`.
+Cosmetics are persistent per-player test selections. Use:
+
+- `/cosmeticproto list` — list choices.
+- `/cosmeticproto equip <game> <choice>` — equip an unlocked choice.
+- `/cosmeticproto off <game>` — restore the no-cosmetic behaviour.
+- `/cosmeticproto status` — show current unlocks/equipment.
+- `/cosmeticproto preview <game> [map-palette]` — keep using a short visual preview when a full round is unnecessary.
+
+## What the playable rounds exercise
 
 ### Runner
 
-Eight choices (`white`, `orange`, `magenta`, `lightblue`, `yellow`, `lime`, `pink` and `gray`) each define one of eight complementary pairs in Minecraft's 16-colour stained-clay palette. If the chosen base colour is already present in the map palette, its paired inverse is selected. If **both** colours in that pair are present, the fallback randomly chooses a third colour, preferring one absent from the palette. If the map uses every clay colour, it still selects a third colour distinct from the pair. Without an equipped choice, the generic red clay remains.
+Players run along separate lanes. Stained-clay colour is selected per player, and the blocks behind them disappear. The eight cosmetic pairs are `white`, `orange`, `magenta`, `lightblue`, `yellow`, `lime`, `pink` and `gray`. If the selected base colour is already in the map palette, the inverse is used. If both pair colours are in the palette, a random third colour distinct from both is used. Without a cosmetic, the generic red clay is retained.
 
-Preview with `/cosmeticproto preview runner white,black,orange,blue`. Supply a comma-separated map palette using any of the 16 clay-colour names to test the inversion and fallback logic.
+The generated test palette contains red and blue clay to exercise the palette-aware selection path. The existing visual-preview command can still be used with a custom palette.
 
 ### Bacon Brawl
 
-Choices are `crown`, `top_hat`, `chef` and `diamond`. The game adapter registers each player's pig and confirms kills. The pig of the player with the most recorded kills gets that player's equipped accessory. `recordBaconBrawlKill(UUID)` should be called only after the game's kill credit has been confirmed.
+Players fight in an arena with swords. The test records confirmed player kills and attaches the equipped accessory to the pig representing the current kill leader. Choices: `crown`, `top_hat`, `chef` and `diamond`.
 
 ### Dragon Escape
 
-All 16 stained-glass colours are available as beacon filter choices. The adapter can call `applyDragonEscapeBeaconColour(Block, UUID)` for the appropriate beacon, then `restoreDragonEscapeBeaconColour(Block)` when its cosmetic should end. The test preview creates a temporary beacon/glass sample in clear space and restores the temporary blocks afterwards.
-
-### Evolution
-
-The `dragon-egg` choice triggers a portal-style particle burst through `onPlayerEvolved(UUID, Location)` when the game adapter confirms an evolution.
+Players race along independent jump-gap lanes to the finish. Each player's lane has its own beacon checkpoint, and the equipped stained-glass colour is applied above that beacon. All 16 stained-glass colours are available.
 
 ### Micro Battles
 
-Eight paired themes are included: `aqua`, `ember`, `forest`, `royal`, `sunset`, `solar`, `frost` and `void`. Each theme defines both the middle stained-glass colour and the close-border particle type. The server sends `Player.sendBlockChange` and individual 1.8.8 particle packets to that player's connection, so one player's theme does not modify the actual world block or change another player's view. The particle packet is resolved reflectively from the running Spigot 1.8.8 server, allowing this plugin to compile against the published Spigot API.
+Players fight from corner starts around a central glass block. Each connected viewer receives their own centre-glass colour and matching border-particle packets; the world block is not globally recoloured. Themes: `aqua`, `ember`, `forest`, `royal`, `sunset`, `solar`, `frost` and `void`.
 
-Use `/cosmeticproto unlock <player> microbattles all`, `/cosmeticproto equip microbattles aqua` and `/cosmeticproto preview microbattles`. The preview aims at a glass block within six blocks and temporarily displays the glass and particle set only to the player using the command.
+### Evolution
 
-During actual gameplay, the Micro Battles game adapter must call `registerMicroBattlesArena(Player, Block, List<Location>)` for each player, supplying the middle-glass block and nearby border sample points for that player's current map. Call `clearMicroBattlesArena(Player)` at round end and `refreshMicroBattlesGlass(Player)` if the equip changes mid-round.
+Players fight in an arena and evolve their weapon as they earn kills. The equipped `dragon-egg` cosmetic triggers a portal-style particle burst when evolution occurs.
 
-## Integration boundary
+### Snake
 
-The visual prototypes, unlock/equipment storage and adapter hooks are implemented here. They are **not yet wired into the original game event flows**, because the Runner, Bacon Brawl, Dragon Escape, Evolution and Micro Battles server implementations are not present in this repository. The preview commands verify the available sample effects; the relevant game code must call the hooks for them to operate automatically in a live round. Unlocks are operator-granted test entitlements, not a live shop or economy implementation.
+Players steer around an arena with visible sheep tails, grow their tail by collecting slimes, and are eliminated by hitting tails or leaving the arena. The test abilities are Redstone (Super Snake), Feather (Speed) and Cookie (Reverse/collision immunity); each lasts two seconds. The selected Snake line controls each ability's tail colour, and the sheep entities synchronise their colours server-side so other players see them too.
+
+Snake lines:
+- `elemental`: Super Snake blue, Speed yellow, Reverse purple.
+- `neon`: Super Snake cyan, Speed lime, Reverse magenta.
+- `sunset`: Super Snake red, Speed orange, Reverse pink.
+
+When no Snake line is equipped, Super Snake keeps the classic random rainbow effect. Unequipping `snake` therefore preserves the legacy behaviour.
+
+## Scope note
+
+These rounds are designed to let you actually move, jump, fight, evolve, collect, collide and observe the cosmetics in multiplayer. They use generated arenas and simplified gameplay plumbing, rather than copying the Mineplex Reborn `SoloGame` implementations wholesale. In particular, they do not reproduce the original maps, kits, leaderboard/stat backends, full dragon AI, or every anti-cheat and round rule. The testbed is isolated and disposable; it is a development aid for evaluating cosmetic behaviour before integrating those hooks into the real Mineplex Arcade game classes.
