@@ -172,7 +172,7 @@ public final class MinigameCosmeticPrototypes implements CommandExecutor, Listen
         new BukkitRunnable() {
             @Override public void run() { tickMicroBattlesParticles(); }
         }.runTaskTimer(host, 4L, 4L);
-        host.host.getLogger().info("Playable arcade cosmetic test modes loaded inside MonsterMazeStandalone.");
+        host.getLogger().info("Playable arcade cosmetic test modes loaded inside MonsterMazeStandalone.");
     }
 
     public void disable() {
