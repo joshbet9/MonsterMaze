@@ -41,9 +41,18 @@ STEP 2 - Join the game
 
 
 --------------------------------------------
-STEP 3 - Start a run
+STEP 3 - Choose a game and start a run
 --------------------------------------------
-  In the chat, type:    /mm start
+When you join, the Game Selector opens automatically. Choose Monster Maze
+to enter the original lobby and use its existing kit menu, maps, modes,
+statistics, challenges and leaderboards. Other game entries currently open
+isolated cosmetic-preview sandboxes; they do not start unfinished game modes.
+
+You can reopen the selector from the chat at any time before a live round:
+  /games
+
+To start Monster Maze directly from the selector sandbox, type:
+  /mm start
 
 Choose your kit from the kit menu, then survive as long as you can.
 Reach the next Safe Pad before the timer expires.
