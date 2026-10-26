@@ -172,7 +172,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         }
         if ("start".equals(sub)) {
             if (args.length < 2) {
-                sender.sendMessage(ChatColor.YELLOW + "Usage: /arcadetest start <runner|baconbrawl|dragonescape|microbattles|evolution|snake>");
+                sender.sendMessage(ChatColor.YELLOW + "Usage: /arcadetest start <runner|baconbrawl|dragonescape|microbattles|evolution|snake> [runner-map-palette]");
                 return true;
             }
             Mode selected = Mode.parse(args[1]);
@@ -187,7 +187,8 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
                 if (player.getWorld() != testWorld) join(player);
             }
             if (mode != null) stopGame(true, "The previous test round was replaced.");
-            startGame(selected, sender);
+            String runnerPalette = args.length > 2 ? args[2] : null;
+            startGame(selected, sender, runnerPalette);
             return true;
         }
         help(sender);
@@ -197,7 +198,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
     private void help(CommandSender sender) {
         sender.sendMessage(ChatColor.GOLD + "Playable Arcade Cosmetic Testbed");
         sender.sendMessage(ChatColor.YELLOW + "/arcadetest join" + ChatColor.GRAY + " - enter the isolated 1.8 test world");
-        sender.sendMessage(ChatColor.YELLOW + "/arcadetest start <game>" + ChatColor.GRAY + " - launch a playable test round");
+        sender.sendMessage(ChatColor.YELLOW + "/arcadetest start <game> [runner-map-palette]" + ChatColor.GRAY + " - launch a playable test round");
         sender.sendMessage(ChatColor.YELLOW + "/arcadetest stop" + ChatColor.GRAY + " - end the current round");
         sender.sendMessage(ChatColor.YELLOW + "/arcadetest unlock" + ChatColor.GRAY + " - unlock every test cosmetic for yourself in the test world");
         sender.sendMessage(ChatColor.YELLOW + "/arcadetest leave" + ChatColor.GRAY + " - return to where you were before joining");
@@ -259,7 +260,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         return world;
     }
 
-    private void startGame(Mode selected, CommandSender sender) {
+    private void startGame(Mode selected, CommandSender sender, String runnerPalette) {
         World testWorld = ensureWorld();
         if (testWorld == null) return;
 
@@ -297,7 +298,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
             return;
         }
 
-        if (selected == Mode.RUNNER) startRunner();
+        if (selected == Mode.RUNNER) startRunner(runnerPalette);
         else if (selected == Mode.BACONBRAWL) startBaconBrawl();
         else if (selected == Mode.DRAGONESCAPE) startDragonEscape();
         else if (selected == Mode.MICROBATTLES) startMicroBattles();
@@ -314,6 +315,33 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         }
     }
 
+    private Set<Byte> parseRunnerPalette(String paletteText) {
+        Map<String, Byte> colourIds = new HashMap<String, Byte>();
+        colourIds.put("white", (byte) 0);
+        colourIds.put("orange", (byte) 1);
+        colourIds.put("magenta", (byte) 2);
+        colourIds.put("lightblue", (byte) 3);
+        colourIds.put("yellow", (byte) 4);
+        colourIds.put("lime", (byte) 5);
+        colourIds.put("pink", (byte) 6);
+        colourIds.put("gray", (byte) 7);
+        colourIds.put("silver", (byte) 8);
+        colourIds.put("cyan", (byte) 9);
+        colourIds.put("purple", (byte) 10);
+        colourIds.put("blue", (byte) 11);
+        colourIds.put("brown", (byte) 12);
+        colourIds.put("green", (byte) 13);
+        colourIds.put("red", (byte) 14);
+        colourIds.put("black", (byte) 15);
+        Set<Byte> palette = new HashSet<Byte>();
+        if (paletteText == null || paletteText.trim().isEmpty()) return palette;
+        for (String token : paletteText.split(",")) {
+            Byte id = colourIds.get(token.trim().toLowerCase(Locale.ROOT));
+            if (id != null) palette.add(id);
+        }
+        return palette;
+    }
+
     private int baseX() {
         return mode.baseX;
     }
@@ -324,8 +352,11 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         return z;
     }
 
-    private void startRunner() {
-        Set<Byte> mapPalette = new HashSet<Byte>(Arrays.asList(Byte.valueOf((byte) 14), Byte.valueOf((byte) 11)));
+    private void startRunner(String paletteText) {
+        Set<Byte> mapPalette = parseRunnerPalette(paletteText);
+        if (paletteText == null || paletteText.trim().isEmpty()) {
+            mapPalette = new HashSet<Byte>(Arrays.asList(Byte.valueOf((byte) 14), Byte.valueOf((byte) 11)));
+        }
         int index = 0;
         for (UUID id : participants) {
             int z = assignLane(id, index++, participants.size());
@@ -345,6 +376,8 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
             Player player = Bukkit.getPlayer(id);
             teleportForRound(player, spawnLocations.get(id));
             player.sendMessage(ChatColor.YELLOW + "Runner: keep moving; the clay behind you disappears. Reach the emerald finish.");
+            player.sendMessage(ChatColor.GRAY + "Runner palette: " + (paletteText == null || paletteText.trim().isEmpty() ? "default red/blue" : paletteText)
+                    + ". For the random-third-colour fallback, equip lightblue then run /arcadetest start runner lightblue,red.");
         }
     }
 
