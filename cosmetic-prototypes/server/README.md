@@ -18,6 +18,8 @@ mvn -f cosmetic-prototypes/server/pom.xml clean package
 
 Copy `cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar` into the test server's `plugins` directory and restart. This plugin deliberately targets legacy Spigot 1.8.8; it is not intended to load on Paper 1.21.
 
+For convenience, the pull request's **Validate Monster Maze** workflow uploads a built plugin as the Actions artifact `MinigameCosmeticPrototypes-1.8.8` for 14 days. Open the workflow run from the PR checks, then download that artifact; it is a ZIP containing the JAR.
+
 The `arcade_cosmetic_test` world is created automatically when a player joins or starts a mode.
 
 ## Start a playable round
