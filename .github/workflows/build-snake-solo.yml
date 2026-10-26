@@ -1,0 +1,39 @@
+name: Build Snake Solo Test
+
+on:
+  push:
+    branches: [main, feat/snake-solo-hazard-test]
+    paths:
+      - 'snake-solo/**'
+      - '.github/workflows/build-snake-solo.yml'
+  pull_request:
+    paths:
+      - 'snake-solo/**'
+      - '.github/workflows/build-snake-solo.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-snake-solo:
+    name: Build Snake Solo (Spigot 1.8.8)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+      - name: Build and test prototype plugin
+        run: mvn -B -f snake-solo/pom.xml clean package
+      - name: Upload playable prototype JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: snake-solo-test-binaries
+          path: snake-solo/target/SnakeSoloStandalone.jar
+          if-no-files-found: error
+          retention-days: 14

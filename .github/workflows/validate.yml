@@ -60,11 +60,13 @@ jobs:
           java -Xmx2G -jar "$RUNNER_TEMP/BuildTools.jar" --rev 1.8.8 --output-dir "$RUNNER_TEMP/spigot"
           test -f "$RUNNER_TEMP/spigot/spigot-1.8.8.jar"
           mvn -B org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file -Dfile="$RUNNER_TEMP/spigot/spigot-1.8.8.jar" -DgroupId=org.spigotmc -DartifactId=spigot -Dversion=1.8.8-R0.1-SNAPSHOT -Dpackaging=jar
-      - name: Build and test
+      - name: Build and test Monster Maze
         working-directory: 1.8/MonsterMazeStandalone
         env:
           MAVEN_OPTS: '-Xmx2G'
         run: mvn -B clean package
+      - name: Build and test Snake Solo prototype
+        run: mvn -B -f snake-solo/pom.xml clean package
 
   build-1-21:
     name: Build Minecraft 1.21.x
