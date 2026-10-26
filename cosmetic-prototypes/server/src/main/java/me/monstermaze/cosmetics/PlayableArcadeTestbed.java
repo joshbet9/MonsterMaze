@@ -800,7 +800,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         UUID id = player.getUniqueId();
         snakeAbility.put(id, ability);
         snakeAbilityUntil.put(id, Long.valueOf(ticks + 40L));
-        if ("speed".equals(ability)) player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 40, 1, false, false), true);
+        if ("speed".equals(ability)) player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 40, 1, false), true);
         player.getWorld().spigot().playEffect(player.getLocation().add(0.0D, 1.0D, 0.0D),
                 "super".equals(ability) ? Effect.PORTAL : Effect.POTION_BREAK, 0, 0, 0.35F, 0.5F, 0.35F, 0.05F, 18, 48);
         player.sendMessage(ChatColor.GREEN + "Snake ability activated: " + ability + ". The tail colour updates for every player viewing you.");
