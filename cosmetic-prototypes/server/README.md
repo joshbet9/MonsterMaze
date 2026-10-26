@@ -1,26 +1,20 @@
-# Playable Arcade Cosmetic Testbed (Spigot 1.8.8)
+# Playable Arcade Cosmetic Testbed — legacy source notes
 
-This is a **playable test environment** for the Runner, Bacon Brawl, Dragon Escape, Micro Battles, Evolution and Snake cosmetic ideas. It is a separate 1.8.8 plugin and creates its own `arcade_cosmetic_test` world, so test rounds do not change the Monster Maze map or its round state.
+**The standalone-plugin installation instructions in this directory are obsolete.** The testbed has been integrated into `1.8/MonsterMazeStandalone`, so the normal workflow builds and packages the test modes inside `MonsterMazeStandalone.jar`. Do not install a separate `MinigameCosmeticPrototypes.jar`.
 
-## Why this lives beside Monster Maze
+On a compatible Spigot 1.8.8 Monster Maze server, use `/games` to choose a mode, or use `/arcadetest` and `/cosmeticproto` directly. The main plugin's Maven build and normal Solo/release packaging now include the testbed. It is not supported on Paper 1.21.
+
+This directory is retained as the original implementation/reference; it is no longer built as a separate plugin by the release or validation workflows.
+
+## Why the test modes are adaptations
 
 The recovered Mineplex Arcade game classes depend on the original Arcade framework, custom combat/stat/event APIs, map loader and patched server libraries. Moving the whole framework into Monster Maze just to test cosmetics would be a much larger migration and would add the original server's service dependencies.
 
 Instead, this testbed ports the essential playable loop needed to test each cosmetic and Snake's ability visuals, using generated test arenas. It is **not** a complete or map-faithful replacement for the full Mineplex Reborn Arcade games; those exact game classes still belong in the Mineplex Reborn runtime. This provides a convenient local gameplay test without requiring Redis, MySQL or the original API service.
 
-## Build and install
+## Use the integrated test modes
 
-Requires a Spigot 1.8.8 server. From the repository root:
-
-```powershell
-mvn -f cosmetic-prototypes/server/pom.xml clean package
-```
-
-Copy `cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar` into the test server's `plugins` directory and restart. This plugin deliberately targets legacy Spigot 1.8.8; it is not intended to load on Paper 1.21.
-
-For convenience, the pull request's **Validate Monster Maze** workflow uploads a built plugin as the Actions artifact `MinigameCosmeticPrototypes-1.8.8` for 14 days. Open the workflow run from the PR checks, then download that artifact; it is a ZIP containing the JAR.
-
-The `arcade_cosmetic_test` world is created automatically when a player joins or starts a mode.
+Build the `1.8/MonsterMazeStandalone` project through the regular repository workflow. No second plugin build or manual copy is required. After installing/updating the main plugin JAR and restarting the Spigot 1.8.8 server, use the commands below.
 
 ## Start a playable round
 
