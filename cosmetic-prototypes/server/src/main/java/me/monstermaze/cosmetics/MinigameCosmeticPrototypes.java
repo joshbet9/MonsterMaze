@@ -41,6 +41,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
     private static final int DEFAULT_RUNNER_RED = 14;
 
     private static final Map<String, RunnerColour> RUNNER_COLOURS = new LinkedHashMap<String, RunnerColour>();
+    private static final Map<String, Byte> ALL_CLAY_COLOURS = new LinkedHashMap<String, Byte>();
     private static final Map<String, Byte> GLASS_COLOURS = new LinkedHashMap<String, Byte>();
     private static final Map<String, Material> PIG_ACCESSORIES = new LinkedHashMap<String, Material>();
     private static final List<String> EVOLUTION_CHOICES = Collections.unmodifiableList(
@@ -64,6 +65,22 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         addRunnerColour("lime", 5, 10);
         addRunnerColour("pink", 6, 8);
         addRunnerColour("gray", 7, 12);
+        addClayColour("white", 0);
+        addClayColour("orange", 1);
+        addClayColour("magenta", 2);
+        addClayColour("lightblue", 3);
+        addClayColour("yellow", 4);
+        addClayColour("lime", 5);
+        addClayColour("pink", 6);
+        addClayColour("gray", 7);
+        addClayColour("silver", 8);
+        addClayColour("cyan", 9);
+        addClayColour("purple", 10);
+        addClayColour("blue", 11);
+        addClayColour("brown", 12);
+        addClayColour("green", 13);
+        addClayColour("red", 14);
+        addClayColour("black", 15);
 
         addGlassColour("white", 0);
         addGlassColour("orange", 1);
@@ -90,6 +107,10 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
 
     private static void addRunnerColour(String name, int base, int inverse) {
         RUNNER_COLOURS.put(name, new RunnerColour(name, (byte) base, (byte) inverse));
+    }
+
+    private static void addClayColour(String name, int data) {
+        ALL_CLAY_COLOURS.put(name, (byte) data);
     }
 
     private static void addGlassColour(String name, int data) {
@@ -510,9 +531,9 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         Set<Byte> result = new LinkedHashSet<Byte>();
         for (String token : text.split(",")) {
             String name = normalizeChoice(token);
-            RunnerColour runner = RUNNER_COLOURS.get(name);
-            if (runner != null) {
-                result.add(runner.base);
+            Byte clay = ALL_CLAY_COLOURS.get(name);
+            if (clay != null) {
+                result.add(clay);
                 continue;
             }
             Byte glass = GLASS_COLOURS.get(name);
