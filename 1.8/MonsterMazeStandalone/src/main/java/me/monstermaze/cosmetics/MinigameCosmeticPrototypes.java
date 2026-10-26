@@ -172,7 +172,7 @@ public final class MinigameCosmeticPrototypes implements CommandExecutor, Listen
         new BukkitRunnable() {
             @Override public void run() { tickMicroBattlesParticles(); }
         }.runTaskTimer(host, 4L, 4L);
-        host.getLogger().info("Playable arcade cosmetic test modes loaded inside MonsterMazeStandalone.");
+        host.host.getLogger().info("Playable arcade cosmetic test modes loaded inside MonsterMazeStandalone.");
     }
 
     public void disable() {
@@ -486,7 +486,7 @@ public final class MinigameCosmeticPrototypes implements CommandExecutor, Listen
         } catch (Exception ex) {
             if (!packetReflectionWarningLogged) {
                 packetReflectionWarningLogged = true;
-                getLogger().warning("Could not send private Micro Battles particle packets (requires Spigot 1.8.8 / v1_8_R3): "
+                host.getLogger().warning("Could not send private Micro Battles particle packets (requires Spigot 1.8.8 / v1_8_R3): "
                         + ex.getClass().getSimpleName() + ": " + ex.getMessage());
             }
         }
@@ -526,7 +526,7 @@ public final class MinigameCosmeticPrototypes implements CommandExecutor, Listen
                     cancel();
                 }
             }
-        }.runTaskTimer(this, 0L, 4L);
+        }.runTaskTimer(host, 0L, 4L);
     }
 
     /**
@@ -744,7 +744,7 @@ public final class MinigameCosmeticPrototypes implements CommandExecutor, Listen
                 removePigAccessory(previewId);
                 if (pig.isValid()) pig.remove();
             }
-        }.runTaskLater(this, 20 * 20);
+        }.runTaskLater(host, 20 * 20);
     }
 
     private void previewDragonEscape(final Player player) {
@@ -816,7 +816,7 @@ public final class MinigameCosmeticPrototypes implements CommandExecutor, Listen
             @Override public void run() {
                 for (BlockSnapshot snapshot : snapshots) snapshot.restoreIfUnchanged();
             }
-        }.runTaskLater(this, ticks);
+        }.runTaskLater(host, ticks);
     }
 
     private void placeTemporary(Block block, Material material, byte data, List<BlockSnapshot> snapshots) {
@@ -882,23 +882,23 @@ public final class MinigameCosmeticPrototypes implements CommandExecutor, Listen
     }
 
     private boolean isUnlocked(UUID id, String game, String choice) {
-        return getConfig().getBoolean("unlocks." + id.toString() + "." + game + "." + choice, false);
+        return host.getConfig().getBoolean("unlocks." + id.toString() + "." + game + "." + choice, false);
     }
 
     private void setUnlocked(UUID id, String game, String choice, boolean value) {
-        getConfig().set("unlocks." + id.toString() + "." + game + "." + choice, Boolean.valueOf(value));
-        saveConfig();
+        host.getConfig().set("unlocks." + id.toString() + "." + game + "." + choice, Boolean.valueOf(value));
+        host.saveConfig();
     }
 
     private String getEquipped(UUID id, String game) {
-        String value = getConfig().getString("equipped." + id.toString() + "." + game, "");
+        String value = host.getConfig().getString("equipped." + id.toString() + "." + game, "");
         if (value == null || value.trim().isEmpty()) return null;
         return value.toLowerCase(Locale.ROOT);
     }
 
     private void setEquipped(UUID id, String game, String choice) {
-        getConfig().set("equipped." + id.toString() + "." + game, choice);
-        saveConfig();
+        host.getConfig().set("equipped." + id.toString() + "." + game, choice);
+        host.saveConfig();
     }
 
     private void showChoices(CommandSender sender) {
