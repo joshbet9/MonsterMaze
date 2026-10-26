@@ -71,6 +71,12 @@ public class GameManager implements Listener {
     private boolean firstClaimedThisPhase;
     private boolean soloMode;
 
+    // Opt-in Safe Pad enhancements mirrored from the Mineplex Reborn implementation.
+    private final boolean safePadBeaconEnhancementsEnabled;
+    private long initialSafePadCreatedAt;
+    private long lastSafePadBeaconCheckAt;
+    private boolean preRoundBeaconCheckDone;
+
     private BukkitTask mainTask;
     private BukkitTask secondTask;
     private BukkitTask startingTask;   // runs the jump lock during STARTING (pre-glass fall)
@@ -83,6 +89,8 @@ public class GameManager implements Listener {
 
     public GameManager(MonsterMazePlugin plugin) {
         this.plugin = plugin;
+        this.safePadBeaconEnhancementsEnabled = plugin.getConfig()
+                .getBoolean("monstermaze.safe-pad-enhancements.enabled", false);
         this.mazeGenerator = new MazeGenerator(plugin);
         this.monsterManager = new MonsterManager(plugin, this);
         this.kitManager = new KitManager(plugin, this, scoreboard);
@@ -214,6 +222,9 @@ public void startGame(Location preferCenter, int requestedPattern) {
         }
 
         cleanupEntities();
+        initialSafePadCreatedAt = 0L;
+        lastSafePadBeaconCheckAt = 0L;
+        preRoundBeaconCheckDone = false;
         alive.clear();
         spectators.clear();
         playersOnPad.clear();
@@ -268,6 +279,10 @@ public void startGame(Location preferCenter, int requestedPattern) {
                 spawnSafePad();
                 safePad = nextSafePad;
                 nextSafePad = null;
+                initialSafePadCreatedAt = System.currentTimeMillis();
+                lastSafePadBeaconCheckAt = 0L;
+                preRoundBeaconCheckDone = false;
+                scheduleInitialSafePadBeaconCheck();
 
                 // Point every alive player's compass at the active safe pad / beacon from spawn.
                 updateCompasses();
@@ -349,6 +364,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
                 if (state != GameState.LIVE) return;
                 liveTick++;
                 List<Player> aliveNow = getAlivePlayers();
+                checkSafePadBeaconPersistence();
                 checkPlayersOnSafePad();
                 updateCompasses();
                 updateExpBars(aliveNow);
@@ -474,6 +490,31 @@ public void startGame(Location preferCenter, int requestedPattern) {
         monsterManager.removeMonstersOn(nextSafePad);
 
         Bukkit.getPluginManager().callEvent(new SafepadBuildEvent());
+    }
+
+    private void scheduleInitialSafePadBeaconCheck() {
+        if (!safePadBeaconEnhancementsEnabled || initialSafePadCreatedAt <= 0L) return;
+        final long createdAt = initialSafePadCreatedAt;
+        // Run once during the pre-round countdown, about 2 seconds after the first pad is built.
+        Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+            @Override
+            public void run() {
+                if (preRoundBeaconCheckDone
+                        || (state != GameState.STARTING && state != GameState.LIVE)
+                        || initialSafePadCreatedAt != createdAt) return;
+                preRoundBeaconCheckDone = true;
+                if (safePad != null) safePad.restoreObjectiveBeaconIfMissing();
+            }
+        }, 40L);
+    }
+
+    private void checkSafePadBeaconPersistence() {
+        if (!safePadBeaconEnhancementsEnabled || state != GameState.LIVE) return;
+        long now = System.currentTimeMillis();
+        if (now - lastSafePadBeaconCheckAt < 1000L) return;
+        lastSafePadBeaconCheckAt = now;
+        if (safePad != null && safePad.isActive()) safePad.restoreObjectiveBeaconIfMissing();
+        if (nextSafePad != null && nextSafePad.isActive()) nextSafePad.restoreObjectiveBeaconIfMissing();
     }
 
     private void stopSafePad() {
