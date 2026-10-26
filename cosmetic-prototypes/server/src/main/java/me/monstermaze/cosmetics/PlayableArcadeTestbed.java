@@ -1013,6 +1013,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         final float exp;
         final int level;
         final double health;
+        final List<PotionEffect> effects;
 
         SavedPlayer(Player player) {
             location = player.getLocation().clone();
@@ -1023,12 +1024,17 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
             exp = player.getExp();
             level = player.getLevel();
             health = player.getHealth();
+            effects = new ArrayList<PotionEffect>(player.getActivePotionEffects());
         }
 
         void restore(Player player, boolean restoreLocation) {
             player.getInventory().clear();
             player.getInventory().setContents(cloneItems(inventory));
             player.getInventory().setArmorContents(cloneItems(armor));
+            for (PotionEffect active : new ArrayList<PotionEffect>(player.getActivePotionEffects())) {
+                player.removePotionEffect(active.getType());
+            }
+            for (PotionEffect effect : effects) player.addPotionEffect(effect, true);
             player.setGameMode(gameMode);
             player.setFoodLevel(food);
             player.setExp(exp);
