@@ -37,8 +37,8 @@ jobs:
           test -n "$SSH_KNOWN_HOSTS"
           mkdir -p "$HOME/.ssh"
           chmod 700 "$HOME/.ssh"
-          printf '%s\\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/monstermaze_hyperv"
-          printf '%s\\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/monstermaze_hyperv"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/monstermaze_hyperv" "$HOME/.ssh/known_hosts"
 
       - name: Read Hyper-V 1.8 service and plugin state
