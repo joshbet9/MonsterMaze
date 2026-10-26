@@ -187,8 +187,10 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
             return true;
         }
         Player player = (Player) sender;
-        if (game.isRunning()) {
-            player.sendMessage(ChatColor.RED + "The game selector is unavailable while a Monster Maze round is starting or live.");
+        Location center = game.getCenter();
+        if (game.isRunning() && center != null && center.getWorld() != null
+                && player.getWorld() == center.getWorld()) {
+            player.sendMessage(ChatColor.RED + "The game selector is unavailable while you are in the Monster Maze arena during a round.");
             return true;
         }
         sendToHub(player);
