@@ -46,6 +46,7 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
     private final MonsterMazePlugin plugin;
     private final GameManager game;
     private final Map<UUID, String> selectedSandboxGame = new HashMap<UUID, String>();
+    private final Map<UUID, Integer> previewSequenceByPlayer = new HashMap<UUID, Integer>();
     private World preparedHubWorld;
 
     public SandboxGameSelector(MonsterMazePlugin plugin, GameManager game) {
@@ -125,6 +126,7 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
 
     public void openGameSelector(Player player) {
         if (player == null || !player.isOnline()) return;
+        invalidatePendingPreview(player);
         selectedSandboxGame.remove(player.getUniqueId());
         Inventory menu = Bukkit.createInventory(null, 27, SELECTOR_TITLE);
         menu.setItem(10, item(Material.IRON_SWORD, ChatColor.GREEN + "Monster Maze",
@@ -145,6 +147,7 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
     }
 
     private void openSandboxMenu(Player player, String gameKey) {
+        invalidatePendingPreview(player);
         selectedSandboxGame.put(player.getUniqueId(), gameKey);
         Inventory menu = Bukkit.createInventory(null, 27, SANDBOX_PREFIX + displayName(gameKey));
         menu.setItem(11, item(Material.EXPERIENCE_BOTTLE, ChatColor.GREEN + "Preview cosmetic",
@@ -156,6 +159,14 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
         menu.setItem(22, item(Material.IRON_SWORD, ChatColor.GREEN + "Enter Monster Maze",
                 "Return to the original Monster Maze lobby."));
         player.openInventory(menu);
+    }
+
+    private int invalidatePendingPreview(Player player) {
+        UUID id = player.getUniqueId();
+        Integer current = previewSequenceByPlayer.get(id);
+        int next = current == null ? 1 : current.intValue() + 1;
+        previewSequenceByPlayer.put(id, Integer.valueOf(next));
+        return next;
     }
 
     private ItemStack item(Material material, String name, String... lore) {
@@ -237,6 +248,7 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
 
     private void enterMonsterMaze(Player player) {
         player.closeInventory();
+        invalidatePendingPreview(player);
         selectedSandboxGame.remove(player.getUniqueId());
         if (game.isLive()) {
             Location center = game.getCenter();
@@ -257,12 +269,17 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
 
     private void runPreview(final Player player, final String gameKey) {
         player.closeInventory();
+        final int previewSequence = invalidatePendingPreview(player);
         if (Bukkit.getPluginManager().getPlugin(COSMETIC_PLUGIN) == null) {
             player.sendMessage(ChatColor.RED + "The cosmetic preview plugin is unavailable on this server. These prototype previews currently target Spigot 1.8.8.");
+            openSandboxMenu(player, gameKey);
             return;
         }
         Location preview = getHubSpawn();
-        if (preview == null) return;
+        if (preview == null) {
+            openSandboxMenu(player, gameKey);
+            return;
+        }
         if ("microbattles".equals(gameKey)) {
             preview.setYaw(0.0F);
             preview.setPitch(15.0F);
@@ -283,7 +300,9 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
                 : ("evolution".equals(gameKey) ? 20L * 3L : 20L * 13L));
         Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
             @Override public void run() {
-                if (player.isOnline() && HUB_WORLD_NAME.equals(player.getWorld().getName())) {
+                Integer currentSequence = previewSequenceByPlayer.get(player.getUniqueId());
+                if (player.isOnline() && HUB_WORLD_NAME.equals(player.getWorld().getName())
+                        && currentSequence != null && currentSequence.intValue() == previewSequence) {
                     openSandboxMenu(player, gameKey);
                 }
             }
@@ -339,6 +358,8 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        selectedSandboxGame.remove(event.getPlayer().getUniqueId());
+        UUID id = event.getPlayer().getUniqueId();
+        selectedSandboxGame.remove(id);
+        previewSequenceByPlayer.remove(id);
     }
 }
