@@ -484,10 +484,16 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
             List<Location> history = new ArrayList<Location>();
             Vector back = spawn.getDirection().setY(0.0D).normalize().multiply(-0.65D);
             for (int n = 60; n >= 0; n--) history.add(spawn.clone().add(back.clone().multiply(n)));
+            snakeBaseColour.put(id, DyeColor.getByDyeData((byte) (slot % 16)));
+            Sheep head = (Sheep) world.spawnEntity(spawn.clone(), EntityType.SHEEP);
+            head.setColor(snakeBaseColour.get(id));
+            head.setRemoveWhenFarAway(false);
+            head.setCustomName(ChatColor.GREEN + player.getName() + " head");
+            head.setPassenger(player);
+            tail.add(head);
             snakeTails.put(id, tail);
             snakeHistory.put(id, history);
-            snakeTailTarget.put(id, Integer.valueOf(4));
-            snakeBaseColour.put(id, DyeColor.getByDyeData((byte) (slot % 16)));
+            snakeTailTarget.put(id, Integer.valueOf(5));
             for (int n = 1; n <= 4; n++) {
                 int trailIndex = Math.max(0, history.size() - 1 - (n * 4));
                 Location tailLoc = history.get(trailIndex).clone();
@@ -617,7 +623,8 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
             }
             int target = snakeTailTarget.containsKey(id) ? snakeTailTarget.get(id).intValue() : 4;
             while (tail.size() < target) {
-                Location loc = history.get(0).clone();
+                Location loc = tail.isEmpty() ? history.get(0).clone()
+                        : tail.get(tail.size() - 1).getLocation().clone();
                 Sheep sheep = (Sheep) world.spawnEntity(loc, EntityType.SHEEP);
                 sheep.setRemoveWhenFarAway(false);
                 tail.add(sheep);
@@ -625,7 +632,9 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
             for (int i = 0; i < tail.size(); i++) {
                 Sheep sheep = tail.get(i);
                 if (sheep == null || !sheep.isValid()) continue;
-                int trailIndex = Math.max(0, history.size() - 1 - ((i + 1) * 4));
+                // The first sheep is the player mount, like the original Snake game.
+                if (i == 0) continue;
+                int trailIndex = Math.max(0, history.size() - 1 - (i * 4));
                 Location targetLoc = history.get(trailIndex).clone();
                 targetLoc.setYaw(at.getYaw());
                 targetLoc.setPitch(0.0F);
