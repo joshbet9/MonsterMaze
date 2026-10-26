@@ -168,14 +168,6 @@ jobs:
           mvn -B clean package
           test -f './target/MonsterMazeStandalone.jar'
 
-      - name: Build server-side minigame cosmetic prototypes
-        shell: bash
-        run: |
-          set -euo pipefail
-          mvn -B -f cosmetic-prototypes/server/pom.xml clean package
-          test -s cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar
-          jar tf cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar | grep -q '^plugin.yml$'
-
       - name: Package Solo 1.8 from tested build
         shell: pwsh
         working-directory: ${{ github.workspace }}/solo
@@ -191,7 +183,6 @@ jobs:
           Copy-Item -Force ./solo-dist.zip ./MonsterMaze-Solo.zip
           Copy-Item -Force ./version.json ./solo-1.8-version.json
           Copy-Item -Force ./server/plugins/MonsterMazeStandalone.jar ../MonsterMaze-Solo-1.8-plugin.jar
-          Copy-Item -Force ./server/plugins/MinigameCosmeticPrototypes.jar ../MonsterMaze-Solo-1.8-Cosmetics.jar
 
       - name: Setup Java 21
         uses: actions/setup-java@v5
@@ -298,20 +289,26 @@ jobs:
           if ((Get-Item 'MonsterMaze-Server-1.8.zip').Length -le 0) { throw '1.8 server artifact is empty.' }
           if ((Get-Item 'MonsterMaze-Server-1.21.zip').Length -le 0) { throw '1.21 server artifact is empty.' }
 
-      - name: Verify cosmetic plugin is bundled only with the compatible 1.8 hosted server
+      - name: Verify arcade test modes are embedded in the 1.8 plugin without a sidecar
         shell: pwsh
         run: |
           Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $plugin18 = [System.IO.Compression.ZipFile]::OpenRead('MonsterMaze-Solo-1.8-plugin.jar')
+          try {
+            $hasTestbed = @($plugin18.Entries | Where-Object { $_.FullName -eq 'me/monstermaze/cosmetics/PlayableArcadeTestbed.class' }).Count -eq 1
+            $hasCosmeticCommands = @($plugin18.Entries | Where-Object { $_.FullName -eq 'plugin.yml' }).Count -eq 1
+          } finally { $plugin18.Dispose() }
+          if (-not $hasTestbed -or -not $hasCosmeticCommands) { throw '1.8 MonsterMazeStandalone JAR is missing embedded arcade testbed code or plugin metadata.' }
           $zip18 = [System.IO.Compression.ZipFile]::OpenRead('MonsterMaze-Server-1.8.zip')
           try {
-            $hasCosmetics18 = @($zip18.Entries | Where-Object { $_.FullName -eq 'plugins/MinigameCosmeticPrototypes.jar' }).Count -eq 1
+            $hasSeparatePlugin18 = @($zip18.Entries | Where-Object { $_.FullName -eq 'plugins/MinigameCosmeticPrototypes.jar' }).Count -gt 0
           } finally { $zip18.Dispose() }
-          if (-not $hasCosmetics18) { throw 'Hosted 1.8 server ZIP is missing MinigameCosmeticPrototypes.jar.' }
+          if ($hasSeparatePlugin18) { throw '1.8 hosted server must not include a separate cosmetic test plugin.' }
           $zip21 = [System.IO.Compression.ZipFile]::OpenRead('MonsterMaze-Server-1.21.zip')
           try {
-            $hasCosmetics21 = @($zip21.Entries | Where-Object { $_.FullName -eq 'plugins/MinigameCosmeticPrototypes.jar' }).Count -gt 0
+            $hasSeparatePlugin21 = @($zip21.Entries | Where-Object { $_.FullName -eq 'plugins/MinigameCosmeticPrototypes.jar' }).Count -gt 0
           } finally { $zip21.Dispose() }
-          if ($hasCosmetics21) { throw 'The legacy 1.8 cosmetics plugin must not be bundled with Paper 1.21.' }
+          if ($hasSeparatePlugin21) { throw 'The legacy 1.8 cosmetics plugin must not be bundled with Paper 1.21.' }
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -348,7 +345,6 @@ jobs:
             'solo/MonsterMaze-Solo.zip',
             'solo/solo-1.8-version.json',
             'MonsterMaze-Solo-1.8-plugin.jar',
-            'MonsterMaze-Solo-1.8-Cosmetics.jar',
             'solo/1.21/1.21-MonsterMaze-Solo.zip',
             'solo/1.21/solo-1.21-version.json',
             'MonsterMaze-Solo-1.21-plugin.jar',
@@ -374,7 +370,6 @@ jobs:
             'solo/MonsterMaze-Solo.zip',
             'solo/solo-1.8-version.json',
             'MonsterMaze-Solo-1.8-plugin.jar',
-            'MonsterMaze-Solo-1.8-Cosmetics.jar',
             'solo/1.21/1.21-MonsterMaze-Solo.zip',
             'solo/1.21/solo-1.21-version.json',
             'MonsterMaze-Solo-1.21-plugin.jar',
@@ -404,8 +399,6 @@ jobs:
           }
           $expected18 = '/releases/download/' + [regex]::Escape($env:RELEASE_TAG) + '/MonsterMaze-Solo-1.8-plugin\.jar$'
           if ([string]$m18.files.'server/plugins/MonsterMazeStandalone.jar'.url -notmatch $expected18) { throw '1.8 plugin manifest URL is not the release plugin asset.' }
-          $expectedCosmetics = '/releases/download/' + [regex]::Escape($env:RELEASE_TAG) + '/MonsterMaze-Solo-1.8-Cosmetics\.jar$'
-          if ([string]$m18.files.'server/plugins/MinigameCosmeticPrototypes.jar'.url -notmatch $expectedCosmetics) { throw '1.8 cosmetics manifest URL is not the release cosmetic asset.' }
           foreach ($name in @('server/plugins/MonsterMazeStandalone.jar','server/plugins/ProtocolLib.jar','server/paper-1.21.11.jar')) {
             if ([string]$m21.files.$name.url -notmatch ('/releases/download/' + [regex]::Escape($env:RELEASE_TAG) + '/')) { throw "1.21 binary manifest URL is not a release asset: $name" }
           }
@@ -420,7 +413,6 @@ jobs:
             'solo/MonsterMaze-Solo.zip' `
             'solo/solo-1.8-version.json' `
             'MonsterMaze-Solo-1.8-plugin.jar' `
-            'MonsterMaze-Solo-1.8-Cosmetics.jar' `
             'solo/1.21/1.21-MonsterMaze-Solo.zip' `
             'solo/1.21/solo-1.21-version.json' `
             'MonsterMaze-Solo-1.21-plugin.jar' `
