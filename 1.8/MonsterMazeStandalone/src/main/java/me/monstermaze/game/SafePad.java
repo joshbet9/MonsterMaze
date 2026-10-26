@@ -23,18 +23,24 @@ public class SafePad implements Listener {
     private final Location center;
     private final int surfaceY;
     private final boolean qol;
+    private final byte surfaceColour;
     private final List<BlockSnapshot> snapshots = new ArrayList<BlockSnapshot>();
     private int decayCount = 11;
     private boolean active = true;
 
     public SafePad(Location pathLocation) {
-        this(pathLocation, false);
+        this(pathLocation, false, (byte) 5);
     }
 
     public SafePad(Location pathLocation, boolean qol) {
+        this(pathLocation, qol, (byte) 5);
+    }
+
+    public SafePad(Location pathLocation, boolean qol, byte surfaceColour) {
         this.center = pathLocation.clone();
         this.surfaceY = pathLocation.getBlockY() - 1;
         this.qol = qol;
+        this.surfaceColour = surfaceColour >= 0 && surfaceColour <= 15 ? surfaceColour : (byte) 5;
         captureAndBuild();
     }
 
@@ -64,7 +70,7 @@ public class SafePad implements Listener {
         for (int x = -2; x <= 2; x++) {
             for (int z = -2; z <= 2; z++) {
                 if (x == 0 && z == 0) continue;
-                setBlock(world.getBlockAt(cx + x, cy, cz + z), Material.STAINED_CLAY, (byte) 5);
+                setBlock(world.getBlockAt(cx + x, cy, cz + z), Material.STAINED_CLAY, surfaceColour);
             }
         }
         setBlock(world.getBlockAt(cx, cy, cz), Material.BEACON, (byte) 0);
@@ -105,6 +111,21 @@ public class SafePad implements Listener {
 
     public Location getLocation() { return center.clone(); }
     public boolean isActive() { return active; }
+
+    /**
+     * Optional persistence repair copied from the Mineplex Reborn implementation.
+     * Only the central objective beacon is restored; clay, stairs, base, and decay
+     * state are deliberately untouched.
+     */
+    @SuppressWarnings("deprecation")
+    public boolean restoreObjectiveBeaconIfMissing() {
+        if (!active || center == null || center.getWorld() == null) return false;
+        Block beacon = center.getWorld().getBlockAt(center.getBlockX(), surfaceY, center.getBlockZ());
+        if (beacon.getType() == Material.BEACON) return false;
+        beacon.setType(Material.BEACON);
+        beacon.setData((byte) 0);
+        return true;
+    }
 
     public boolean isOn(Entity entity) {
         Location loc = entity.getLocation();
@@ -149,7 +170,7 @@ public class SafePad implements Listener {
         Block beacon = world.getBlockAt(cx, cy, cz);
         if (beacon.getType() == Material.BEACON) {
             beacon.setType(Material.STAINED_CLAY);
-            beacon.setData((byte) 5);
+            beacon.setData(surfaceColour);
         }
         for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) {
             Block iron = world.getBlockAt(cx + x, cy - 1, cz + z);
