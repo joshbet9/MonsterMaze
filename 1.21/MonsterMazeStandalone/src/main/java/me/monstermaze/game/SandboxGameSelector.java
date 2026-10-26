@@ -1,6 +1,7 @@
 package me.monstermaze.game;
 
 import me.monstermaze.MonsterMazePlugin;
+import me.monstermaze.world.VoidChunkGenerator;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
@@ -45,6 +46,7 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
     private final MonsterMazePlugin plugin;
     private final GameManager game;
     private final Map<UUID, String> selectedSandboxGame = new HashMap<UUID, String>();
+    private World preparedHubWorld;
 
     public SandboxGameSelector(MonsterMazePlugin plugin, GameManager game) {
         this.plugin = plugin;
@@ -69,23 +71,27 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
             plugin.getLogger().severe("Could not create sandbox selector world '" + HUB_WORLD_NAME + "'.");
             return null;
         }
+        if (world != preparedHubWorld) {
+            world.setSpawnLocation(0, 64, 0);
+            world.setGameRule(org.bukkit.GameRule.DO_MOB_SPAWNING, false);
+            world.setGameRule(org.bukkit.GameRule.DO_DAYLIGHT_CYCLE, false);
+            world.setGameRule(org.bukkit.GameRule.DO_WEATHER_CYCLE, false);
+            world.setGameRule(org.bukkit.GameRule.KEEP_INVENTORY, true);
+            world.setTime(6000L);
+            world.setStorm(false);
+            world.setThundering(false);
+            buildHub(world);
+            preparedHubWorld = world;
+        }
+        return world;
+    }
 
-        world.setSpawnLocation(0, 64, 0);
-        world.setGameRule(org.bukkit.GameRule.DO_MOB_SPAWNING, false);
-        world.setGameRule(org.bukkit.GameRule.DO_DAYLIGHT_CYCLE, false);
-        world.setGameRule(org.bukkit.GameRule.DO_WEATHER_CYCLE, false);
-        world.setGameRule(org.bukkit.GameRule.KEEP_INVENTORY, true);
-        world.setTime(6000L);
-        world.setStorm(false);
-        world.setThundering(false);
-
+    private void buildHub(World world) {
         // A separate protected hub means the existing Monster Maze lobby/map is untouched.
         for (int x = -16; x <= 16; x++) {
             for (int z = -16; z <= 16; z++) {
                 Block floor = world.getBlockAt(x, 63, z);
-                if (floor.getType() == Material.AIR) {
-                    floor.setType(Material.STONE, false);
-                }
+                if (floor.getType() == Material.AIR) floor.setType(Material.STONE, false);
             }
         }
         Block previewGlass = world.getBlockAt(0, 64, 4);
@@ -96,7 +102,6 @@ public final class SandboxGameSelector implements Listener, CommandExecutor {
                 if (light.getType() == Material.AIR) light.setType(Material.GLOWSTONE, false);
             }
         }
-        return world;
     }
 
     public Location getHubSpawn() {
