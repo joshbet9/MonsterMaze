@@ -120,7 +120,10 @@ jobs:
           grep -q 'JAVA_BIN=/usr/bin/java' docker/entrypoint.sh
           bash -n docker/entrypoint.sh
           grep -q 'sync_release_managed_plugins()' docker/entrypoint.sh
-          grep -q 'sync_release_managed_plugins
+          grep -Fq 'sync_release_managed_plugins' docker/entrypoint.sh
+          grep -Fq 'cmp -s' docker/entrypoint.sh
+          grep -Fq 'cp -f' docker/entrypoint.sh
+          grep -Fq 'MinigameCosmeticPrototypes.jar' docker/entrypoint.sh
       - name: Check Oracle JNP Mod deployment safety gates
         shell: bash
         run: |
