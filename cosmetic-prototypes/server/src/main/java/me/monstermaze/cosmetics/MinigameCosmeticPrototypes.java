@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -21,6 +22,7 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
+import org.bukkit.craftbukkit.v1_8_R3.entity.CraftPlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -32,18 +34,24 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerQuitEvent;
+import net.minecraft.server.v1_8_R3.EnumParticle;
+import net.minecraft.server.v1_8_R3.PacketPlayOutWorldParticles;
 
 /**
  * Isolated server-side visual prototype harness. It exposes methods a future
  * game adapter can call; this repository does not contain the four source games.
  */
-public final class MinigameCosmeticPrototypes extends JavaPlugin implements CommandExecutor {
+public final class MinigameCosmeticPrototypes extends JavaPlugin implements CommandExecutor, Listener {
     private static final String ADMIN_PERMISSION = "minigamecosmetics.admin";
     private static final int DEFAULT_RUNNER_RED = 14;
 
     private static final Map<String, RunnerColour> RUNNER_COLOURS = new LinkedHashMap<String, RunnerColour>();
     private static final Map<String, Byte> ALL_CLAY_COLOURS = new LinkedHashMap<String, Byte>();
     private static final Map<String, Byte> GLASS_COLOURS = new LinkedHashMap<String, Byte>();
+    private static final Map<String, MicroBattlesTheme> MICRO_BATTLES_THEMES = new LinkedHashMap<String, MicroBattlesTheme>();
     private static final Map<String, Material> PIG_ACCESSORIES = new LinkedHashMap<String, Material>();
     private static final List<String> EVOLUTION_CHOICES = Collections.unmodifiableList(
             Arrays.asList("dragon-egg"));
@@ -53,6 +61,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
     private final Map<UUID, Integer> baconKills = new LinkedHashMap<UUID, Integer>();
     private final Map<UUID, ArmorStand> baconAccessories = new LinkedHashMap<UUID, ArmorStand>();
     private final Map<String, BeaconTint> beaconTints = new LinkedHashMap<String, BeaconTint>();
+    private final Map<UUID, MicroBattlesArena> microBattlesArenas = new LinkedHashMap<UUID, MicroBattlesArena>();
     private final Map<UUID, List<Entity>> previewEntities = new LinkedHashMap<UUID, List<Entity>>();
 
     private UUID baconLeader;
@@ -101,6 +110,16 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         addGlassColour("red", 14);
         addGlassColour("black", 15);
 
+        // The set is shared by the glass tint and the per-viewer border particle packet.
+        addMicroBattlesTheme("aqua", 3, EnumParticle.WATER_WAKE);
+        addMicroBattlesTheme("ember", 14, EnumParticle.FLAME);
+        addMicroBattlesTheme("forest", 5, EnumParticle.VILLAGER_HAPPY);
+        addMicroBattlesTheme("royal", 10, EnumParticle.PORTAL);
+        addMicroBattlesTheme("sunset", 6, EnumParticle.NOTE);
+        addMicroBattlesTheme("solar", 4, EnumParticle.CRIT);
+        addMicroBattlesTheme("frost", 0, EnumParticle.SNOW_SHOVEL);
+        addMicroBattlesTheme("void", 15, EnumParticle.CRIT_MAGIC);
+
         PIG_ACCESSORIES.put("crown", Material.GOLD_HELMET);
         PIG_ACCESSORIES.put("top_hat", Material.OBSIDIAN);
         PIG_ACCESSORIES.put("chef", Material.CAKE);
@@ -119,17 +138,30 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         GLASS_COLOURS.put(name, (byte) data);
     }
 
+    private static void addMicroBattlesTheme(String name, int glassData, EnumParticle particle) {
+        MICRO_BATTLES_THEMES.put(name, new MicroBattlesTheme(name, (byte) glassData, particle));
+    }
+
     @Override
     public void onEnable() {
         saveDefaultConfig();
         if (getCommand("cosmeticproto") != null) {
             getCommand("cosmeticproto").setExecutor(this);
         }
+        getServer().getPluginManager().registerEvents(this, this);
+        new BukkitRunnable() {
+            @Override public void run() { tickMicroBattlesParticles(); }
+        }.runTaskTimer(this, 4L, 4L);
         getLogger().info("Server-side cosmetic prototype harness loaded. It does not hook into the production Solo packer.");
     }
 
     @Override
     public void onDisable() {
+        for (Map.Entry<UUID, MicroBattlesArena> entry : new ArrayList<Map.Entry<UUID, MicroBattlesArena>>(microBattlesArenas.entrySet())) {
+            Player player = Bukkit.getPlayer(entry.getKey());
+            if (player != null) restoreMicroBattlesGlass(player, entry.getValue());
+        }
+        microBattlesArenas.clear();
         for (UUID id : new ArrayList<UUID>(baconAccessories.keySet())) {
             removePigAccessory(id);
         }
