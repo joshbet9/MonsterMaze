@@ -4,6 +4,8 @@
 
 mode: Original
 solo-mode: false
+# This dedicated branch is intended to co-host beside Mineplex Reborn; preserve its lobby and join flow.
+cohosted-mode: true
 # Enables test-only runtime debug commands such as /mm solomode. Production deployments disable this.
 debug: false
 # Emit every completed player's run to solo-runs/ for competition submission.
