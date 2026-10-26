@@ -116,6 +116,7 @@ foreach ($map in $requiredMaps) { Copy-Item (Join-Path $maps $map) (Join-Path $d
 Remove-Item (Join-Path $dist 'submitter/submitted') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $dist 'server/plugins/MonsterMazeStandalone/solo-runs') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $dist 'server/world') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $dist 'server/mm_sandbox') -Recurse -Force -ErrorAction SilentlyContinue
 
 $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
 if (-not $pwsh) { $pwsh = (Get-Command powershell -ErrorAction Stop).Source }
