@@ -399,28 +399,40 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
     private void updateSnakeColours(Run active) {
         SnakeType snakeType = equippedSnakeType(active.player);
         if (snakeType != null) {
-            // A type set is a persistent colour pattern for this snake, not a different
-            // colour for each ability. Apply only when the chosen set or body length changes.
-            if (!snakeType.key.equals(active.lastAppliedSnakeSet)
+            String effect;
+            if (active.invulnerable()) {
+                effect = "super_snake";
+            } else if (active.ticks < active.speedBoostEndsAt) {
+                effect = "speed";
+            } else if (active.ticks < active.reverseEndsAt) {
+                effect = "reverse";
+            } else {
+                effect = "base";
+            }
+
+            // Each snake-type set defines its own effect pattern for every ability.
+            // The pattern remains stable until the active ability/set or body length changes.
+            String effectKey = snakeType.key + ":" + effect;
+            if (!effectKey.equals(active.lastAppliedSnakeSet)
                     || active.appliedPatternTailSize != active.tail.size()) {
                 for (int i = 0; i < active.tail.size(); i++) {
                     Sheep segment = active.tail.get(i);
-                    if (segment != null && segment.isValid()) segment.setColor(snakeType.colourForSegment(i));
+                    if (segment != null && segment.isValid()) {
+                        segment.setColor(snakeType.colourForEffect(effect, i));
+                    }
                 }
-                active.lastAppliedSnakeSet = snakeType.key;
+                active.lastAppliedSnakeSet = effectKey;
                 active.appliedPatternTailSize = active.tail.size();
                 active.lastAppliedColour = null;
             }
             return;
         }
 
+        // No equipped snake set: retain the existing lime body and Super Snake rainbow.
         boolean legacyRainbow = active.invulnerable();
         DyeColor target = legacyRainbow
                 ? DEFAULT_SUPER_SNAKE_COLOURS[random.nextInt(DEFAULT_SUPER_SNAKE_COLOURS.length)]
                 : active.baseColour;
-
-        // Keep the original four-colour Super Snake rainbow for players without an
-        // unlocked-and-equipped type set. Restore the default colour once it ends.
         boolean leavingTypeSet = active.lastAppliedSnakeSet != null;
         if (legacyRainbow || leavingTypeSet || target != active.lastAppliedColour) {
             for (Sheep segment : active.tail) {
@@ -1034,24 +1046,64 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private enum SnakeType {
-        COBRA("cobra", "Cobra", DyeColor.GREEN, DyeColor.GREEN, DyeColor.YELLOW, DyeColor.GREEN, DyeColor.BLACK),
-        PYTHON("python", "Python", DyeColor.BROWN, DyeColor.BROWN, DyeColor.SILVER, DyeColor.BROWN, DyeColor.YELLOW),
-        VIPER("viper", "Viper", DyeColor.GREEN, DyeColor.BLACK, DyeColor.GREEN, DyeColor.YELLOW),
-        CORAL_SNAKE("coral_snake", "Coral Snake", DyeColor.RED, DyeColor.WHITE, DyeColor.BLACK, DyeColor.WHITE),
-        SEA_SNAKE("sea_snake", "Sea Snake", DyeColor.CYAN, DyeColor.BLUE, DyeColor.CYAN, DyeColor.WHITE),
-        RATTLESNAKE("rattlesnake", "Rattlesnake", DyeColor.BROWN, DyeColor.YELLOW, DyeColor.BROWN, DyeColor.BROWN, DyeColor.BLACK);
+        COBRA("cobra", "Cobra",
+                new DyeColor[] {DyeColor.GREEN, DyeColor.LIME, DyeColor.GREEN},
+                new DyeColor[] {DyeColor.YELLOW, DyeColor.LIME, DyeColor.YELLOW, DyeColor.GREEN},
+                new DyeColor[] {DyeColor.GREEN, DyeColor.LIME, DyeColor.BLACK, DyeColor.LIME},
+                new DyeColor[] {DyeColor.BLACK, DyeColor.GREEN, DyeColor.BLACK, DyeColor.GREEN}),
+        PYTHON("python", "Python",
+                new DyeColor[] {DyeColor.BROWN, DyeColor.BROWN, DyeColor.SILVER},
+                new DyeColor[] {DyeColor.YELLOW, DyeColor.BROWN, DyeColor.YELLOW, DyeColor.BROWN},
+                new DyeColor[] {DyeColor.SILVER, DyeColor.WHITE, DyeColor.GRAY, DyeColor.SILVER},
+                new DyeColor[] {DyeColor.BLACK, DyeColor.BROWN, DyeColor.BLACK, DyeColor.BROWN}),
+        VIPER("viper", "Viper",
+                new DyeColor[] {DyeColor.GREEN, DyeColor.BLACK, DyeColor.GREEN, DyeColor.BLACK},
+                new DyeColor[] {DyeColor.YELLOW, DyeColor.GREEN, DyeColor.YELLOW, DyeColor.GREEN},
+                new DyeColor[] {DyeColor.LIME, DyeColor.GREEN, DyeColor.LIME, DyeColor.BLACK},
+                new DyeColor[] {DyeColor.BLACK, DyeColor.YELLOW, DyeColor.BLACK, DyeColor.GREEN}),
+        CORAL_SNAKE("coral_snake", "Coral Snake",
+                new DyeColor[] {DyeColor.RED, DyeColor.WHITE, DyeColor.BLACK, DyeColor.WHITE},
+                new DyeColor[] {DyeColor.ORANGE, DyeColor.RED, DyeColor.ORANGE, DyeColor.WHITE},
+                new DyeColor[] {DyeColor.RED, DyeColor.BLACK, DyeColor.WHITE, DyeColor.BLACK, DyeColor.RED, DyeColor.WHITE},
+                new DyeColor[] {DyeColor.BLACK, DyeColor.RED, DyeColor.BLACK, DyeColor.WHITE}),
+        SEA_SNAKE("sea_snake", "Sea Snake",
+                new DyeColor[] {DyeColor.CYAN, DyeColor.BLUE, DyeColor.CYAN, DyeColor.WHITE},
+                new DyeColor[] {DyeColor.LIGHT_BLUE, DyeColor.CYAN, DyeColor.LIGHT_BLUE, DyeColor.BLUE},
+                new DyeColor[] {DyeColor.CYAN, DyeColor.WHITE, DyeColor.BLUE, DyeColor.WHITE},
+                new DyeColor[] {DyeColor.BLUE, DyeColor.BLACK, DyeColor.CYAN, DyeColor.BLACK}),
+        RATTLESNAKE("rattlesnake", "Rattlesnake",
+                new DyeColor[] {DyeColor.BROWN, DyeColor.YELLOW, DyeColor.BROWN, DyeColor.BLACK},
+                new DyeColor[] {DyeColor.YELLOW, DyeColor.ORANGE, DyeColor.YELLOW, DyeColor.BROWN},
+                new DyeColor[] {DyeColor.YELLOW, DyeColor.BROWN, DyeColor.YELLOW, DyeColor.SILVER},
+                new DyeColor[] {DyeColor.BLACK, DyeColor.YELLOW, DyeColor.BLACK, DyeColor.BROWN});
 
         final String key;
         final String displayName;
-        final DyeColor[] pattern;
+        final DyeColor[] basePattern;
+        final DyeColor[] speedPattern;
+        final DyeColor[] superSnakePattern;
+        final DyeColor[] reversePattern;
 
-        SnakeType(String key, String displayName, DyeColor... pattern) {
+        SnakeType(String key, String displayName, DyeColor[] basePattern,
+                  DyeColor[] speedPattern, DyeColor[] superSnakePattern, DyeColor[] reversePattern) {
             this.key = key;
             this.displayName = displayName;
-            this.pattern = pattern;
+            this.basePattern = basePattern;
+            this.speedPattern = speedPattern;
+            this.superSnakePattern = superSnakePattern;
+            this.reversePattern = reversePattern;
         }
 
         DyeColor colourForSegment(int index) {
+            return colourForEffect("base", index);
+        }
+
+        DyeColor colourForEffect(String effect, int index) {
+            DyeColor[] pattern;
+            if ("speed".equals(effect)) pattern = speedPattern;
+            else if ("super_snake".equals(effect)) pattern = superSnakePattern;
+            else if ("reverse".equals(effect)) pattern = reversePattern;
+            else pattern = basePattern;
             return pattern[Math.floorMod(index, pattern.length)];
         }
 
@@ -1062,6 +1114,7 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
             return null;
         }
     }
+
 
     private enum Debuff {
         TURN_LAG("Turn Lag"),

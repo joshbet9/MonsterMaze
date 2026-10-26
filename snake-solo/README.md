@@ -20,7 +20,7 @@ Hotbar power-ups: feather (speed), nether star (brief invulnerability), and cook
 
 ## Snake Type Sets prototype
 
-The cosmetic is a per-player choice of snake-type colour pattern, not an ability-colour mapping. The prototype includes **Cobra**, **Python**, **Viper**, **Coral Snake**, **Sea Snake**, and **Rattlesnake** sets. Each set colours the head and tail with a repeating pattern themed to that snake type; the selected pattern stays equipped during Speed, Reverse, and Super Snake. The colour is applied to the actual sheep entities so everyone watching the player sees the same set.
+The cosmetic is a per-player choice of snake-type set. The prototype includes **Cobra**, **Python**, **Viper**, **Coral Snake**, **Sea Snake**, and **Rattlesnake**. Every set defines four different repeating colour patterns: its base look, Speed, Super Snake/invulnerability, and Reverse. For example, Cobra uses a green/lime body at rest, a yellow/lime speed pattern, a green/lime/black Super Snake pattern, and black/green bands when reversing; the other types use their own palettes and patterns for each state. The effect is selected by the active ability, not one universal colour per ability. Colours are applied to the actual sheep entities so everyone watching the player sees the same result.
 
 When no set is equipped—or the player hasn't unlocked the chosen set—the original default lime snake and four-colour Super Snake rainbow remain. Operators can unlock all prototype sets with `/snake cosmetic unlock <player>`, or a specific one with `/snake cosmetic unlock <player> cobra`. Players browse with `/snake cosmetic list` and equip with `/snake cosmetic equip cobra`; use `/snake cosmetic off` to return to the default behaviour.
 
