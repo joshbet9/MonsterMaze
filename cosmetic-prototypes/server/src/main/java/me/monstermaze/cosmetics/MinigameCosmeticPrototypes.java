@@ -560,6 +560,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         setEquipped(player.getUniqueId(), game, choice);
         sender.sendMessage(ChatColor.GREEN + "Equipped " + choice + " for " + game + ".");
         if ("baconbrawl".equals(game)) refreshBaconBrawlLeader();
+        if ("microbattles".equals(game)) refreshMicroBattlesGlass(player);
     }
 
     private void handleOff(CommandSender sender, String[] args) {
@@ -580,6 +581,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         setEquipped(player.getUniqueId(), game, null);
         sender.sendMessage(ChatColor.GREEN + "Unequipped prototype cosmetics for " + game + ".");
         if ("baconbrawl".equals(game)) refreshBaconBrawlLeader();
+        if ("microbattles".equals(game)) refreshMicroBattlesGlass(player);
     }
 
     private void handlePreview(CommandSender sender, String[] args) {
@@ -588,7 +590,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
             return;
         }
         if (args.length < 2) {
-            sender.sendMessage(ChatColor.YELLOW + "Usage: /cosmeticproto preview <runner|baconbrawl|dragonescape|evolution> [map-palette]");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /cosmeticproto preview <runner|baconbrawl|dragonescape|evolution|microbattles> [map-palette]");
             return;
         }
         Player player = (Player) sender;
@@ -603,9 +605,11 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
             previewBaconBrawl(player);
         } else if ("dragonescape".equals(game)) {
             previewDragonEscape(player);
-        } else {
+        } else if ("evolution".equals(game)) {
             spawnDragonEggParticles(player.getLocation().add(0, 1.0, 0));
             player.sendMessage(ChatColor.GREEN + "Triggered the Evolution dragon-egg particle preview.");
+        } else {
+            previewMicroBattles(player);
         }
     }
 
@@ -770,6 +774,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         if ("baconbrawl".equals(game)) return "baconbrawl";
         if ("dragonescape".equals(game)) return "dragonescape";
         if ("evolution".equals(game)) return "evolution";
+        if ("microbattles".equals(game)) return "microbattles";
         return null;
     }
 
@@ -782,6 +787,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         if ("baconbrawl".equals(game)) return new ArrayList<String>(PIG_ACCESSORIES.keySet());
         if ("dragonescape".equals(game)) return new ArrayList<String>(GLASS_COLOURS.keySet());
         if ("evolution".equals(game)) return new ArrayList<String>(EVOLUTION_CHOICES);
+        if ("microbattles".equals(game)) return new ArrayList<String>(MICRO_BATTLES_THEMES.keySet());
         return Collections.emptyList();
     }
 
@@ -810,8 +816,8 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         sender.sendMessage(ChatColor.YELLOW + "Runner (8 clay pairs): " + join(choicesFor("runner")));
         sender.sendMessage(ChatColor.YELLOW + "Bacon Brawl (leader-pig accessories): " + join(choicesFor("baconbrawl")));
         sender.sendMessage(ChatColor.YELLOW + "Dragon Escape (beacon colours): " + join(choicesFor("dragonescape")));
-        sender.sendMessage(ChatColor.YELLOW + "Evolution: " + join(choicesFor("evolution")));
-        sender.sendMessage(ChatColor.GRAY + "Micro Battles is a separate client-side prototype in JNP Mod.");
+        sender.sendMessage(ChatColor.YELLOW + "Evolution (evolving particles): " + join(choicesFor("evolution")));
+        sender.sendMessage(ChatColor.YELLOW + "Micro Battles (per-client centre glass + border particles): " + join(choicesFor("microbattles")));
     }
 
     private void showStatus(CommandSender sender) {
@@ -820,7 +826,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
             return;
         }
         UUID id = ((Player) sender).getUniqueId();
-        for (String game : Arrays.asList("runner", "baconbrawl", "dragonescape", "evolution")) {
+        for (String game : Arrays.asList("runner", "baconbrawl", "dragonescape", "evolution", "microbattles")) {
             String equipped = getEquipped(id, game);
             int unlocked = 0;
             for (String choice : choicesFor(game)) if (isUnlocked(id, game, choice)) unlocked++;
@@ -836,7 +842,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         sender.sendMessage(ChatColor.YELLOW + "/cosmeticproto equip <game> <choice>" + ChatColor.GRAY + " - equip an unlocked choice");
         sender.sendMessage(ChatColor.YELLOW + "/cosmeticproto off <game>" + ChatColor.GRAY + " - unequip a game cosmetic");
         sender.sendMessage(ChatColor.YELLOW + "/cosmeticproto status" + ChatColor.GRAY + " - show current unlocks/equipment");
-        sender.sendMessage(ChatColor.YELLOW + "/cosmeticproto preview <game> [map-colours]" + ChatColor.GRAY + " - preview a visual effect");
+        sender.sendMessage(ChatColor.YELLOW + "/cosmeticproto preview <runner|baconbrawl|dragonescape|evolution|microbattles> [map-colours]" + ChatColor.GRAY + " - preview a visual effect");
     }
 
     private String join(List<String> values) {
@@ -876,6 +882,35 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
             this.name = name;
             this.base = base;
             this.inverse = inverse;
+        }
+    }
+
+    private static final class MicroBattlesTheme {
+        final String key;
+        final byte glassData;
+        final EnumParticle particle;
+
+        MicroBattlesTheme(String key, byte glassData, EnumParticle particle) {
+            this.key = key;
+            this.glassData = glassData;
+            this.particle = particle;
+        }
+    }
+
+    private static final class MicroBattlesArena {
+        final Location center;
+        final Material originalMaterial;
+        final byte originalData;
+        final List<Location> borderPoints;
+        boolean applied;
+        String appliedTheme;
+
+        MicroBattlesArena(Location center, Material originalMaterial, byte originalData, List<Location> borderPoints) {
+            this.center = center.clone();
+            this.originalMaterial = originalMaterial;
+            this.originalData = originalData;
+            this.borderPoints = new ArrayList<Location>();
+            for (Location point : borderPoints) this.borderPoints.add(point.clone());
         }
     }
 
