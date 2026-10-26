@@ -30,6 +30,8 @@ debuff-roulette-ticks: 40
 # Prototype cosmetic entitlement/equipment, stored by player UUID.
 # Operators can test-grant the unlock with /snake cosmetic unlock <player>.
 cosmetics:
-  ability-colour-line-unlocked: []
-  ability-colour-line-equipped: []
+  # Per-player entitlement sets keyed by UUID; values are snake type keys.
+  snake-type-sets-unlocked: {}
+  # One equipped set key per player UUID.
+  snake-type-set-equipped: {}
 records: []

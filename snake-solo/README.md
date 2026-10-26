@@ -12,17 +12,17 @@ Install `SnakeSoloStandalone.jar` into the 1.8.8 server's `plugins` folder and r
 - `/snake hazard now` — spawn a magma-cube hazard immediately for rapid testing.
 - `/snake hazard off` — remove cubes and disable further hazards this run.
 - `/snake hazard status` — show whether the late-game hazard is waiting, enabled or disabled.
-- `/snake cosmetic status` — show whether the Ability Colour Line is unlocked/equipped.
-- `/snake cosmetic equip` / `/snake cosmetic off` — equip or remove the line.
-- `/snake cosmetic unlock <player>` — operator-only prototype unlock for an online player.
+- `/snake cosmetic list` / `/snake cosmetic status` — browse available and unlocked snake-type sets.
+- `/snake cosmetic equip <type>` — equip a type set; `/snake cosmetic off` removes it.
+- `/snake cosmetic unlock <player> [type|all]` — operator-only prototype unlock for an online player.
 
 Hotbar power-ups: feather (speed), nether star (brief invulnerability), and cookie (reverse). The roulette appears in hotbar slot 9, as requested in the forum proposal.
 
-## Ability Colour Line prototype
+## Snake Type Sets prototype
 
-The line is per-player and must be both unlocked and equipped. With it active, the snake and every tail segment turn **yellow for Speed**, **cyan for Super Snake/invulnerability**, and **purple for Reverse**, then return to the base lime colour. If the line is not unlocked or is not equipped, the existing four-colour Super Snake rainbow remains. The colour is set on the actual sheep entities rather than sent as viewer-specific block/entity packets, so every player watching that snake sees the same ability colour. If powers overlap, Super Snake takes visual priority, followed by Speed and then Reverse.
+The cosmetic is a per-player choice of snake-type colour pattern, not an ability-colour mapping. The prototype includes **Cobra**, **Python**, **Viper**, **Coral Snake**, **Sea Snake**, and **Rattlesnake** sets. Each set colours the head and tail with a repeating pattern themed to that snake type; the selected pattern stays equipped during Speed, Reverse, and Super Snake. The colour is applied to the actual sheep entities so everyone watching the player sees the same set.
 
-For a quick test, an operator can run `/snake cosmetic unlock <player>`, then the player uses `/snake cosmetic equip`. Use `/snake cosmetic off` to verify the default rainbow fallback.
+When no set is equipped—or the player hasn't unlocked the chosen set—the original default lime snake and four-colour Super Snake rainbow remain. Operators can unlock all prototype sets with `/snake cosmetic unlock <player>`, or a specific one with `/snake cosmetic unlock <player> cobra`. Players browse with `/snake cosmetic list` and equip with `/snake cosmetic equip cobra`; use `/snake cosmetic off` to return to the default behaviour.
 
 ## Gameplay in this prototype
 

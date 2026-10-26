@@ -51,8 +51,8 @@ import java.util.Random;
 
 public final class SnakeSoloPlugin extends JavaPlugin implements Listener, CommandExecutor {
     private static final String ARENA_WORLD = "snake_solo";
-    private static final String COSMETIC_UNLOCKED_KEY = "cosmetics.ability-colour-line-unlocked";
-    private static final String COSMETIC_EQUIPPED_KEY = "cosmetics.ability-colour-line-equipped";
+    private static final String COSMETIC_UNLOCKED_KEY = "cosmetics.snake-type-sets-unlocked";
+    private static final String COSMETIC_EQUIPPED_KEY = "cosmetics.snake-type-set-equipped";
     private static final DyeColor[] DEFAULT_SUPER_SNAKE_COLOURS = new DyeColor[] {
             DyeColor.RED, DyeColor.YELLOW, DyeColor.GREEN, DyeColor.BLUE
     };
@@ -130,8 +130,8 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
         sender.sendMessage(ChatColor.YELLOW + "/snake stop" + ChatColor.GRAY + " - stop and restore your player state");
         sender.sendMessage(ChatColor.YELLOW + "/snake stats" + ChatColor.GRAY + " - show top runs");
         sender.sendMessage(ChatColor.YELLOW + "/snake hazard now|off|status" + ChatColor.GRAY + " - test the late-game hazard");
-        sender.sendMessage(ChatColor.YELLOW + "/snake cosmetic status|equip|off" + ChatColor.GRAY + " - manage the ability-colour line");
-        sender.sendMessage(ChatColor.YELLOW + "/snake cosmetic unlock <player>" + ChatColor.GRAY + " - operator-only test unlock");
+        sender.sendMessage(ChatColor.YELLOW + "/snake cosmetic list|status|equip <type>|off" + ChatColor.GRAY + " - choose a snake-type set");
+        sender.sendMessage(ChatColor.YELLOW + "/snake cosmetic unlock <player> [type|all]" + ChatColor.GRAY + " - operator-only test unlock");
     }
 
     private void startRun(Player player) {
@@ -384,7 +384,10 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
             if (loc == null) loc = active.head.getLocation().clone();
             loc.setY(64.0);
             Sheep segment = arena.spawn(loc, Sheep.class);
-            segment.setColor(active.lastAppliedColour == null ? active.baseColour : active.lastAppliedColour);
+            SnakeType snakeType = equippedSnakeType(active.player);
+            DyeColor segmentColour = snakeType != null ? snakeType.colourForSegment(active.tail.size())
+                    : (active.lastAppliedColour == null ? active.baseColour : active.lastAppliedColour);
+            segment.setColor(segmentColour);
             segment.setRemoveWhenFarAway(false);
             segment.setCustomNameVisible(false);
             disableAi(segment);
@@ -394,40 +397,67 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
     }
 
     private void updateSnakeColours(Run active) {
-        boolean lineEquipped = isAbilityColourLineEquipped(active.player);
-        boolean legacyRainbow = !lineEquipped && active.invulnerable();
-        DyeColor target;
-        if (legacyRainbow) {
-            // Preserve the original four-colour Super Snake rainbow for players without
-            // the cosmetic equipped (including players who have not unlocked it).
-            target = DEFAULT_SUPER_SNAKE_COLOURS[random.nextInt(DEFAULT_SUPER_SNAKE_COLOURS.length)];
-        } else if (lineEquipped && active.invulnerable()) {
-            target = DyeColor.CYAN;       // Super Snake / invulnerability
-        } else if (lineEquipped && active.ticks < active.speedBoostEndsAt) {
-            target = DyeColor.YELLOW;     // Speed
-        } else if (lineEquipped && active.ticks < active.reverseEndsAt) {
-            target = DyeColor.PURPLE;     // Reverse
-        } else {
-            target = active.baseColour;
+        SnakeType snakeType = equippedSnakeType(active.player);
+        if (snakeType != null) {
+            // A type set is a persistent colour pattern for this snake, not a different
+            // colour for each ability. Apply only when the chosen set or body length changes.
+            if (!snakeType.key.equals(active.lastAppliedSnakeSet)
+                    || active.appliedPatternTailSize != active.tail.size()) {
+                for (int i = 0; i < active.tail.size(); i++) {
+                    Sheep segment = active.tail.get(i);
+                    if (segment != null && segment.isValid()) segment.setColor(snakeType.colourForSegment(i));
+                }
+                active.lastAppliedSnakeSet = snakeType.key;
+                active.appliedPatternTailSize = active.tail.size();
+                active.lastAppliedColour = null;
+            }
+            return;
         }
 
-        // The default rainbow intentionally changes every tick. All other states only
-        // update when the colour changes, avoiding needless work for long tails.
-        if (!legacyRainbow && target == active.lastAppliedColour) return;
-        for (Sheep segment : active.tail) {
-            if (segment != null && segment.isValid()) segment.setColor(target);
+        boolean legacyRainbow = active.invulnerable();
+        DyeColor target = legacyRainbow
+                ? DEFAULT_SUPER_SNAKE_COLOURS[random.nextInt(DEFAULT_SUPER_SNAKE_COLOURS.length)]
+                : active.baseColour;
+
+        // Keep the original four-colour Super Snake rainbow for players without an
+        // unlocked-and-equipped type set. Restore the default colour once it ends.
+        boolean leavingTypeSet = active.lastAppliedSnakeSet != null;
+        if (legacyRainbow || leavingTypeSet || target != active.lastAppliedColour) {
+            for (Sheep segment : active.tail) {
+                if (segment != null && segment.isValid()) segment.setColor(target);
+            }
+            active.lastAppliedColour = target;
         }
-        active.lastAppliedColour = target;
+        active.lastAppliedSnakeSet = null;
+        active.appliedPatternTailSize = -1;
     }
 
-    private boolean isAbilityColourLineUnlocked(Player player) {
-        return player != null && getConfig().getStringList(COSMETIC_UNLOCKED_KEY)
-                .contains(player.getUniqueId().toString());
+    private SnakeType equippedSnakeType(Player player) {
+        if (player == null) return null;
+        String key = getConfig().getString(COSMETIC_EQUIPPED_KEY + "." + player.getUniqueId().toString(), "");
+        if (key == null || key.trim().isEmpty()) return null;
+        SnakeType type = SnakeType.fromKey(key);
+        return type != null && isSnakeTypeUnlocked(player, type) ? type : null;
     }
 
-    private boolean isAbilityColourLineEquipped(Player player) {
-        return isAbilityColourLineUnlocked(player)
-                && getConfig().getStringList(COSMETIC_EQUIPPED_KEY).contains(player.getUniqueId().toString());
+    private boolean isSnakeTypeUnlocked(Player player, SnakeType type) {
+        return player != null && type != null && getConfig()
+                .getStringList(COSMETIC_UNLOCKED_KEY + "." + player.getUniqueId().toString())
+                .contains(type.key);
+    }
+
+    private List<String> unlockedSnakeTypes(Player player) {
+        return player == null ? Collections.<String>emptyList()
+                : getConfig().getStringList(COSMETIC_UNLOCKED_KEY + "." + player.getUniqueId().toString());
+    }
+
+    private String availableSnakeTypeNames() {
+        StringBuilder result = new StringBuilder();
+        for (SnakeType type : SnakeType.values()) {
+            if (result.length() > 0) result.append(", ");
+            result.append(type.key);
+        }
+        return result.toString();
     }
 
     private void spawnFood(Run active) {
@@ -621,11 +651,11 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
         String action = args.length > 1 ? args[1].toLowerCase() : "status";
         if ("unlock".equals(action)) {
             if (!sender.hasPermission("snake.admin")) {
-                sender.sendMessage(ChatColor.RED + "Only an operator can grant this prototype cosmetic unlock.");
+                sender.sendMessage(ChatColor.RED + "Only an operator can grant prototype snake-type sets.");
                 return;
             }
             if (args.length < 3) {
-                sender.sendMessage(ChatColor.YELLOW + "Usage: /snake cosmetic unlock <online-player>");
+                sender.sendMessage(ChatColor.YELLOW + "Usage: /snake cosmetic unlock <online-player> [type|all]");
                 return;
             }
             Player target = Bukkit.getPlayer(args[2]);
@@ -633,53 +663,80 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
                 sender.sendMessage(ChatColor.RED + "That player must be online for the prototype unlock.");
                 return;
             }
-            String id = target.getUniqueId().toString();
-            List<String> unlocked = new ArrayList<String>(getConfig().getStringList(COSMETIC_UNLOCKED_KEY));
-            if (!unlocked.contains(id)) {
-                unlocked.add(id);
-                getConfig().set(COSMETIC_UNLOCKED_KEY, unlocked);
-                saveConfig();
+            String path = COSMETIC_UNLOCKED_KEY + "." + target.getUniqueId().toString();
+            List<String> unlocked = new ArrayList<String>(getConfig().getStringList(path));
+            String requested = args.length >= 4 ? args[3].toLowerCase().replace('-', '_') : "all";
+            if ("all".equals(requested)) {
+                for (SnakeType type : SnakeType.values()) if (!unlocked.contains(type.key)) unlocked.add(type.key);
+            } else {
+                SnakeType type = SnakeType.fromKey(requested);
+                if (type == null) {
+                    sender.sendMessage(ChatColor.YELLOW + "Unknown snake type. Available: " + availableSnakeTypeNames());
+                    return;
+                }
+                if (!unlocked.contains(type.key)) unlocked.add(type.key);
             }
-            sender.sendMessage(ChatColor.GREEN + "Ability Colour Line unlocked for " + target.getName() + ".");
-            target.sendMessage(ChatColor.GREEN + "You unlocked the Snake Ability Colour Line. Use /snake cosmetic equip to activate it.");
+            getConfig().set(path, unlocked);
+            saveConfig();
+            sender.sendMessage(ChatColor.GREEN + "Unlocked snake-type set(s) for " + target.getName() + ": " + unlocked + ".");
+            target.sendMessage(ChatColor.GREEN + "Unlocked Snake Type Sets: " + unlocked + ". Use /snake cosmetic list to browse them.");
             return;
         }
 
         if (!(sender instanceof Player)) {
-            sender.sendMessage(ChatColor.YELLOW + "Console can grant unlocks with /snake cosmetic unlock <online-player>.");
+            sender.sendMessage(ChatColor.YELLOW + "Console usage: /snake cosmetic unlock <online-player> [type|all].");
             return;
         }
         Player player = (Player) sender;
         String id = player.getUniqueId().toString();
-        if ("equip".equals(action) || "on".equals(action)) {
-            if (!isAbilityColourLineUnlocked(player)) {
-                player.sendMessage(ChatColor.RED + "You haven't unlocked the Ability Colour Line. An operator can test-unlock it with /snake cosmetic unlock " + player.getName() + ".");
+        if ("list".equals(action)) {
+            List<String> unlocked = unlockedSnakeTypes(player);
+            player.sendMessage(ChatColor.GOLD + "Snake Type Sets (unlocked): " + (unlocked.isEmpty() ? "none" : unlocked));
+            player.sendMessage(ChatColor.GRAY + "Available sets: " + availableSnakeTypeNames());
+            player.sendMessage(ChatColor.GRAY + "Equip one with /snake cosmetic equip <type>.");
+        } else if ("equip".equals(action) || "set".equals(action)) {
+            if (args.length < 3) {
+                player.sendMessage(ChatColor.YELLOW + "Usage: /snake cosmetic equip <type>. Available: " + availableSnakeTypeNames());
                 return;
             }
-            List<String> equipped = new ArrayList<String>(getConfig().getStringList(COSMETIC_EQUIPPED_KEY));
-            if (!equipped.contains(id)) {
-                equipped.add(id);
-                getConfig().set(COSMETIC_EQUIPPED_KEY, equipped);
-                saveConfig();
+            SnakeType type = SnakeType.fromKey(args[2].toLowerCase().replace('-', '_'));
+            if (type == null) {
+                player.sendMessage(ChatColor.YELLOW + "Unknown snake type. Available: " + availableSnakeTypeNames());
+                return;
             }
-            player.sendMessage(ChatColor.GREEN + "Ability Colour Line equipped: Speed = yellow, Super Snake = cyan, Reverse = purple. Other players see the same colours.");
+            if (!isSnakeTypeUnlocked(player, type)) {
+                player.sendMessage(ChatColor.RED + "You haven't unlocked the " + type.displayName
+                        + " set. An operator can test-unlock it with /snake cosmetic unlock " + player.getName() + " " + type.key + ".");
+                return;
+            }
+            getConfig().set(COSMETIC_EQUIPPED_KEY + "." + id, type.key);
+            saveConfig();
+            if (run != null && run.player.getUniqueId().equals(player.getUniqueId())) {
+                run.lastAppliedSnakeSet = null;
+                run.appliedPatternTailSize = -1;
+            }
+            player.sendMessage(ChatColor.GREEN + type.displayName + " Snake set equipped. The colour pattern stays the same across abilities and is visible to other players.");
         } else if ("off".equals(action) || "unequip".equals(action)) {
-            List<String> equipped = new ArrayList<String>(getConfig().getStringList(COSMETIC_EQUIPPED_KEY));
-            if (equipped.remove(id)) {
-                getConfig().set(COSMETIC_EQUIPPED_KEY, equipped);
-                saveConfig();
+            getConfig().set(COSMETIC_EQUIPPED_KEY + "." + id, null);
+            saveConfig();
+            if (run != null && run.player.getUniqueId().equals(player.getUniqueId())) {
+                run.lastAppliedSnakeSet = null;
+                run.appliedPatternTailSize = -1;
             }
-            player.sendMessage(ChatColor.GRAY + "Ability Colour Line unequipped. The default Super Snake rainbow is restored.");
+            player.sendMessage(ChatColor.GRAY + "Snake Type Set unequipped. The default Super Snake rainbow is restored.");
         } else if ("status".equals(action)) {
-            if (isAbilityColourLineEquipped(player)) {
-                player.sendMessage(ChatColor.GREEN + "Ability Colour Line: equipped.");
-            } else if (isAbilityColourLineUnlocked(player)) {
-                player.sendMessage(ChatColor.YELLOW + "Ability Colour Line: unlocked but not equipped.");
+            String equipped = getConfig().getString(COSMETIC_EQUIPPED_KEY + "." + id, "");
+            List<String> unlocked = unlockedSnakeTypes(player);
+            if (equipped != null && !equipped.isEmpty() && equippedSnakeType(player) != null) {
+                SnakeType type = SnakeType.fromKey(equipped);
+                player.sendMessage(ChatColor.GREEN + "Equipped snake set: " + type.displayName + ".");
             } else {
-                player.sendMessage(ChatColor.GRAY + "Ability Colour Line: not unlocked. Default Super Snake rainbow remains enabled.");
+                player.sendMessage(ChatColor.GRAY + "Equipped snake set: none.");
             }
+            player.sendMessage(ChatColor.GRAY + "Unlocked snake sets: " + (unlocked.isEmpty() ? "none" : unlocked));
+            player.sendMessage(ChatColor.GRAY + "Available sets: " + availableSnakeTypeNames());
         } else {
-            player.sendMessage(ChatColor.YELLOW + "Usage: /snake cosmetic <status|equip|off>");
+            player.sendMessage(ChatColor.YELLOW + "Usage: /snake cosmetic <list|status|equip <type>|off|unlock <player> [type|all]>");
         }
     }
 
@@ -941,6 +998,8 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
         Sheep head;
         final DyeColor baseColour;
         DyeColor lastAppliedColour;
+        String lastAppliedSnakeSet;
+        int appliedPatternTailSize = -1;
         BukkitTask task;
         int ticks;
         int slimesEaten;
@@ -972,6 +1031,36 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
         }
 
         boolean invulnerable() { return ticks < invulnerableEndsAt; }
+    }
+
+    private enum SnakeType {
+        COBRA("cobra", "Cobra", DyeColor.GREEN, DyeColor.GREEN, DyeColor.YELLOW, DyeColor.GREEN, DyeColor.BLACK),
+        PYTHON("python", "Python", DyeColor.BROWN, DyeColor.BROWN, DyeColor.SILVER, DyeColor.BROWN, DyeColor.YELLOW),
+        VIPER("viper", "Viper", DyeColor.GREEN, DyeColor.BLACK, DyeColor.GREEN, DyeColor.YELLOW),
+        CORAL_SNAKE("coral_snake", "Coral Snake", DyeColor.RED, DyeColor.WHITE, DyeColor.BLACK, DyeColor.WHITE),
+        SEA_SNAKE("sea_snake", "Sea Snake", DyeColor.CYAN, DyeColor.BLUE, DyeColor.CYAN, DyeColor.WHITE),
+        RATTLESNAKE("rattlesnake", "Rattlesnake", DyeColor.BROWN, DyeColor.YELLOW, DyeColor.BROWN, DyeColor.BROWN, DyeColor.BLACK);
+
+        final String key;
+        final String displayName;
+        final DyeColor[] pattern;
+
+        SnakeType(String key, String displayName, DyeColor... pattern) {
+            this.key = key;
+            this.displayName = displayName;
+            this.pattern = pattern;
+        }
+
+        DyeColor colourForSegment(int index) {
+            return pattern[Math.floorMod(index, pattern.length)];
+        }
+
+        static SnakeType fromKey(String value) {
+            if (value == null) return null;
+            String normalized = value.trim().toLowerCase().replace('-', '_').replace(' ', '_');
+            for (SnakeType type : values()) if (type.key.equals(normalized)) return type;
+            return null;
+        }
     }
 
     private enum Debuff {
