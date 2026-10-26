@@ -17,14 +17,8 @@ $UPDATEABLE = @(
     "server/bukkit.yml", "server/eula.txt", "server/server.properties", "server/spigot.yml",
     "HOW_TO_PLAY.txt", "README.md"
 )
-$cosmeticPluginPath = Join-Path $soloRoot "server/plugins/MinigameCosmeticPrototypes.jar"
-if (Test-Path -LiteralPath $cosmeticPluginPath) {
-    $UPDATEABLE += "server/plugins/MinigameCosmeticPrototypes.jar"
-}
-
 $RELEASE_ASSETS = @{
     "server/plugins/MonsterMazeStandalone.jar" = "MonsterMaze-Solo-1.8-plugin.jar"
-    "server/plugins/MinigameCosmeticPrototypes.jar" = "MonsterMaze-Solo-1.8-Cosmetics.jar"
 }
 
 function Add-ManifestFile([System.Collections.IDictionary]$files, [string]$manifestPath, [string]$sourcePath, [string]$sourceRel = "") {
