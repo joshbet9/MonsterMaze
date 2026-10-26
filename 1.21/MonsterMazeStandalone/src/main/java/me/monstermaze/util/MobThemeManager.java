@@ -90,11 +90,31 @@ public final class MobThemeManager implements Listener {
     public void setSafePadBeaconActive(Location center,boolean active) {
         // Beacon beams retain vanilla Minecraft colouring; only the pad terracotta is themed.
         refreshSafePad(center);
+        if (!active) refreshSafePadAfterBeaconChange(center);
     }
     public void refreshSafePad(Location center) {
         PadVisual pad=center==null?null:pads.get(key(center)); if(pad==null)return;
         for(Player player:Bukkit.getOnlinePlayers())if(visibleTo(player,pad))paintPad(player,pad);
     }
+
+    /**
+     * Re-send the per-player pad tint after the server's block-change packets have settled.
+     * Removing the beacon changes the real centre block in the same tick, and that vanilla
+     * update can arrive after the immediate personal-colour packet and briefly undo the tint.
+     */
+    private void refreshSafePadAfterBeaconChange(Location center) {
+        final PadVisual pad = center == null ? null : pads.get(key(center));
+        if (pad == null) return;
+        for (final long delay : new long[] {1L, 3L, 6L, 10L, 20L}) {
+            Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+                @Override public void run() {
+                    // Don't repaint a pad that has already been destroyed/unregistered.
+                    if (pads.get(key(pad.center)) == pad) refreshSafePad(pad.center);
+                }
+            }, delay);
+        }
+    }
+
     public void refreshPlayerPads(Player player) {
         if(player==null||!player.isOnline())return;
         for(PadVisual p:pads.values())if(visibleTo(player,p))paintPad(player,p);
