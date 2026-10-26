@@ -4,6 +4,8 @@ import me.monstermaze.command.MMCommand;
 import me.monstermaze.command.MMDebugCommand;
 import me.monstermaze.command.PauseCommand;
 import me.monstermaze.command.DebugSoloModeListener;
+import me.monstermaze.entity.MonsterDisguiseListener;
+import me.monstermaze.util.MobThemeManager;
 import me.monstermaze.game.BuildBypassListener;
 import me.monstermaze.game.GameManager;
 import me.monstermaze.game.LobbyListener;
@@ -23,10 +25,13 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.util.logging.Level;
 
 public class MonsterMazePlugin extends JavaPlugin {
     private static MonsterMazePlugin instance;
     private GameManager gameManager;
+    private MobThemeManager mobThemeManager;
+    private MonsterDisguiseListener monsterDisguiseListener;
     private VoidWorldManager voidWorlds;
     private MapManager mapManager;
     private MazeMode mode = MazeMode.ORIGINAL;
@@ -69,6 +74,18 @@ public class MonsterMazePlugin extends JavaPlugin {
         UtilEnt.registerGhostTypes();
         mapManager.loadActiveMapFromConfig();
         mapManager.ensureActiveWorld();
+        this.mobThemeManager = new MobThemeManager(this);
+        if (Bukkit.getPluginManager().getPlugin("ProtocolLib") != null) {
+            try {
+                this.monsterDisguiseListener = new MonsterDisguiseListener(this);
+                getLogger().info("ProtocolLib detected; per-player mob disguises enabled.");
+            } catch (Throwable t) {
+                getLogger().log(Level.WARNING,
+                        "Could not enable per-player mob disguises; base mob rendering will remain active.", t);
+            }
+        } else {
+            getLogger().warning("ProtocolLib not installed; mob model customization is unavailable in this server.");
+        }
         this.gameManager = new GameManager(this);
         this.competitiveMatchTracker = new CompetitiveMatchTracker(this);
         this.soloRunCompletionListener = new SoloRunCompletionListener(this);
@@ -92,12 +109,19 @@ public class MonsterMazePlugin extends JavaPlugin {
 
     @Override public void onDisable() {
         if (competitiveMatchTracker != null) competitiveMatchTracker.shutdown();
+        if (monsterDisguiseListener != null) monsterDisguiseListener.shutdown();
+        if (mobThemeManager != null) mobThemeManager.shutdown();
         if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown();
         if (gameManager != null) gameManager.forceStop();
         getLogger().info("MonsterMazeStandalone disabled.");
     }
     public static MonsterMazePlugin getInstance() { return instance; }
     public GameManager getGameManager() { return gameManager; }
+    public MobThemeManager getMobThemeManager() { return mobThemeManager; }
+    public void refreshPlayerMobThemes(Player player) {
+        if (monsterDisguiseListener != null) monsterDisguiseListener.refreshPlayer(player);
+    }
+    public boolean hasPerPlayerMobDisguises() { return monsterDisguiseListener != null; }
     public MazeMode getMode() { return mode; }
     public MazeMode setMode(MazeMode newMode) {
         if (newMode == null) newMode = MazeMode.ORIGINAL;

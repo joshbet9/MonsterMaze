@@ -22,6 +22,7 @@ import me.monstermaze.world.MapThemeApplier;
 import me.monstermaze.world.MapWorldSafetyListener;
 import me.monstermaze.world.SoloPBCommandListener;
 import me.monstermaze.world.VoidWorldManager;
+import me.monstermaze.util.MobThemeManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -29,10 +30,12 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.util.logging.Level;
 
 public class MonsterMazePlugin extends JavaPlugin {
     private static MonsterMazePlugin instance;
     private GameManager gameManager;
+    private MobThemeManager mobThemeManager;
     private VoidWorldManager voidWorlds;
     private MapManager mapManager;
     private MapThemeApplier mapThemeApplier;
@@ -82,6 +85,7 @@ public class MonsterMazePlugin extends JavaPlugin {
             } catch (Exception ignored) { }
         }
 
+        this.mobThemeManager = new MobThemeManager(this);
         Location mapCenter = mapManager.defaultCenter();
         if (mapCenter == null) { getLogger().warning("Active map '" + mapManager.getActiveMap() + "' has no available world; falling back to mm_void."); voidWorlds.ensureWorld(); mapCenter = voidWorlds.lobbySpawn(); }
         this.gameManager = new GameManager(this);
@@ -89,7 +93,10 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.monsterEntityListener = new MonsterEntityListener(this, gameManager);
         if (Bukkit.getPluginManager().getPlugin("ProtocolLib") != null) {
             try { this.monsterDisguiseListener = new MonsterDisguiseListener(this); getLogger().info("ProtocolLib detected; Monster Maze ghost-mob disguises enabled."); }
-            catch (Throwable t) { getLogger().warning("ProtocolLib is present but ghost-mob disguises could not be enabled: " + t.getClass().getSimpleName()); }
+            catch (Throwable t) {
+                getLogger().log(Level.WARNING,
+                        "ProtocolLib is present but ghost-mob disguises could not be enabled; base mob rendering will remain active.", t);
+            }
         } else getLogger().warning("ProtocolLib not installed; Monster Maze mobs will render as Snow Golems.");
         this.mapThemeApplier.start();
         this.soloRunCompletionListener = new SoloRunCompletionListener(this);
@@ -114,9 +121,20 @@ public class MonsterMazePlugin extends JavaPlugin {
         getLogger().info("Run backend: " + (backendClient.isEnabled() ? "enabled" : "Solo/local webhook mode"));
         getLogger().info("Players join into the active map lobby. Admin: /mm start");
     }
-    @Override public void onDisable() { if (competitiveMatchTracker != null) competitiveMatchTracker.shutdown(); if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown(); if (gameManager != null) gameManager.forceStop(); }
+    @Override public void onDisable() {
+        if (competitiveMatchTracker != null) competitiveMatchTracker.shutdown();
+        if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown();
+        if (gameManager != null) gameManager.forceStop();
+        if (monsterDisguiseListener != null) monsterDisguiseListener.shutdown();
+        if (mobThemeManager != null) mobThemeManager.shutdown();
+    }
     public static MonsterMazePlugin getInstance() { return instance; }
     public GameManager getGameManager() { return gameManager; }
+    public MobThemeManager getMobThemeManager() { return mobThemeManager; }
+    public void refreshPlayerMobThemes(Player player) {
+        if (monsterDisguiseListener != null) monsterDisguiseListener.refreshPlayer(player);
+    }
+    public boolean hasPerPlayerMobDisguises() { return monsterDisguiseListener != null; }
     public MazeMode getMode() { return mode; }
     public MazeMode setMode(MazeMode newMode) { if (newMode == null) newMode = MazeMode.ORIGINAL; this.mode = newMode; getConfig().set("mode", newMode.id); saveConfig(); return newMode; }
     public VoidWorldManager getVoidWorlds() { return voidWorlds; }

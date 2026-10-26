@@ -237,6 +237,7 @@ public class KitManager implements Listener {
         }
         player.updateInventory();
         refreshViews();
+        if (plugin.getMobThemeManager() != null) plugin.getMobThemeManager().giveSelector(player);
     }
 
     public void resetPlayerState(Player player) {

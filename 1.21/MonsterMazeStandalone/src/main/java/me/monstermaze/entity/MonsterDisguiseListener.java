@@ -8,9 +8,11 @@ import com.comphenix.protocol.events.PacketAdapter;
 import com.comphenix.protocol.events.PacketEvent;
 import com.comphenix.protocol.wrappers.WrappedDataValue;
 import me.monstermaze.MonsterMazePlugin;
+import me.monstermaze.util.MobThemeManager;
 import me.monstermaze.util.UtilEnt;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,8 +31,10 @@ public final class MonsterDisguiseListener {
 
     private final ProtocolManager protocolManager;
     private final PacketAdapter adapter;
+    private final MonsterMazePlugin plugin;
 
     public MonsterDisguiseListener(MonsterMazePlugin plugin) {
+        this.plugin = plugin;
         protocolManager = ProtocolLibrary.getProtocolManager();
         adapter = new PacketAdapter(
                 plugin,
@@ -53,6 +57,22 @@ public final class MonsterDisguiseListener {
         protocolManager.removePacketListener(adapter);
     }
 
+    /** Refresh currently tracked ghost mobs only for this viewer. */
+    public void refreshPlayer(Player player) {
+        if (player == null || !player.isOnline()) return;
+        for (Entity entity : player.getWorld().getEntities()) {
+            if (!entity.hasMetadata(MonsterEntityController.MONSTER_METADATA)) continue;
+            try {
+                // Resend the spawn packet so the viewer-specific entity type is rewritten.
+                // Custom ghost entities can be absent from the tracker query while still visible.
+                protocolManager.updateEntity(entity, java.util.Collections.singletonList(player));
+            } catch (Throwable failure) {
+                plugin.getLogger().warning("[MonsterMaze] Could not refresh mob disguise for "
+                        + player.getName() + ": " + failure.getClass().getSimpleName());
+            }
+        }
+    }
+
     private void rewriteSpawn(PacketEvent event) {
         try {
             if (event.getPacket().getUUIDs().size() == 0) return;
@@ -65,6 +85,8 @@ public final class MonsterDisguiseListener {
             // Snow Golem on the client.
             if (skin == null) skin = UtilEnt.getPendingSpawnSkin();
             if (skin == null) return;
+            MobThemeManager themes = plugin.getMobThemeManager();
+            if (themes != null) skin = themes.forViewer(event.getPlayer(), uuid);
 
             EntityType type = resolveClientType(skin);
             if (type == null) return;
