@@ -5,8 +5,8 @@ author: MonsterMaze contributors
 description: Isolated solo Snake gameplay and late-game magma cube hazard test.
 commands:
   snake:
-    description: Start and control the standalone Snake solo test.
-    usage: /snake <start|stop|stats|hazard now|off|status>
+    description: Start Snake Solo and manage test cosmetics.
+    usage: /snake <start|stop|stats|hazard|cosmetic>
 permissions:
   snake.admin:
     description: Allows administrative control of the Snake prototype.

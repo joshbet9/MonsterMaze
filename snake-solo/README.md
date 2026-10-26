@@ -12,8 +12,17 @@ Install `SnakeSoloStandalone.jar` into the 1.8.8 server's `plugins` folder and r
 - `/snake hazard now` — spawn a magma-cube hazard immediately for rapid testing.
 - `/snake hazard off` — remove cubes and disable further hazards this run.
 - `/snake hazard status` — show whether the late-game hazard is waiting, enabled or disabled.
+- `/snake cosmetic status` — show whether the Ability Colour Line is unlocked/equipped.
+- `/snake cosmetic equip` / `/snake cosmetic off` — equip or remove the line.
+- `/snake cosmetic unlock <player>` — operator-only prototype unlock for an online player.
 
 Hotbar power-ups: feather (speed), nether star (brief invulnerability), and cookie (reverse). The roulette appears in hotbar slot 9, as requested in the forum proposal.
+
+## Ability Colour Line prototype
+
+The line is per-player and must be both unlocked and equipped. With it active, the snake and every tail segment turn **yellow for Speed**, **cyan for Super Snake/invulnerability**, and **purple for Reverse**, then return to the base lime colour. If the line is not unlocked or is not equipped, the existing four-colour Super Snake rainbow remains. The colour is set on the actual sheep entities rather than sent as viewer-specific block/entity packets, so every player watching that snake sees the same ability colour. If powers overlap, Super Snake takes visual priority, followed by Speed and then Reverse.
+
+For a quick test, an operator can run `/snake cosmetic unlock <player>`, then the player uses `/snake cosmetic equip`. Use `/snake cosmetic off` to verify the default rainbow fallback.
 
 ## Gameplay in this prototype
 

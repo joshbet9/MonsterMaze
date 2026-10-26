@@ -26,4 +26,10 @@ debuff-base-seconds: 4
 debuff-hit-increment-seconds: 2
 debuff-max-seconds: 12
 debuff-roulette-ticks: 40
+
+# Prototype cosmetic entitlement/equipment, stored by player UUID.
+# Operators can test-grant the unlock with /snake cosmetic unlock <player>.
+cosmetics:
+  ability-colour-line-unlocked: []
+  ability-colour-line-equipped: []
 records: []

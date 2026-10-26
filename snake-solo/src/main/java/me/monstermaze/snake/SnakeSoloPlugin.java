@@ -51,6 +51,11 @@ import java.util.Random;
 
 public final class SnakeSoloPlugin extends JavaPlugin implements Listener, CommandExecutor {
     private static final String ARENA_WORLD = "snake_solo";
+    private static final String COSMETIC_UNLOCKED_KEY = "cosmetics.ability-colour-line-unlocked";
+    private static final String COSMETIC_EQUIPPED_KEY = "cosmetics.ability-colour-line-equipped";
+    private static final DyeColor[] DEFAULT_SUPER_SNAKE_COLOURS = new DyeColor[] {
+            DyeColor.RED, DyeColor.YELLOW, DyeColor.GREEN, DyeColor.BLUE
+    };
     private final Random random = new Random();
     private final List<RunRecord> records = new ArrayList<RunRecord>();
     private World arena;
@@ -107,6 +112,10 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
             showRecords(sender);
             return true;
         }
+        if ("cosmetic".equals(sub)) {
+            handleCosmeticCommand(sender, args);
+            return true;
+        }
         if ("hazard".equals(sub)) {
             handleHazardCommand(sender, args);
             return true;
@@ -121,6 +130,8 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
         sender.sendMessage(ChatColor.YELLOW + "/snake stop" + ChatColor.GRAY + " - stop and restore your player state");
         sender.sendMessage(ChatColor.YELLOW + "/snake stats" + ChatColor.GRAY + " - show top runs");
         sender.sendMessage(ChatColor.YELLOW + "/snake hazard now|off|status" + ChatColor.GRAY + " - test the late-game hazard");
+        sender.sendMessage(ChatColor.YELLOW + "/snake cosmetic status|equip|off" + ChatColor.GRAY + " - manage the ability-colour line");
+        sender.sendMessage(ChatColor.YELLOW + "/snake cosmetic unlock <player>" + ChatColor.GRAY + " - operator-only test unlock");
     }
 
     private void startRun(Player player) {
@@ -292,6 +303,7 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
             return;
         }
         updateRoulette(active);
+        updateSnakeColours(active);
     }
 
     private void moveSnake(Run active) {
@@ -372,13 +384,50 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
             if (loc == null) loc = active.head.getLocation().clone();
             loc.setY(64.0);
             Sheep segment = arena.spawn(loc, Sheep.class);
-            segment.setColor(DyeColor.LIME);
+            segment.setColor(active.lastAppliedColour == null ? active.baseColour : active.lastAppliedColour);
             segment.setRemoveWhenFarAway(false);
             segment.setCustomNameVisible(false);
             disableAi(segment);
             active.tail.add(segment);
         }
         active.maxTailLength = Math.max(active.maxTailLength, active.tail.size());
+    }
+
+    private void updateSnakeColours(Run active) {
+        boolean lineEquipped = isAbilityColourLineEquipped(active.player);
+        boolean legacyRainbow = !lineEquipped && active.invulnerable();
+        DyeColor target;
+        if (legacyRainbow) {
+            // Preserve the original four-colour Super Snake rainbow for players without
+            // the cosmetic equipped (including players who have not unlocked it).
+            target = DEFAULT_SUPER_SNAKE_COLOURS[random.nextInt(DEFAULT_SUPER_SNAKE_COLOURS.length)];
+        } else if (lineEquipped && active.invulnerable()) {
+            target = DyeColor.CYAN;       // Super Snake / invulnerability
+        } else if (lineEquipped && active.ticks < active.speedBoostEndsAt) {
+            target = DyeColor.YELLOW;     // Speed
+        } else if (lineEquipped && active.ticks < active.reverseEndsAt) {
+            target = DyeColor.PURPLE;     // Reverse
+        } else {
+            target = active.baseColour;
+        }
+
+        // The default rainbow intentionally changes every tick. All other states only
+        // update when the colour changes, avoiding needless work for long tails.
+        if (!legacyRainbow && target == active.lastAppliedColour) return;
+        for (Sheep segment : active.tail) {
+            if (segment != null && segment.isValid()) segment.setColor(target);
+        }
+        active.lastAppliedColour = target;
+    }
+
+    private boolean isAbilityColourLineUnlocked(Player player) {
+        return player != null && getConfig().getStringList(COSMETIC_UNLOCKED_KEY)
+                .contains(player.getUniqueId().toString());
+    }
+
+    private boolean isAbilityColourLineEquipped(Player player) {
+        return isAbilityColourLineUnlocked(player)
+                && getConfig().getStringList(COSMETIC_EQUIPPED_KEY).contains(player.getUniqueId().toString());
     }
 
     private void spawnFood(Run active) {
@@ -565,6 +614,72 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
             sender.sendMessage(ChatColor.GRAY + "Magma hazard: " + state + " (elapsed " + (run.ticks / 20) + "s).");
         } else {
             sender.sendMessage(ChatColor.YELLOW + "Usage: /snake hazard <now|off|status>");
+        }
+    }
+
+    private void handleCosmeticCommand(CommandSender sender, String[] args) {
+        String action = args.length > 1 ? args[1].toLowerCase() : "status";
+        if ("unlock".equals(action)) {
+            if (!sender.hasPermission("snake.admin")) {
+                sender.sendMessage(ChatColor.RED + "Only an operator can grant this prototype cosmetic unlock.");
+                return;
+            }
+            if (args.length < 3) {
+                sender.sendMessage(ChatColor.YELLOW + "Usage: /snake cosmetic unlock <online-player>");
+                return;
+            }
+            Player target = Bukkit.getPlayer(args[2]);
+            if (target == null) {
+                sender.sendMessage(ChatColor.RED + "That player must be online for the prototype unlock.");
+                return;
+            }
+            String id = target.getUniqueId().toString();
+            List<String> unlocked = new ArrayList<String>(getConfig().getStringList(COSMETIC_UNLOCKED_KEY));
+            if (!unlocked.contains(id)) {
+                unlocked.add(id);
+                getConfig().set(COSMETIC_UNLOCKED_KEY, unlocked);
+                saveConfig();
+            }
+            sender.sendMessage(ChatColor.GREEN + "Ability Colour Line unlocked for " + target.getName() + ".");
+            target.sendMessage(ChatColor.GREEN + "You unlocked the Snake Ability Colour Line. Use /snake cosmetic equip to activate it.");
+            return;
+        }
+
+        if (!(sender instanceof Player)) {
+            sender.sendMessage(ChatColor.YELLOW + "Console can grant unlocks with /snake cosmetic unlock <online-player>.");
+            return;
+        }
+        Player player = (Player) sender;
+        String id = player.getUniqueId().toString();
+        if ("equip".equals(action) || "on".equals(action)) {
+            if (!isAbilityColourLineUnlocked(player)) {
+                player.sendMessage(ChatColor.RED + "You haven't unlocked the Ability Colour Line. An operator can test-unlock it with /snake cosmetic unlock " + player.getName() + ".");
+                return;
+            }
+            List<String> equipped = new ArrayList<String>(getConfig().getStringList(COSMETIC_EQUIPPED_KEY));
+            if (!equipped.contains(id)) {
+                equipped.add(id);
+                getConfig().set(COSMETIC_EQUIPPED_KEY, equipped);
+                saveConfig();
+            }
+            player.sendMessage(ChatColor.GREEN + "Ability Colour Line equipped: Speed = yellow, Super Snake = cyan, Reverse = purple. Other players see the same colours.");
+        } else if ("off".equals(action) || "unequip".equals(action)) {
+            List<String> equipped = new ArrayList<String>(getConfig().getStringList(COSMETIC_EQUIPPED_KEY));
+            if (equipped.remove(id)) {
+                getConfig().set(COSMETIC_EQUIPPED_KEY, equipped);
+                saveConfig();
+            }
+            player.sendMessage(ChatColor.GRAY + "Ability Colour Line unequipped. The default Super Snake rainbow is restored.");
+        } else if ("status".equals(action)) {
+            if (isAbilityColourLineEquipped(player)) {
+                player.sendMessage(ChatColor.GREEN + "Ability Colour Line: equipped.");
+            } else if (isAbilityColourLineUnlocked(player)) {
+                player.sendMessage(ChatColor.YELLOW + "Ability Colour Line: unlocked but not equipped.");
+            } else {
+                player.sendMessage(ChatColor.GRAY + "Ability Colour Line: not unlocked. Default Super Snake rainbow remains enabled.");
+            }
+        } else {
+            player.sendMessage(ChatColor.YELLOW + "Usage: /snake cosmetic <status|equip|off>");
         }
     }
 
@@ -824,6 +939,8 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
         final List<MagmaCube> hazards = new ArrayList<MagmaCube>();
         final Deque<Location> trail = new ArrayDeque<Location>();
         Sheep head;
+        final DyeColor baseColour;
+        DyeColor lastAppliedColour;
         BukkitTask task;
         int ticks;
         int slimesEaten;
@@ -850,6 +967,8 @@ public final class SnakeSoloPlugin extends JavaPlugin implements Listener, Comma
             this.player = player;
             this.saved = saved;
             this.head = head;
+            this.baseColour = head.getColor();
+            this.lastAppliedColour = this.baseColour;
         }
 
         boolean invulnerable() { return ticks < invulnerableEndsAt; }
