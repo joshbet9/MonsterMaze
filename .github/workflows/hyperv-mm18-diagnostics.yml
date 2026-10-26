@@ -1,0 +1,76 @@
+name: Inspect Hyper-V Monster Maze 1.8 deployment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/hyperv-mm18-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: ${{ github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-22.04
+    environment: hyperv
+    timeout-minutes: 10
+    steps:
+      - name: Connect runner to Hyper-V network
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions
+          ping: 100.98.188.97
+
+      - name: Prepare SSH credentials
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HYPERV_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.HYPERV_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/monstermaze_hyperv"
+          printf '%s\\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/monstermaze_hyperv" "$HOME/.ssh/known_hosts"
+
+      - name: Read Hyper-V 1.8 service and plugin state
+        shell: bash
+        env:
+          HYPERV_SSH_HOST: ${{ secrets.HYPERV_SSH_HOST }}
+          HYPERV_SSH_USER: ${{ secrets.HYPERV_SSH_USER }}
+          HYPERV_SSH_PORT: ${{ secrets.HYPERV_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          port="${HYPERV_SSH_PORT:-22}"
+          ssh -p "$port" -i "$HOME/.ssh/monstermaze_hyperv" \
+            -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$HYPERV_SSH_USER@$HYPERV_SSH_HOST" "sudo -n bash -s" <<'REMOTE'
+          set -u
+          SERVICE="monstermaze-18.service"
+          ROOT="/home/monstermaze/servers/1.8"
+          PLUGIN="$ROOT/plugins/MonsterMazeStandalone.jar"
+          echo "=== service state ==="
+          timeout 10 systemctl show "$SERVICE" -p ActiveState -p SubState -p MainPID -p ExecMainStartTimestamp -p Result || true
+          echo "=== plugin files ==="
+          ls -l --full-time "$PLUGIN" "$ROOT/plugins/MinigameCosmeticPrototypes.jar" /tmp/MonsterMazeStandalone-*.jar /home/monstermaze/deployment-backups/hyperv/MonsterMazeStandalone-*.jar 2>/dev/null || true
+          echo "=== installed plugin hash ==="
+          sha256sum "$PLUGIN" 2>/dev/null || true
+          echo "=== latest.log marker ==="
+          if grep -Fq 'MonsterMazeStandalone enabled.' "$ROOT/logs/latest.log" 2>/dev/null; then
+            echo "MonsterMazeStandalone startup marker present."
+          else
+            echo "MonsterMazeStandalone startup marker missing."
+          fi
+          echo "=== filtered recent service events ==="
+          timeout 10 journalctl -u "$SERVICE" --since '-15 minutes' --no-pager -o cat 2>/dev/null \
+            | grep -Ei 'MonsterMazeStandalone enabled|Starting|Started|Stopping|Stopped|failed|exception|error|Could not load plugin' \
+            | tail -n 40 || true
+          REMOTE
