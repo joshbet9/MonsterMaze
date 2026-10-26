@@ -4,6 +4,10 @@ main: me.monstermaze.MonsterMazePlugin
 author: You
 description: Standalone Monster Maze for local testing (ported from Mineplex)
 commands:
+  games:
+    aliases: [gameselect, gamemenu]
+    description: Open the sandbox game selector
+    usage: /games
   mm:
     description: Monster Maze commands
     usage: /mm <start|stop|setcenter|status|kit|kits|pb|lb|challenge>
