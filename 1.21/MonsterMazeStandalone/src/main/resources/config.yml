@@ -12,3 +12,14 @@ forced-pattern: -1
 mob-overrides:
   volcano: witch
   siberian: creeper
+
+# Set true when this plugin shares a server with Mineplex Reborn.
+cohosted-mode: false
+
+# Optional behaviour ported from the Mineplex Reborn Monster Maze source.
+monstermaze:
+  safe-pad-enhancements:
+    enabled: false
+    surface-colour-enabled: false
+    # Legacy Minecraft dye index 0-15; mapped to the equivalent terracotta in 1.21.
+    surface-colour-data: 5
