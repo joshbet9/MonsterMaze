@@ -2,6 +2,8 @@
 
 An isolated Spigot 1.8.8 plugin for prototyping cosmetics for Runner, Bacon Brawl, Dragon Escape, Evolution and Micro Battles. It is deliberately kept separate from the production Monster Maze and Snake Solo modules. The corresponding game loops are not included in this repository, so the prototype exposes adapter hooks rather than pretending those games are already integrated.
 
+The 1.8 and 1.21 Monster Maze standalone servers also provide a `/games` pre-lobby selector in a separate protected `mm_sandbox` world. Choosing Monster Maze transfers the player to its original lobby. Other choices remain in the sandbox and offer preview-only menus; on Spigot 1.8.8 those menus can invoke this plugin's visual previews. The full Runner, Bacon Brawl, Dragon Escape, Evolution and Micro Battles game loops are not available here, and the selector intentionally does not fake a playable round.
+
 ## Build and install for testing
 
 From the repository root:
