@@ -274,6 +274,13 @@ jobs:
         env:
           MAVEN_OPTS: '-Xmx2G'
         run: mvn -B clean package
+      - name: Build minigame cosmetic prototypes for the 1.8 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mvn -B -f cosmetic-prototypes/server/pom.xml clean package
+          test -s cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar
+          jar tf cosmetic-prototypes/server/target/MinigameCosmeticPrototypes.jar | grep -q '^plugin.yml$'
       - name: Run production Solo packer
         shell: pwsh
         working-directory: solo
@@ -291,7 +298,17 @@ jobs:
           test -f solo/solo-dist.zip
           unzip -l solo/solo-dist.zip | grep -q 'runtime/jdk8/bin/java.exe'
           unzip -l solo/solo-dist.zip | grep -q 'server/plugins/MonsterMazeStandalone.jar'
+          unzip -l solo/solo-dist.zip | grep -q 'server/plugins/MinigameCosmeticPrototypes.jar'
           unzip -l solo/solo-dist.zip | grep -q 'version.json'
+          python - <<'PY'
+          import json
+          with open('solo/solo-dist/version.json', encoding='utf-8') as f:
+              manifest = json.load(f)
+          entry = manifest['files'].get('server/plugins/MinigameCosmeticPrototypes.jar')
+          assert entry, 'Cosmetic plugin is missing from the update manifest.'
+          assert entry['url'].endswith('/MonsterMaze-Solo-1.8-Cosmetics.jar'), entry['url']
+          assert len(entry['sha256']) == 64, 'Cosmetic plugin SHA-256 is missing or malformed.'
+          PY
 
   release-package-1-21:
     name: Validate release packaging 1.21
