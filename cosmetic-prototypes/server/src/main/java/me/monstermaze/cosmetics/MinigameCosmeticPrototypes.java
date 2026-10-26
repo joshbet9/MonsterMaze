@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 
@@ -47,6 +48,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
     private static final List<String> EVOLUTION_CHOICES = Collections.unmodifiableList(
             Arrays.asList("dragon-egg"));
 
+    private final Random random = new Random();
     private final Map<UUID, Pig> baconPigs = new LinkedHashMap<UUID, Pig>();
     private final Map<UUID, Integer> baconKills = new LinkedHashMap<UUID, Integer>();
     private final Map<UUID, ArmorStand> baconAccessories = new LinkedHashMap<UUID, ArmorStand>();
