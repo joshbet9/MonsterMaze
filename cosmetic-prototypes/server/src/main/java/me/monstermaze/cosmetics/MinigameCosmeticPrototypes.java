@@ -211,8 +211,9 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
 
         String key = blockKey(beacon);
         if (!beaconTints.containsKey(key)) {
-            beaconTints.put(key, new BeaconTint(beacon, filter.getState(), (byte) Material.STAINED_GLASS.getId(), data.byteValue()));
+            beaconTints.put(key, new BeaconTint(beacon, filter.getState(), data.byteValue()));
         }
+        beaconTints.get(key).appliedData = data.byteValue();
         filter.setType(Material.STAINED_GLASS, false);
         filter.setData(data.byteValue(), false);
         return true;
@@ -408,16 +409,17 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
     private void previewBaconBrawl(final Player player) {
         Location location = previewStart(player.getLocation(), 4.0, 0.0);
         final Pig pig = (Pig) location.getWorld().spawnEntity(location, EntityType.PIG);
+        final UUID previewId = UUID.randomUUID();
         pig.setCustomName(ChatColor.GOLD + "Bacon Brawl Leader");
         pig.setCustomNameVisible(true);
         String cosmetic = getEquipped(player.getUniqueId(), "baconbrawl");
         if (cosmetic == null || !PIG_ACCESSORIES.containsKey(cosmetic)) cosmetic = "crown";
-        attachPigAccessory(player.getUniqueId(), pig, cosmetic);
+        attachPigAccessory(previewId, pig, cosmetic);
         player.sendMessage(ChatColor.GREEN + "Bacon Brawl leader pig preview: " + cosmetic + ". Temporary pig lasts 20 seconds.");
 
         new BukkitRunnable() {
             @Override public void run() {
-                removePigAccessory(player.getUniqueId());
+                removePigAccessory(previewId);
                 if (pig.isValid()) pig.remove();
             }
         }.runTaskLater(this, 20 * 20);
@@ -448,13 +450,22 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         if (pig.getPassenger() != null) return;
         ArmorStand stand = (ArmorStand) pig.getWorld().spawnEntity(pig.getLocation(), EntityType.ARMOR_STAND);
         stand.setVisible(false);
-        stand.setGravity(false);
+        setNoGravityIfSupported(stand);
         stand.setSmall(true);
         stand.setBasePlate(false);
         Material helmet = PIG_ACCESSORIES.get(choice);
         if (helmet != null) stand.setHelmet(new ItemStack(helmet));
         pig.setPassenger(stand);
         baconAccessories.put(owner, stand);
+    }
+
+    private void setNoGravityIfSupported(ArmorStand stand) {
+        // setGravity was added after the legacy 1.8.8 Bukkit API; invoke it only if present.
+        try {
+            stand.getClass().getMethod("setGravity", Boolean.TYPE).invoke(stand, Boolean.FALSE);
+        } catch (Exception ignored) {
+            // Armor stands still work on 1.8.8; their small size keeps the preview unobtrusive.
+        }
     }
 
     private void removePigAccessory(UUID owner) {
@@ -628,13 +639,11 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
     private static final class BeaconTint {
         final Block beacon;
         final BlockState original;
-        final byte appliedType;
-        final byte appliedData;
+        byte appliedData;
 
-        BeaconTint(Block beacon, BlockState original, byte appliedType, byte appliedData) {
+        BeaconTint(Block beacon, BlockState original, byte appliedData) {
             this.beacon = beacon;
             this.original = original;
-            this.appliedType = appliedType;
             this.appliedData = appliedData;
         }
     }
