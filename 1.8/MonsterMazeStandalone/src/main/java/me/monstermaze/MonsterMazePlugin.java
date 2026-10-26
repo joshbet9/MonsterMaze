@@ -1,6 +1,7 @@
 package me.monstermaze;
 
 import me.monstermaze.command.MMCommand;
+import me.monstermaze.cosmetics.MinigameCosmeticPrototypes;
 import me.monstermaze.command.MMDebugCommand;
 import me.monstermaze.command.PauseCommand;
 import me.monstermaze.command.DebugSoloModeListener;
@@ -40,6 +41,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     private ChallengeManager challengeManager;
     private CompetitiveMatchTracker competitiveMatchTracker;
     private StatusHeartbeatReporter statusHeartbeatReporter;
+    private MinigameCosmeticPrototypes cosmeticPrototypes;
 
     @Override
     public void onEnable() {
@@ -74,6 +76,9 @@ public class MonsterMazePlugin extends JavaPlugin {
         this.soloRunCompletionListener = new SoloRunCompletionListener(this);
         this.statusHeartbeatReporter = new StatusHeartbeatReporter(this);
         gameManager.applyMap();
+        // Keep all playable cosmetic test modes inside the main 1.8 plugin. No sidecar plugin is required.
+        this.cosmeticPrototypes = new MinigameCosmeticPrototypes(this);
+        this.cosmeticPrototypes.enable();
         new LobbyListener(this, gameManager, voidWorlds);
         new BuildBypassListener(this);
         Bukkit.getPluginManager().registerEvents(new DebugSoloModeListener(this), this);
@@ -89,6 +94,7 @@ public class MonsterMazePlugin extends JavaPlugin {
     }
 
     @Override public void onDisable() {
+        if (cosmeticPrototypes != null) cosmeticPrototypes.disable();
         if (competitiveMatchTracker != null) competitiveMatchTracker.shutdown();
         if (soloRunCompletionListener != null) soloRunCompletionListener.shutdown();
         if (gameManager != null) gameManager.forceStop();
