@@ -963,14 +963,38 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         }
     }
 
+    private boolean inMicroBattlesBuildArea(Location location) {
+        if (mode != Mode.MICROBATTLES || microCenter == null || location == null
+                || location.getWorld() != world) return false;
+        return Math.abs(location.getBlockX() - microCenter.getX()) <= 20
+                && Math.abs(location.getBlockZ() - microCenter.getZ()) <= 20
+                && location.getBlockY() >= FLOOR_Y - 1
+                && location.getBlockY() <= FLOOR_Y + 8;
+    }
+
     @EventHandler
     public void onBlockBreak(BlockBreakEvent event) {
-        if (event.getBlock().getWorld() == world) event.setCancelled(true);
+        if (event.getBlock().getWorld() != world) return;
+        boolean participant = participants.contains(event.getPlayer().getUniqueId());
+        boolean isCosmeticCentre = microCenter != null
+                && event.getBlock().getX() == microCenter.getX()
+                && event.getBlock().getY() == microCenter.getY()
+                && event.getBlock().getZ() == microCenter.getZ();
+        if (mode == Mode.MICROBATTLES && participant && inMicroBattlesBuildArea(event.getBlock().getLocation())
+                && !isCosmeticCentre) return;
+        event.setCancelled(true);
     }
 
     @EventHandler
     public void onBlockPlace(BlockPlaceEvent event) {
-        if (event.getBlock().getWorld() == world) event.setCancelled(true);
+        if (event.getBlock().getWorld() != world) return;
+        if (mode == Mode.MICROBATTLES && participants.contains(event.getPlayer().getUniqueId())
+                && inMicroBattlesBuildArea(event.getBlockPlaced().getLocation())) {
+            Block placed = event.getBlockPlaced();
+            if (microCenter == null || placed.getX() != microCenter.getX()
+                    || placed.getY() != microCenter.getY() || placed.getZ() != microCenter.getZ()) return;
+        }
+        event.setCancelled(true);
     }
 
     @EventHandler
