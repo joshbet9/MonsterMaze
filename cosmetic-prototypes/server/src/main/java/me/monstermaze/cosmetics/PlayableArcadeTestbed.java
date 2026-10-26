@@ -479,7 +479,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
             if (player == null) continue;
             player.getInventory().setItem(0, namedItem(Material.REDSTONE, ChatColor.RED + "Super Snake", "Right-click: temporary invulnerability"));
             player.getInventory().setItem(1, namedItem(Material.FEATHER, ChatColor.YELLOW + "Speed", "Right-click: temporary speed"));
-            player.getInventory().setItem(2, namedItem(Material.COOKIE, ChatColor.LIGHT_PURPLE + "Reverse", "Right-click: temporary collision immunity"));
+            player.getInventory().setItem(2, namedItem(Material.COOKIE, ChatColor.LIGHT_PURPLE + "Reverse", "Right-click: temporary reverse movement"));
             List<Sheep> tail = new ArrayList<Sheep>();
             List<Location> history = new ArrayList<Location>();
             Vector back = spawn.getDirection().setY(0.0D).normalize().multiply(-0.65D);
@@ -507,7 +507,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         spawnSnakeFood();
         for (UUID id : participants) {
             Player player = Bukkit.getPlayer(id);
-            if (player != null) player.sendMessage(ChatColor.YELLOW + "Snake: grow by eating slimes and avoid every tail. Redstone = Super Snake, feather = speed, cookie = reverse.");
+            if (player != null) player.sendMessage(ChatColor.YELLOW + "Snake: steer by looking where you want to travel. Eat slimes to grow. Redstone = Super Snake, feather = speed, cookie = reverse.");
         }
     }
 
@@ -605,51 +605,83 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         for (UUID id : new ArrayList<UUID>(alive)) {
             Player player = Bukkit.getPlayer(id);
             if (player == null || !player.isOnline()) continue;
-            Location at = player.getLocation();
-            if (at.getY() < FLOOR_Y - 7 || Math.abs(at.getX() - baseX()) > SNAKE_RADIUS || Math.abs(at.getZ()) > SNAKE_RADIUS) {
-                eliminate(player, "left the Snake arena");
-                continue;
-            }
+
             List<Location> history = snakeHistory.get(id);
             List<Sheep> tail = snakeTails.get(id);
             if (history == null || tail == null || tail.isEmpty()) {
                 eliminate(player, "lost the Snake tail");
                 continue;
             }
+
+            updateSnakeTailColours(id, tail);
+            Sheep head = tail.get(0);
+            if (head == null || !head.isValid()) {
+                eliminate(player, "lost the Snake head");
+                continue;
+            }
+
+            // In this testbed, the mounted sheep follows the player's look direction.
+            // Speed increases the step; Reverse moves backwards for its two-second window.
+            boolean reversing = isSnakeReversing(id);
+            if (!reversing || isSnakeAbilityActive(id, "reverse")) {
+                Vector direction = player.getLocation().getDirection().setY(0.0D);
+                if (direction.lengthSquared() < 0.001D) direction = head.getLocation().getDirection().setY(0.0D);
+                if (direction.lengthSquared() > 0.001D) {
+                    direction.normalize();
+                    if (reversing) direction.multiply(-1.0D);
+                    double step = 0.48D + Math.min(0.12D, tail.size() * 0.002D);
+                    if (isSnakeAbilityActive(id, "speed")) step *= 1.5D;
+                    direction.multiply(step);
+                    Location next = head.getLocation().clone().add(direction);
+                    next.setY(head.getLocation().getY());
+                    next.setYaw(player.getLocation().getYaw());
+                    next.setPitch(0.0F);
+                    head.teleport(next);
+                }
+            }
+
+            Location at = head.getLocation();
+            if (at.getY() < FLOOR_Y - 7 || Math.abs(at.getX() - baseX()) > SNAKE_RADIUS
+                    || Math.abs(at.getZ()) > SNAKE_RADIUS) {
+                eliminate(player, "left the Snake arena");
+                continue;
+            }
+
             Location last = history.get(history.size() - 1);
             if (at.distanceSquared(last) > 0.35D) {
                 history.add(at.clone());
                 if (history.size() > 320) history.remove(0);
             }
-            int target = snakeTailTarget.containsKey(id) ? snakeTailTarget.get(id).intValue() : 4;
+
+            int target = snakeTailTarget.containsKey(id) ? snakeTailTarget.get(id).intValue() : 5;
             while (tail.size() < target) {
-                Location loc = tail.isEmpty() ? history.get(0).clone()
-                        : tail.get(tail.size() - 1).getLocation().clone();
+                Location loc = tail.get(tail.size() - 1).getLocation().clone();
                 Sheep sheep = (Sheep) world.spawnEntity(loc, EntityType.SHEEP);
                 sheep.setRemoveWhenFarAway(false);
                 tail.add(sheep);
             }
-            for (int i = 0; i < tail.size(); i++) {
+
+            for (int i = 1; i < tail.size(); i++) {
                 Sheep sheep = tail.get(i);
                 if (sheep == null || !sheep.isValid()) continue;
-                // The first sheep is the player mount, like the original Snake game.
-                if (i == 0) continue;
                 int trailIndex = Math.max(0, history.size() - 1 - (i * 4));
                 Location targetLoc = history.get(trailIndex).clone();
                 targetLoc.setYaw(at.getYaw());
                 targetLoc.setPitch(0.0F);
                 sheep.teleport(targetLoc);
             }
-            updateSnakeTailColours(id, tail);
+
+            // Super Snake and Reverse suppress tail-collision elimination during their active window.
             if (isSnakeInvulnerable(id) || isSnakeReversing(id)) continue;
 
             for (UUID otherId : participants) {
                 List<Sheep> otherTail = snakeTails.get(otherId);
                 if (otherTail == null) continue;
-                int start = otherId.equals(id) ? 3 : 0;
-                for (int i = start; i < otherTail.size(); i++) {
+                int firstSegment = otherId.equals(id) ? 3 : 0;
+                for (int i = firstSegment; i < otherTail.size(); i++) {
                     Sheep segment = otherTail.get(i);
-                    if (segment != null && segment.isValid() && player.getLocation().distanceSquared(segment.getLocation()) < 1.25D) {
+                    if (segment != null && segment.isValid()
+                            && head.getLocation().distanceSquared(segment.getLocation()) < 1.25D) {
                         world.playEffect(segment.getLocation(), Effect.EXPLOSION_HUGE, 0);
                         eliminate(player, "hit a snake tail");
                         break;
@@ -658,6 +690,7 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
                 if (!alive.contains(id)) break;
             }
         }
+
         if (ticks % 20L == 0L) {
             for (Slime slime : new ArrayList<Slime>(snakeFood)) {
                 if (slime == null || !slime.isValid() || slime.isDead()) {
@@ -666,9 +699,12 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
                 }
                 for (UUID id : new ArrayList<UUID>(alive)) {
                     Player player = Bukkit.getPlayer(id);
-                    if (player == null || player.getLocation().distanceSquared(slime.getLocation()) > 3.0D) continue;
+                    List<Sheep> tail = snakeTails.get(id);
+                    Location headLocation = tail == null || tail.isEmpty() || !tail.get(0).isValid()
+                            ? (player == null ? null : player.getLocation()) : tail.get(0).getLocation();
+                    if (player == null || headLocation == null || headLocation.distanceSquared(slime.getLocation()) > 3.0D) continue;
                     Integer target = snakeTailTarget.get(id);
-                    snakeTailTarget.put(id, Integer.valueOf((target == null ? 4 : target.intValue()) + 2));
+                    snakeTailTarget.put(id, Integer.valueOf((target == null ? 5 : target.intValue()) + 2));
                     slime.remove();
                     snakeFood.remove(slime);
                     player.playSound(player.getLocation(), org.bukkit.Sound.EAT, 1.0F, 1.0F);
@@ -693,8 +729,10 @@ public final class PlayableArcadeTestbed implements Listener, CommandExecutor {
         if (active) colour = cosmetics.getSnakeAbilityColour(id, ability);
         if (active && "super".equals(ability) && colour == null) {
             // Preserve the original rainbow Super Snake effect for players without a Snake line.
-            if (ticks % 4L == 0L) colour = DyeColor.getByDyeData((byte) random.nextInt(16));
-            else return;
+            if (ticks % 4L == 0L) {
+                DyeColor[] classic = new DyeColor[] {DyeColor.RED, DyeColor.YELLOW, DyeColor.GREEN, DyeColor.BLUE};
+                colour = classic[random.nextInt(classic.length)];
+            } else return;
         }
         if (colour == null) colour = snakeBaseColour.get(id);
         if (colour == null) colour = DyeColor.RED;
