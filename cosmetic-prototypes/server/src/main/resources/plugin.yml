@@ -8,6 +8,10 @@ commands:
     aliases: [gamecosmetic, gamecosmetics]
     description: Unlock, equip and preview isolated minigame cosmetic prototypes.
     usage: /cosmeticproto <list|status|unlock|equip|off|preview>
+  arcadetest:
+    aliases: [arcadegame, arcadegames]
+    description: Join and start playable 1.8.8 arcade cosmetic test rounds.
+    usage: /arcadetest <join|start|stop|unlock|leave|list|status>
 permissions:
   minigamecosmetics.admin:
     description: Allows prototype cosmetic unlocks and testing.
