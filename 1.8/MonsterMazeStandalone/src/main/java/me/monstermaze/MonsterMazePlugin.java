@@ -115,6 +115,8 @@ public class MonsterMazePlugin extends JavaPlugin {
     public void setSoloMode(boolean enabled) { this.soloMode = enabled; getConfig().set("solo-mode", enabled); saveConfig(); }
     public boolean isDebug() { return debug; }
     public boolean isRecordRuns() { return recordRuns; }
+    /** True when sharing a server with Mineplex Reborn rather than owning player lobby routing. */
+    public boolean isCohostedMode() { return getConfig().getBoolean("cohosted-mode", false); }
     public BackendClient getBackendClient() { return backendClient; }
     public RunRecorder getRunRecorder() { return runRecorder; }
 }
