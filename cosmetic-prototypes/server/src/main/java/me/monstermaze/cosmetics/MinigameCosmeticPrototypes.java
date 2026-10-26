@@ -1,6 +1,9 @@
 package me.monstermaze.cosmetics;
 
 import java.util.ArrayList;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -22,7 +25,6 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
-import org.bukkit.craftbukkit.v1_8_R3.entity.CraftPlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -37,8 +39,6 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
-import net.minecraft.server.v1_8_R3.EnumParticle;
-import net.minecraft.server.v1_8_R3.PacketPlayOutWorldParticles;
 
 /**
  * Isolated server-side visual prototype harness. It exposes methods a future
@@ -62,6 +62,7 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
     private final Map<UUID, ArmorStand> baconAccessories = new LinkedHashMap<UUID, ArmorStand>();
     private final Map<String, BeaconTint> beaconTints = new LinkedHashMap<String, BeaconTint>();
     private final Map<UUID, MicroBattlesArena> microBattlesArenas = new LinkedHashMap<UUID, MicroBattlesArena>();
+    private boolean packetReflectionWarningLogged;
     private final Map<UUID, List<Entity>> previewEntities = new LinkedHashMap<UUID, List<Entity>>();
 
     private UUID baconLeader;
@@ -111,14 +112,14 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         addGlassColour("black", 15);
 
         // The set is shared by the glass tint and the per-viewer border particle packet.
-        addMicroBattlesTheme("aqua", 3, EnumParticle.WATER_WAKE);
-        addMicroBattlesTheme("ember", 14, EnumParticle.FLAME);
-        addMicroBattlesTheme("forest", 5, EnumParticle.VILLAGER_HAPPY);
-        addMicroBattlesTheme("royal", 10, EnumParticle.PORTAL);
-        addMicroBattlesTheme("sunset", 6, EnumParticle.NOTE);
-        addMicroBattlesTheme("solar", 4, EnumParticle.CRIT);
-        addMicroBattlesTheme("frost", 0, EnumParticle.SNOW_SHOVEL);
-        addMicroBattlesTheme("void", 15, EnumParticle.CRIT_MAGIC);
+        addMicroBattlesTheme("aqua", 3, "WATER_WAKE");
+        addMicroBattlesTheme("ember", 14, "FLAME");
+        addMicroBattlesTheme("forest", 5, "VILLAGER_HAPPY");
+        addMicroBattlesTheme("royal", 10, "PORTAL");
+        addMicroBattlesTheme("sunset", 6, "NOTE");
+        addMicroBattlesTheme("solar", 4, "CRIT");
+        addMicroBattlesTheme("frost", 0, "SNOW_SHOVEL");
+        addMicroBattlesTheme("void", 15, "CRIT_MAGIC");
 
         PIG_ACCESSORIES.put("crown", Material.GOLD_HELMET);
         PIG_ACCESSORIES.put("top_hat", Material.OBSIDIAN);
@@ -138,8 +139,8 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         GLASS_COLOURS.put(name, (byte) data);
     }
 
-    private static void addMicroBattlesTheme(String name, int glassData, EnumParticle particle) {
-        MICRO_BATTLES_THEMES.put(name, new MicroBattlesTheme(name, (byte) glassData, particle));
+    private static void addMicroBattlesTheme(String name, int glassData, String particleName) {
+        MICRO_BATTLES_THEMES.put(name, new MicroBattlesTheme(name, (byte) glassData, particleName));
     }
 
     @Override
@@ -402,14 +403,40 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
         arena.appliedTheme = null;
     }
 
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private void sendParticleToPlayer(Player player, MicroBattlesTheme theme, Location location) {
         if (player == null || !player.isOnline() || location == null
                 || location.getWorld() == null || location.getWorld() != player.getWorld()) return;
-        PacketPlayOutWorldParticles packet = new PacketPlayOutWorldParticles(
-                theme.particle, false,
-                (float) location.getX(), (float) location.getY(), (float) location.getZ(),
-                0.12F, 0.12F, 0.12F, 0.015F, 2);
-        ((CraftPlayer) player).getHandle().playerConnection.sendPacket(packet);
+        try {
+            // Keep the build API-only: resolve version-specific 1.8.8 server packet classes at runtime.
+            ClassLoader loader = player.getClass().getClassLoader();
+            Class<?> particleClass = Class.forName("net.minecraft.server.v1_8_R3.EnumParticle", true, loader);
+            Object particle = Enum.valueOf((Class<? extends Enum>) particleClass.asSubclass(Enum.class), theme.particleName);
+            Class<?> packetClass = Class.forName("net.minecraft.server.v1_8_R3.PacketPlayOutWorldParticles", true, loader);
+            Constructor<?> constructor = packetClass.getConstructor(
+                    particleClass, Boolean.TYPE,
+                    Float.TYPE, Float.TYPE, Float.TYPE,
+                    Float.TYPE, Float.TYPE, Float.TYPE, Float.TYPE,
+                    Integer.TYPE, int[].class);
+            Object packet = constructor.newInstance(new Object[] {
+                    particle, Boolean.FALSE,
+                    Float.valueOf((float) location.getX()), Float.valueOf((float) location.getY()), Float.valueOf((float) location.getZ()),
+                    Float.valueOf(0.12F), Float.valueOf(0.12F), Float.valueOf(0.12F), Float.valueOf(0.015F),
+                    Integer.valueOf(2), new int[0]
+            });
+            Object handle = player.getClass().getMethod("getHandle").invoke(player);
+            Field connectionField = handle.getClass().getField("playerConnection");
+            Object connection = connectionField.get(handle);
+            Class<?> packetInterface = Class.forName("net.minecraft.server.v1_8_R3.Packet", true, loader);
+            Method sendPacket = connection.getClass().getMethod("sendPacket", packetInterface);
+            sendPacket.invoke(connection, packet);
+        } catch (Exception ex) {
+            if (!packetReflectionWarningLogged) {
+                packetReflectionWarningLogged = true;
+                getLogger().warning("Could not send private Micro Battles particle packets (requires Spigot 1.8.8 / v1_8_R3): "
+                        + ex.getClass().getSimpleName() + ": " + ex.getMessage());
+            }
+        }
     }
 
     private void previewMicroBattles(final Player player) {
@@ -888,12 +915,12 @@ public final class MinigameCosmeticPrototypes extends JavaPlugin implements Comm
     private static final class MicroBattlesTheme {
         final String key;
         final byte glassData;
-        final EnumParticle particle;
+        final String particleName;
 
-        MicroBattlesTheme(String key, byte glassData, EnumParticle particle) {
+        MicroBattlesTheme(String key, byte glassData, String particleName) {
             this.key = key;
             this.glassData = glassData;
-            this.particle = particle;
+            this.particleName = particleName;
         }
     }
 
