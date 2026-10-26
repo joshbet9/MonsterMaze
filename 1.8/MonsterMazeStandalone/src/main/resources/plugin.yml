@@ -1,13 +1,13 @@
-name: MonsterMazeStandalone
+name: MonsterMazeModern
 version: 1.0.0
 main: me.monstermaze.MonsterMazePlugin
 author: You
-description: Standalone Monster Maze for local testing (ported from Mineplex)
+description: Standalone enhanced Monster Maze co-hosted beside Mineplex Reborn
 commands:
-  games:
-    aliases: [gameselect, gamemenu]
-    description: Open the sandbox game selector
-    usage: /games
+  mmmodernmenu:
+    aliases: [mmmodernselect]
+    description: Open the Monster Maze Modern selector
+    usage: /mmmodernmenu
   cosmeticproto:
     aliases: [gamecosmetic, gamecosmetics]
     description: Unlock, equip and preview minigame cosmetic prototypes
@@ -16,16 +16,17 @@ commands:
     aliases: [arcadegame, arcadegames]
     description: Join and start playable 1.8.8 arcade cosmetic test rounds
     usage: /arcadetest <join|start|stop|unlock|leave|list|status>
-  mm:
-    description: Monster Maze commands
-    usage: /mm <start|stop|setcenter|status|kit|kits|pb|lb|challenge>
-  mmdebug:
-    description: Monster Maze map-test diagnostics
-    usage: /mmdebug [mobs]
+  mmmodern:
+    aliases: [monstermazemodern]
+    description: Monster Maze Modern commands
+    usage: /mmmodern <start|stop|setcenter|status|kit|kits|pb|lb|challenge>
+  mmmoderndebug:
+    description: Monster Maze Modern diagnostics
+    usage: /mmmoderndebug [mobs]
     permission: monstermaze.admin
-  pause:
-    description: Pause or resume the current Monster Maze round
-    usage: /pause
+  mmmpause:
+    description: Pause or resume Monster Maze Modern
+    usage: /mmmpause
 permissions:
   minigamecosmetics.admin:
     description: Allows prototype cosmetic unlocks and testing
