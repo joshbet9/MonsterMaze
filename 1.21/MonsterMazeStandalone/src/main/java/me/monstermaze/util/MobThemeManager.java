@@ -78,8 +78,6 @@ public final class MobThemeManager implements Listener {
         pads.put(key(center), pad);
         refreshSafePad(center);
         schedulePadRefresh(pad, null, new long[] {1L, 2L, 4L, 10L, 20L, 40L, 60L, 100L});
-        refreshPadBeaconBeams(pad);
-        schedulePadBeaconRefresh(pad, null, new long[] {2L, 20L});
     }
     /** True only for the centre surface block tracked by a currently active or decaying safe pad. */
     public boolean isSafePadCenterSurface(Location location) {
@@ -117,11 +115,7 @@ public final class MobThemeManager implements Listener {
         }, delay);
     }
 
-    private void schedulePlayerPadRefreshes(Player player) {
-        if (player == null || !player.isOnline()) return;
-        for (PadVisual pad : pads.values()) if (visibleTo(player, pad))
-            schedulePadRefresh(pad, player, new long[] {1L, 2L, 4L, 10L, 20L});
-    }
+    
 
     private PadVisual findPadForBlock(Location location) {
         if (location == null || location.getWorld() == null) return null;
@@ -139,47 +133,6 @@ public final class MobThemeManager implements Listener {
         for(PadVisual p:pads.values())if(visibleTo(player,p))paintPad(player,p);
     }
 
-    public void refreshPlayerPadBeams(Player player) {
-        if (player == null || !player.isOnline()) return;
-        for (PadVisual pad : pads.values()) if (visibleTo(player, pad)) forcePadBeaconBeam(player, pad);
-    }
-
-    private void refreshPadBeaconBeams(PadVisual pad) {
-        if (pad == null) return;
-        for (Player player : Bukkit.getOnlinePlayers()) if (visibleTo(player, pad)) forcePadBeaconBeam(player, pad);
-    }
-
-    private void schedulePadBeaconRefresh(final PadVisual pad, final Player viewer, long[] delays) {
-        if (pad == null) return;
-        for (long delay : delays) Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
-            @Override public void run() {
-                if (pads.get(key(pad.center)) != pad) return;
-                if (viewer == null) refreshPadBeaconBeams(pad);
-                else if (visibleTo(viewer, pad)) forcePadBeaconBeam(viewer, pad);
-            }
-        }, delay);
-    }
-
-    /** Recreate the viewer's beacon block entity so it rescans their own stained-glass tint. */
-    private void forcePadBeaconBeam(final Player player, final PadVisual pad) {
-        if (player == null || !visibleTo(player, pad)) return;
-        final World world = pad.center.getWorld();
-        if (world == null) return;
-        final int cx = pad.center.getBlockX(), cz = pad.center.getBlockZ();
-        final Location beaconAt = new Location(world, cx, pad.surfaceY - 1, cz);
-        Block beacon = world.getBlockAt(beaconAt);
-        if (beacon.getType() != Material.BEACON) return;
-        player.sendBlockChange(beaconAt, Material.AIR.createBlockData());
-        Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
-            @Override public void run() {
-                if (!player.isOnline() || !visibleTo(player, pad) || pads.get(key(pad.center)) != pad) return;
-                Block currentBeacon = world.getBlockAt(beaconAt);
-                if (currentBeacon.getType() != Material.BEACON) return;
-                player.sendBlockChange(beaconAt, currentBeacon.getBlockData().clone());
-                paintPad(player, pad);
-            }
-        }, 1L);
-    }
     public void unregisterSafePad(Location center) {
         if(center==null)return; PadVisual pad=pads.remove(key(center)); if(pad==null||pad.center.getWorld()==null)return;
         World w=pad.center.getWorld(); int cx=pad.center.getBlockX(),cz=pad.center.getBlockZ();
@@ -194,7 +147,7 @@ public final class MobThemeManager implements Listener {
         Action a=e.getAction(); if(a!=Action.RIGHT_CLICK_AIR&&a!=Action.RIGHT_CLICK_BLOCK)return;
         Player p=e.getPlayer(); if(p.getInventory().getHeldItemSlot()!=SLOT||!isSelector(p.getInventory().getItemInMainHand()))return;
         e.setCancelled(true); String c=selected(p); choices.put(p.getUniqueId(),THEMES.get((THEMES.indexOf(c)+1)%THEMES.size()));
-        save();giveSelector(p);plugin.refreshPlayerMobThemes(p);refreshPlayerPads(p);refreshPlayerPadBeams(p);schedulePlayerPadRefreshes(p);
+        save();giveSelector(p);plugin.refreshPlayerMobThemes(p);refreshPlayerPads(p);
         if(!plugin.hasPerPlayerMobDisguises()&&!warnedMissingDisguise){p.sendMessage(ChatColor.RED+"Mob appearance changes require ProtocolLib; Safe Pad and beacon colours still update.");warnedMissingDisguise=true;}
         p.sendMessage(ChatColor.LIGHT_PURPLE+"Mob theme: "+ChatColor.YELLOW+displayName(selected(p))+ChatColor.GRAY+" (personal view).");
     }
@@ -207,7 +160,6 @@ public final class MobThemeManager implements Listener {
         PadVisual pad = findPadForBlock(event.getClickedBlock().getLocation());
         if (pad != null) {
             schedulePadRefresh(pad, null, new long[] {1L, 2L, 4L, 10L, 20L, 40L, 60L});
-            schedulePadBeaconRefresh(pad, null, new long[] {1L, 4L});
         }
     }
 
@@ -241,41 +193,19 @@ public final class MobThemeManager implements Listener {
         laterRefresh(e.getPlayer());
     }
     private void laterRefresh(final Player p){Bukkit.getScheduler().runTaskLater(plugin,new Runnable(){public void run(){if(p.isOnline())refreshPlayerPads(p);}},2L);}
-    private void paintPad(Player player, PadVisual pad) {
-        World world = pad.center.getWorld();
-        int xCenter = pad.center.getBlockX(), zCenter = pad.center.getBlockZ();
-        BlockData tint = padMaterial(player).createBlockData();
-        boolean mapDefault = "map_default".equals(selected(player));
-        BlockData beamGlass = glassMaterial(player).createBlockData();
-        for (int x = -2; x <= 2; x++) {
-            for (int z = -2; z <= 2; z++) {
-                Location at = new Location(world, xCenter + x, pad.surfaceY, zCenter + z);
-                Block real = world.getBlockAt(at);
-                BlockData visual = real.getBlockData().clone();
-                if (!mapDefault) {
-                    if (x == 0 && z == 0 && real.getType() == Material.GLASS) visual = beamGlass.clone();
-                    else if (real.getType() == Material.LIME_TERRACOTTA) visual = tint.clone();
-                }
-                player.sendBlockChange(at, visual);
+    private void paintPad(Player p,PadVisual pad) {
+        World w=pad.center.getWorld();int cx=pad.center.getBlockX(),cz=pad.center.getBlockZ();
+        BlockData tint=padMaterial(p).createBlockData();boolean mapDefault="map_default".equals(selected(p));
+        BlockData beamGlass=glassMaterial(p).createBlockData();
+        for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++){
+            Location at=new Location(w,cx+x,pad.surfaceY,cz+z);Block real=w.getBlockAt(at);BlockData visual=real.getBlockData().clone();
+            if(!mapDefault){
+                if(x==0&&z==0&&real.getType()==Material.GLASS)visual=beamGlass.clone();
+                else if(real.getType()==Material.LIME_TERRACOTTA)visual=tint.clone();
             }
+            p.sendBlockChange(at,visual);
         }
-        Location above = new Location(world, xCenter, pad.surfaceY + 3, zCenter);
-        Block upper = world.getBlockAt(above);
-        player.sendBlockChange(above, upper.getBlockData().clone());
-
-        // Re-send the beacon before the selected stained glass is resent last to force a fresh
-        // client-side beam calculation against the current per-player colour.
-        Location beaconAt = new Location(world, xCenter, pad.surfaceY - 1, zCenter);
-        Block beacon = world.getBlockAt(beaconAt);
-        player.sendBlockChange(beaconAt, beacon.getBlockData().clone());
-        Location centerAt = new Location(world, xCenter, pad.surfaceY, zCenter);
-        Block center = world.getBlockAt(centerAt);
-        BlockData centerVisual = center.getBlockData().clone();
-        if (!mapDefault) {
-            if (center.getType() == Material.GLASS) centerVisual = beamGlass.clone();
-            else if (center.getType() == Material.LIME_TERRACOTTA) centerVisual = tint.clone();
-        }
-        player.sendBlockChange(centerAt, centerVisual);
+        Location above=new Location(w,cx,pad.surfaceY+3,cz);Block actual=w.getBlockAt(above);p.sendBlockChange(above,actual.getBlockData().clone());
     }
     private Material padMaterial(Player p){Material m=Material.matchMaterial(color(palette(p))+"_TERRACOTTA");return m==null?Material.LIME_TERRACOTTA:m;}
     private Material glassMaterial(Player p){Material m=Material.matchMaterial(color(palette(p))+"_STAINED_GLASS");return m==null?Material.LIME_STAINED_GLASS:m;}

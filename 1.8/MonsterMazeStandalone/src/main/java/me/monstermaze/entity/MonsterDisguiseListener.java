@@ -1,7 +1,6 @@
 package me.monstermaze.entity;
 import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.ProtocolLibrary;
-import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.ProtocolManager;
 import com.comphenix.protocol.events.ListenerPriority;
 import com.comphenix.protocol.events.PacketAdapter;
@@ -11,7 +10,6 @@ import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.util.MobThemeManager;
 import me.monstermaze.util.MobTypes;
 import me.monstermaze.util.UtilEnt;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
@@ -34,27 +32,12 @@ public final class MonsterDisguiseListener {
         };protocolManager.addPacketListener(adapter);
     }
     public void shutdown(){protocolManager.removePacketListener(adapter);}
-    public void refreshPlayer(final Player player) {
+    public void refreshPlayer(Player player) {
         if (player == null || !player.isOnline()) return;
-        for (final Entity entity : UtilEnt.getGhostEntities(player.getWorld())) {
+        for (Entity entity : UtilEnt.getGhostEntities(player.getWorld())) {
             if (!entity.hasMetadata(MobThemeManager.MOB_METADATA)) continue;
             try {
-                // Remove the old client entity before respawning it with the new per-viewer type.
-                PacketContainer destroy = protocolManager.createPacket(PacketType.Play.Server.ENTITY_DESTROY);
-                destroy.getIntegerArrays().write(0, new int[] {entity.getEntityId()});
-                protocolManager.sendServerPacket(player, destroy);
-                Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
-                    @Override public void run() {
-                        if (!player.isOnline() || !player.getWorld().equals(entity.getWorld())
-                                || !entity.hasMetadata(MobThemeManager.MOB_METADATA)) return;
-                        try {
-                            protocolManager.updateEntity(entity, Collections.singletonList(player));
-                        } catch (Throwable failure) {
-                            plugin.getLogger().warning("[MonsterMaze] Could not respawn mob disguise for "
-                                    + player.getName() + ": " + failure.getClass().getSimpleName());
-                        }
-                    }
-                }, 1L);
+                protocolManager.updateEntity(entity, Collections.singletonList(player));
             } catch (Throwable failure) {
                 plugin.getLogger().warning("[MonsterMaze] Could not refresh mob disguise for "
                         + player.getName() + ": " + failure.getClass().getSimpleName());
