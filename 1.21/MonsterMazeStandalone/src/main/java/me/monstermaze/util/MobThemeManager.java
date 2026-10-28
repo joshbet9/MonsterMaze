@@ -78,6 +78,8 @@ public final class MobThemeManager implements Listener {
         pads.put(key(center), pad);
         refreshSafePad(center);
         schedulePadRefresh(pad, null, new long[] {1L, 2L, 4L, 10L, 20L, 40L, 60L, 100L});
+        refreshPadBeaconBeams(pad);
+        schedulePadBeaconRefresh(pad, null, new long[] {2L, 20L});
     }
     /** True only for the centre surface block tracked by a currently active or decaying safe pad. */
     public boolean isSafePadCenterSurface(Location location) {
@@ -136,6 +138,48 @@ public final class MobThemeManager implements Listener {
         if(player==null||!player.isOnline())return;
         for(PadVisual p:pads.values())if(visibleTo(player,p))paintPad(player,p);
     }
+
+    public void refreshPlayerPadBeams(Player player) {
+        if (player == null || !player.isOnline()) return;
+        for (PadVisual pad : pads.values()) if (visibleTo(player, pad)) forcePadBeaconBeam(player, pad);
+    }
+
+    private void refreshPadBeaconBeams(PadVisual pad) {
+        if (pad == null) return;
+        for (Player player : Bukkit.getOnlinePlayers()) if (visibleTo(player, pad)) forcePadBeaconBeam(player, pad);
+    }
+
+    private void schedulePadBeaconRefresh(final PadVisual pad, final Player viewer, long[] delays) {
+        if (pad == null) return;
+        for (long delay : delays) Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+            @Override public void run() {
+                if (pads.get(key(pad.center)) != pad) return;
+                if (viewer == null) refreshPadBeaconBeams(pad);
+                else if (visibleTo(viewer, pad)) forcePadBeaconBeam(viewer, pad);
+            }
+        }, delay);
+    }
+
+    /** Recreate the viewer's beacon block entity so it rescans their own stained-glass tint. */
+    private void forcePadBeaconBeam(final Player player, final PadVisual pad) {
+        if (player == null || !visibleTo(player, pad)) return;
+        final World world = pad.center.getWorld();
+        if (world == null) return;
+        final int cx = pad.center.getBlockX(), cz = pad.center.getBlockZ();
+        final Location beaconAt = new Location(world, cx, pad.surfaceY - 1, cz);
+        Block beacon = world.getBlockAt(beaconAt);
+        if (beacon.getType() != Material.BEACON) return;
+        player.sendBlockChange(beaconAt, Material.AIR.createBlockData());
+        Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+            @Override public void run() {
+                if (!player.isOnline() || !visibleTo(player, pad) || pads.get(key(pad.center)) != pad) return;
+                Block currentBeacon = world.getBlockAt(beaconAt);
+                if (currentBeacon.getType() != Material.BEACON) return;
+                player.sendBlockChange(beaconAt, currentBeacon.getBlockData().clone());
+                paintPad(player, pad);
+            }
+        }, 1L);
+    }
     public void unregisterSafePad(Location center) {
         if(center==null)return; PadVisual pad=pads.remove(key(center)); if(pad==null||pad.center.getWorld()==null)return;
         World w=pad.center.getWorld(); int cx=pad.center.getBlockX(),cz=pad.center.getBlockZ();
@@ -150,7 +194,7 @@ public final class MobThemeManager implements Listener {
         Action a=e.getAction(); if(a!=Action.RIGHT_CLICK_AIR&&a!=Action.RIGHT_CLICK_BLOCK)return;
         Player p=e.getPlayer(); if(p.getInventory().getHeldItemSlot()!=SLOT||!isSelector(p.getInventory().getItemInMainHand()))return;
         e.setCancelled(true); String c=selected(p); choices.put(p.getUniqueId(),THEMES.get((THEMES.indexOf(c)+1)%THEMES.size()));
-        save();giveSelector(p);plugin.refreshPlayerMobThemes(p);refreshPlayerPads(p);schedulePlayerPadRefreshes(p);
+        save();giveSelector(p);plugin.refreshPlayerMobThemes(p);refreshPlayerPads(p);refreshPlayerPadBeams(p);schedulePlayerPadRefreshes(p);
         if(!plugin.hasPerPlayerMobDisguises()&&!warnedMissingDisguise){p.sendMessage(ChatColor.RED+"Mob appearance changes require ProtocolLib; Safe Pad and beacon colours still update.");warnedMissingDisguise=true;}
         p.sendMessage(ChatColor.LIGHT_PURPLE+"Mob theme: "+ChatColor.YELLOW+displayName(selected(p))+ChatColor.GRAY+" (personal view).");
     }
@@ -161,7 +205,10 @@ public final class MobThemeManager implements Listener {
         if ((action != Action.LEFT_CLICK_BLOCK && action != Action.RIGHT_CLICK_BLOCK)
                 || event.getClickedBlock() == null) return;
         PadVisual pad = findPadForBlock(event.getClickedBlock().getLocation());
-        if (pad != null) schedulePadRefresh(pad, null, new long[] {1L, 2L, 4L, 10L, 20L, 40L, 60L});
+        if (pad != null) {
+            schedulePadRefresh(pad, null, new long[] {1L, 2L, 4L, 10L, 20L, 40L, 60L});
+            schedulePadBeaconRefresh(pad, null, new long[] {1L, 4L});
+        }
     }
 
     @EventHandler(priority=org.bukkit.event.EventPriority.HIGHEST, ignoreCancelled=true)

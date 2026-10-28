@@ -63,7 +63,7 @@ public final class MonsterDisguiseListener {
     /** Refresh currently tracked ghost mobs only for this viewer. */
     public void refreshPlayer(final Player player) {
         if (player == null || !player.isOnline()) return;
-        for (final Entity entity : player.getWorld().getEntities()) {
+        for (final Entity entity : MonsterEntityController.getSkinnedEntities(player.getWorld())) {
             if (MonsterEntityController.getSkin(entity.getUniqueId()) == null) continue;
             try {
                 // Despawn the previous client-side model before sending the replacement spawn.

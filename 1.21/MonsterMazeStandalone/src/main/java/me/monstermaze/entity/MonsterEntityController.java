@@ -3,6 +3,7 @@ package me.monstermaze.entity;
 import me.monstermaze.MonsterMazePlugin;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.LivingEntity;
@@ -14,6 +15,8 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Central Monster Maze entity normalisation. */
@@ -25,6 +28,7 @@ public final class MonsterEntityController {
     public static final String MONSTER_SKIN_METADATA = "monstermaze_skin";
 
     private static final Map<UUID, String> SKINS = new ConcurrentHashMap<UUID, String>();
+    private static final Map<UUID, LivingEntity> SKIN_ENTITIES = new ConcurrentHashMap<UUID, LivingEntity>();
 
     private static boolean resolved;
     private static Method getHandle;
@@ -58,6 +62,7 @@ public final class MonsterEntityController {
         if (entity == null) return;
         String value = skin == null || skin.trim().isEmpty() ? "snowman" : skin.trim().toLowerCase(java.util.Locale.ROOT);
         SKINS.put(entity.getUniqueId(), value);
+        SKIN_ENTITIES.put(entity.getUniqueId(), entity);
         try {
             entity.setMetadata(MONSTER_SKIN_METADATA, new FixedMetadataValue(MonsterMazePlugin.getInstance(), value));
         } catch (Throwable ignored) { }
@@ -68,7 +73,25 @@ public final class MonsterEntityController {
     }
 
     public static void forget(LivingEntity entity) {
-        if (entity != null) SKINS.remove(entity.getUniqueId());
+        if (entity != null) {
+            SKINS.remove(entity.getUniqueId());
+            SKIN_ENTITIES.remove(entity.getUniqueId());
+        }
+    }
+
+    /** Include registered ghost entities even if Bukkit's world entity list misses one. */
+    public static List<LivingEntity> getSkinnedEntities(World world) {
+        List<LivingEntity> result = new ArrayList<LivingEntity>();
+        for (Map.Entry<UUID, LivingEntity> entry : SKIN_ENTITIES.entrySet()) {
+            LivingEntity entity = entry.getValue();
+            if (entity == null || entity.isDead() || entity.getWorld() == null) {
+                SKIN_ENTITIES.remove(entry.getKey(), entity);
+                SKINS.remove(entry.getKey());
+                continue;
+            }
+            if (world != null && world.equals(entity.getWorld())) result.add(entity);
+        }
+        return result;
     }
 
     public static void tick(LivingEntity entity) {

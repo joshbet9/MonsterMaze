@@ -17,12 +17,49 @@ import org.bukkit.event.entity.CreatureSpawnEvent;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Port of the Mineplex Monster Maze entity utilities for Spigot 1.8.8. */
 public final class UtilEnt {
     private UtilEnt() {}
 
     private static String selectedGhostMobType = "snowman";
+
+    // Registry by entity ID: some custom NMS ghost entities are missed by Bukkit's entity list
+    // during spawn/refresh, even though the client is tracking them.
+    private static final Map<Integer, LivingEntity> GHOST_ENTITIES = new ConcurrentHashMap<Integer, LivingEntity>();
+
+    public static void registerGhostEntity(LivingEntity entity) {
+        if (entity != null) GHOST_ENTITIES.put(entity.getEntityId(), entity);
+    }
+
+    public static LivingEntity getGhostEntity(int entityId) {
+        LivingEntity entity = GHOST_ENTITIES.get(entityId);
+        if (entity != null && (entity.isDead() || entity.getWorld() == null)) {
+            GHOST_ENTITIES.remove(entityId, entity);
+            return null;
+        }
+        return entity;
+    }
+
+    public static List<LivingEntity> getGhostEntities(org.bukkit.World world) {
+        List<LivingEntity> result = new ArrayList<LivingEntity>();
+        for (Map.Entry<Integer, LivingEntity> entry : GHOST_ENTITIES.entrySet()) {
+            LivingEntity entity = entry.getValue();
+            if (entity == null || entity.isDead() || entity.getWorld() == null) {
+                GHOST_ENTITIES.remove(entry.getKey(), entity);
+                continue;
+            }
+            if (world != null && world.equals(entity.getWorld())) result.add(entity);
+        }
+        return result;
+    }
+
+    public static void forgetGhostEntity(LivingEntity entity) {
+        if (entity != null) GHOST_ENTITIES.remove(entity.getEntityId(), entity);
+    }
     private static Method getHandle;
     private static Method getControllerMove;
     private static Method controllerMoveA;
@@ -169,7 +206,13 @@ public final class UtilEnt {
             LivingEntity ent = (LivingEntity) handle.getBukkitEntity();
             // Mark before addEntity emits the initial packet so the viewer-specific model is used immediately.
             ent.setMetadata("monstermaze_mob", new FixedMetadataValue(MonsterMazePlugin.getInstance(), Boolean.TRUE));
-            if (!nmsWorld.addEntity(handle, CreatureSpawnEvent.SpawnReason.CUSTOM)) return null;
+            // Register before addEntity because the initial spawn packet can be emitted before
+            // Bukkit starts returning this custom ghost from World#getEntities().
+            registerGhostEntity(ent);
+            if (!nmsWorld.addEntity(handle, CreatureSpawnEvent.SpawnReason.CUSTOM)) {
+                forgetGhostEntity(ent);
+                return null;
+            }
             ent.setRemoveWhenFarAway(false);
             return ent;
         } catch (Throwable t) {

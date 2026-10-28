@@ -64,6 +64,8 @@ public final class MobThemeManager implements Listener {
         refreshSafePad(center);
         // Construction may emit block updates after the initial per-viewer tint.
         schedulePadRefresh(pad, null, new long[] {1L, 2L, 4L, 10L, 20L, 40L, 60L, 100L});
+        refreshPadBeaconBeams(pad);
+        schedulePadBeaconRefresh(pad, null, new long[] {2L, 20L});
     }
 
     public void setSafePadBeaconActive(Location center, boolean active) {
@@ -126,6 +128,49 @@ public final class MobThemeManager implements Listener {
         if (player == null || !player.isOnline()) return;
         for (PadVisual pad : pads.values()) if (visibleTo(player, pad)) paintPad(player, pad);
     }
+
+    public void refreshPlayerPadBeams(Player player) {
+        if (player == null || !player.isOnline()) return;
+        for (PadVisual pad : pads.values()) if (visibleTo(player, pad)) forcePadBeaconBeam(player, pad);
+    }
+
+    private void refreshPadBeaconBeams(PadVisual pad) {
+        if (pad == null) return;
+        for (Player player : Bukkit.getOnlinePlayers()) if (visibleTo(player, pad)) forcePadBeaconBeam(player, pad);
+    }
+
+    private void schedulePadBeaconRefresh(final PadVisual pad, final Player viewer, long[] delays) {
+        if (pad == null) return;
+        for (long delay : delays) Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+            @Override public void run() {
+                if (pads.get(key(pad.center)) != pad) return;
+                if (viewer == null) refreshPadBeaconBeams(pad);
+                else if (visibleTo(viewer, pad)) forcePadBeaconBeam(viewer, pad);
+            }
+        }, delay);
+    }
+
+    /** Recreate this viewer's beacon block entity so it rescans the viewer-specific glass tint. */
+    @SuppressWarnings("deprecation")
+    private void forcePadBeaconBeam(final Player player, final PadVisual pad) {
+        if (player == null || !visibleTo(player, pad)) return;
+        final World world = pad.center.getWorld();
+        if (world == null) return;
+        final int cx = pad.center.getBlockX(), cz = pad.center.getBlockZ();
+        final Location beaconAt = new Location(world, cx, pad.surfaceY - 1, cz);
+        Block beacon = world.getBlockAt(beaconAt);
+        if (beacon.getType() != Material.BEACON) return;
+        player.sendBlockChange(beaconAt, Material.AIR, (byte) 0);
+        Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
+            @Override public void run() {
+                if (!player.isOnline() || !visibleTo(player, pad) || pads.get(key(pad.center)) != pad) return;
+                Block currentBeacon = world.getBlockAt(beaconAt);
+                if (currentBeacon.getType() != Material.BEACON) return;
+                player.sendBlockChange(beaconAt, currentBeacon.getType(), currentBeacon.getData());
+                paintPad(player, pad);
+            }
+        }, 1L);
+    }
     @SuppressWarnings("deprecation") public void unregisterSafePad(Location c){
         if(c==null)return;PadVisual d=pads.remove(key(c));if(d==null||d.center.getWorld()==null)return;World w=d.center.getWorld();int cx=d.center.getBlockX(),cz=d.center.getBlockZ();
         for(Player p:Bukkit.getOnlinePlayers())if(visibleTo(p,d)){
@@ -137,7 +182,7 @@ public final class MobThemeManager implements Listener {
     @EventHandler public void onThemeClick(PlayerInteractEvent e){
         Action a=e.getAction();if(a!=Action.RIGHT_CLICK_AIR&&a!=Action.RIGHT_CLICK_BLOCK)return;Player p=e.getPlayer();
         if(p.getInventory().getHeldItemSlot()!=SLOT||!isSelector(p.getItemInHand()))return;e.setCancelled(true);
-        String old=selected(p);choices.put(p.getUniqueId(),THEMES.get((THEMES.indexOf(old)+1)%THEMES.size()));save();giveSelector(p);plugin.refreshPlayerMobThemes(p);refreshPlayerPads(p);schedulePlayerPadRefreshes(p);
+        String old=selected(p);choices.put(p.getUniqueId(),THEMES.get((THEMES.indexOf(old)+1)%THEMES.size()));save();giveSelector(p);plugin.refreshPlayerMobThemes(p);refreshPlayerPads(p);refreshPlayerPadBeams(p);schedulePlayerPadRefreshes(p);
         if(!plugin.hasPerPlayerMobDisguises()&&!warnedMissingDisguise){p.sendMessage(ChatColor.RED+"Mob appearance changes require ProtocolLib; Safe Pad and beacon colours still update.");warnedMissingDisguise=true;}
         p.sendMessage(ChatColor.LIGHT_PURPLE+"Mob theme: "+ChatColor.YELLOW+displayName(selected(p))+ChatColor.GRAY+" (personal view).");
     }
@@ -147,7 +192,10 @@ public final class MobThemeManager implements Listener {
         if ((action != Action.LEFT_CLICK_BLOCK && action != Action.RIGHT_CLICK_BLOCK)
                 || event.getClickedBlock() == null) return;
         PadVisual pad = findPadForBlock(event.getClickedBlock().getLocation());
-        if (pad != null) schedulePadRefresh(pad, null, new long[] {1L, 2L, 4L, 10L, 20L, 40L, 60L});
+        if (pad != null) {
+            schedulePadRefresh(pad, null, new long[] {1L, 2L, 4L, 10L, 20L, 40L, 60L});
+            schedulePadBeaconRefresh(pad, null, new long[] {1L, 4L});
+        }
     }
     @EventHandler public void onInventoryClick(InventoryClickEvent e){if(!(e.getWhoClicked() instanceof Player))return;Player p=(Player)e.getWhoClicked();if(isSelector(e.getCurrentItem())||isSelector(e.getCursor())||e.getHotbarButton()==SLOT||(e.getClickedInventory()==p.getInventory()&&e.getSlot()==SLOT))e.setCancelled(true);}
     @EventHandler public void onDrop(PlayerDropItemEvent e){if(isSelector(e.getItemDrop().getItemStack()))e.setCancelled(true);}

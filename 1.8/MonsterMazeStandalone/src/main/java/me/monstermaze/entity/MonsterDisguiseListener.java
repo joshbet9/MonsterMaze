@@ -10,6 +10,7 @@ import com.comphenix.protocol.wrappers.WrappedWatchableObject;
 import me.monstermaze.MonsterMazePlugin;
 import me.monstermaze.util.MobThemeManager;
 import me.monstermaze.util.MobTypes;
+import me.monstermaze.util.UtilEnt;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
@@ -35,7 +36,7 @@ public final class MonsterDisguiseListener {
     public void shutdown(){protocolManager.removePacketListener(adapter);}
     public void refreshPlayer(final Player player) {
         if (player == null || !player.isOnline()) return;
-        for (final Entity entity : player.getWorld().getEntities()) {
+        for (final Entity entity : UtilEnt.getGhostEntities(player.getWorld())) {
             if (!entity.hasMetadata(MobThemeManager.MOB_METADATA)) continue;
             try {
                 // Remove the old client entity before respawning it with the new per-viewer type.
@@ -68,7 +69,8 @@ public final class MonsterDisguiseListener {
     private void rewriteSpawn(PacketEvent event) {
         try {
             int entityId=event.getPacket().getIntegers().read(0);
-            Entity e=findEntityById(entityId,event.getPlayer());
+            Entity e=UtilEnt.getGhostEntity(entityId);
+            if(e==null)e=findEntityById(entityId,event.getPlayer());
             if(e==null||!e.hasMetadata(MobThemeManager.MOB_METADATA))return;
             String id=plugin.getMobThemeManager()==null?"snowman":plugin.getMobThemeManager().forViewer(event.getPlayer(),e.getUniqueId());
             MobTypes.MobType mob=MobTypes.byId(id);if(mob==null||mob.entityId<0)return;
@@ -78,7 +80,8 @@ public final class MonsterDisguiseListener {
     private void sanitizeMetadata(PacketEvent event) {
         try {
             int entityId=event.getPacket().getIntegers().read(0);
-            Entity e=findEntityById(entityId,event.getPlayer());
+            Entity e=UtilEnt.getGhostEntity(entityId);
+            if(e==null)e=findEntityById(entityId,event.getPlayer());
             if(e==null||!e.hasMetadata(MobThemeManager.MOB_METADATA))return;
             List<WrappedWatchableObject> values=event.getPacket().getWatchableCollectionModifier().read(0);
             if(values==null||values.isEmpty())return;
