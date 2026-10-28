@@ -1,4 +1,5 @@
 name: Deploy feature branch to Hyper-V test servers
+# Re-triggering this tested deployment path restores the per-player mob-theme build on the Hyper-V test servers.
 
 on:
   push:
