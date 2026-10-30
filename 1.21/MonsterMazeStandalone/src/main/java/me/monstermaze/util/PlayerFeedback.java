@@ -81,6 +81,7 @@ public final class PlayerFeedback implements Listener {
                     return;
                 }
 
+                showToAllowedViewers(player, display);
                 Location next = player.getLocation().clone().add(0.0D, 2.25D + age * 0.025D, 0.0D);
                 display.teleport(next);
                 display.setTextOpacity((byte) Math.max(0, 255 - age * 10));
