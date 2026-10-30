@@ -104,6 +104,7 @@ public class KitManager implements Listener {
     private final Map<UUID, TextDisplay> kitNameplateCounts = new HashMap<UUID, TextDisplay>();
     private final Map<UUID, Material> lastKitNameplateMaterials = new HashMap<UUID, Material>();
     private final Map<UUID, String> lastKitNameplateValues = new HashMap<UUID, String>();
+    private int kitNameplateTick;
 
     /** PERF: last action-bar text sent per player (only resend on change). */
     private final Map<UUID, String> lastJumpBar = new HashMap<UUID, String>();
@@ -901,8 +902,9 @@ public class KitManager implements Listener {
     private void tickAbilityBars() {
         if (game.getState()!=GameState.LIVE) return;
         long now=System.currentTimeMillis();
+        boolean updateNameplates = (++kitNameplateTick % 2) == 0;
         for(Player p:game.getAlivePlayers()) {
-            updateKitNameplate(p);
+            if (updateNameplates) updateKitNameplate(p);
             UUID id=p.getUniqueId();
             Long body=bodyRushUntil.get(id);
             if(body!=null && body.longValue()>now) {
