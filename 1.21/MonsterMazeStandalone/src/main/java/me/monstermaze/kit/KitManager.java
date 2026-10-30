@@ -12,6 +12,10 @@ import me.monstermaze.util.TextUtil;
 import me.monstermaze.util.UtilAction;
 import me.monstermaze.util.UtilAlg;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Particle;
@@ -21,8 +25,11 @@ import org.bukkit.Sound;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Block;
+import org.bukkit.entity.Display;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.ItemDisplay;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.TextDisplay;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Snowball;
 import org.bukkit.event.EventHandler;
@@ -91,6 +98,12 @@ public class KitManager implements Listener {
 
     /** Player -> how they view OTHER players (their dye state). Default VISIBLE. */
     private final Map<UUID, VisMode> visMode = new HashMap<UUID, VisMode>();
+
+    /** Modern above-name kit icon + live remaining-use counter, shown per observer. */
+    private final Map<UUID, ItemDisplay> kitNameplateIcons = new HashMap<UUID, ItemDisplay>();
+    private final Map<UUID, TextDisplay> kitNameplateCounts = new HashMap<UUID, TextDisplay>();
+    private final Map<UUID, Material> lastKitNameplateMaterials = new HashMap<UUID, Material>();
+    private final Map<UUID, String> lastKitNameplateValues = new HashMap<UUID, String>();
 
     /** PERF: last action-bar text sent per player (only resend on change). */
     private final Map<UUID, String> lastJumpBar = new HashMap<UUID, String>();
@@ -180,6 +193,7 @@ public class KitManager implements Listener {
             if (e != null && e.isValid()) e.remove();
         }
         launched.clear();
+        clearKitNameplates();
     }
 
     // -------------------- Give items (exact slots) --------------------
@@ -240,6 +254,7 @@ public class KitManager implements Listener {
     }
 
     public void resetPlayerState(Player player) {
+        removeKitNameplate(player.getUniqueId());
         player.setAllowFlight(false);
         player.setFlying(false);
         player.setMaxHealth(20.0);
@@ -450,6 +465,134 @@ public class KitManager implements Listener {
             lastJumpBar.put(p.getUniqueId(), text);
             TextUtil.actionBar(p, text);
         }
+    }
+
+    private void updateKitNameplate(Player player) {
+        UUID id = player.getUniqueId();
+        KitType kit = getKit(player);
+        boolean created = false;
+
+        ItemDisplay icon = kitNameplateIcons.get(id);
+        if (icon == null || !icon.isValid()) {
+            icon = player.getWorld().spawn(player.getLocation().clone().add(-0.24D, 2.35D, 0.0D), ItemDisplay.class);
+            icon.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.GROUND);
+            icon.setBillboard(Display.Billboard.CENTER);
+            icon.setViewRange(1.0f);
+            icon.setPersistent(false);
+            icon.setInvulnerable(true);
+            icon.setSilent(true);
+            icon.setGravity(false);
+            icon.setVisibleByDefault(false);
+            kitNameplateIcons.put(id, icon);
+            created = true;
+        }
+
+        if (lastKitNameplateMaterials.get(id) != kit.icon) {
+            icon.setItemStack(new ItemStack(kit.icon));
+            lastKitNameplateMaterials.put(id, kit.icon);
+        }
+
+        TextDisplay count = kitNameplateCounts.get(id);
+        if (count == null || !count.isValid()) {
+            count = player.getWorld().spawn(player.getLocation().clone().add(0.20D, 2.35D, 0.0D), TextDisplay.class);
+            count.setBillboard(Display.Billboard.CENTER);
+            count.setAlignment(TextDisplay.TextAlignment.CENTER);
+            count.setDefaultBackground(false);
+            count.setShadowed(true);
+            count.setSeeThrough(true);
+            count.setLineWidth(40);
+            count.setViewRange(1.0f);
+            count.setPersistent(false);
+            count.setInvulnerable(true);
+            count.setSilent(true);
+            count.setGravity(false);
+            count.setVisibleByDefault(false);
+            kitNameplateCounts.put(id, count);
+            created = true;
+        }
+
+        String value = getKitAbilityCount(player, kit);
+        if (!value.equals(lastKitNameplateValues.get(id))) {
+            NamedTextColor colour = "0".equals(value) ? NamedTextColor.RED : NamedTextColor.YELLOW;
+            count.text(Component.text(value, colour).decorate(TextDecoration.BOLD));
+            lastKitNameplateValues.put(id, value);
+        }
+
+        Location base = player.getLocation();
+        icon.teleport(base.clone().add(-0.24D, 2.35D, 0.0D));
+        count.teleport(base.clone().add(0.20D, 2.35D, 0.0D));
+        if (created) refreshKitNameplateVisibility();
+    }
+
+    /** The count is read from the actual kit item stack, so spending/refilling is reflected live. */
+    private String getKitAbilityCount(Player player, KitType kit) {
+        ItemStack item;
+        Material expected;
+        int slot;
+        switch (kit) {
+            case JUMPER:
+                slot = 8;
+                expected = Material.FEATHER;
+                break;
+            case SLOWBALL:
+                slot = 0;
+                expected = Material.SNOWBALL;
+                break;
+            case BODY_BUILDER:
+                slot = 0;
+                expected = Material.APPLE;
+                break;
+            case REPULSOR:
+                slot = 0;
+                expected = Material.COAL;
+                break;
+            default:
+                // Maverick's knockback redirection is passive rather than charge-based.
+                return "∞";
+        }
+        item = player.getInventory().getItem(slot);
+        return item != null && item.getType() == expected ? String.valueOf(item.getAmount()) : "0";
+    }
+
+    /** Keep the floating kit badge aligned with each viewer's visible/hidden player setting. */
+    private void refreshKitNameplateVisibility() {
+        for (Map.Entry<UUID, ItemDisplay> entry : kitNameplateIcons.entrySet()) {
+            Player target = Bukkit.getPlayer(entry.getKey());
+            ItemDisplay icon = entry.getValue();
+            TextDisplay count = kitNameplateCounts.get(entry.getKey());
+            if (target == null || !target.isOnline() || icon == null || count == null) continue;
+
+            for (Player observer : Bukkit.getOnlinePlayers()) {
+                boolean visible = observer.getWorld() == target.getWorld() && !isHiddenFrom(observer, target);
+                if (visible) {
+                    observer.showEntity(plugin, icon);
+                    observer.showEntity(plugin, count);
+                } else {
+                    observer.hideEntity(plugin, icon);
+                    observer.hideEntity(plugin, count);
+                }
+            }
+        }
+    }
+
+    private void removeKitNameplate(UUID id) {
+        ItemDisplay icon = kitNameplateIcons.remove(id);
+        if (icon != null && icon.isValid()) icon.remove();
+        TextDisplay count = kitNameplateCounts.remove(id);
+        if (count != null && count.isValid()) count.remove();
+        lastKitNameplateMaterials.remove(id);
+        lastKitNameplateValues.remove(id);
+    }
+
+    private void clearKitNameplates() {
+        for (UUID id : new HashSet<UUID>(kitNameplateIcons.keySet())) removeKitNameplate(id);
+        for (UUID id : new HashSet<UUID>(kitNameplateCounts.keySet())) removeKitNameplate(id);
+    }
+
+    /** True when this observer selected the mode that hides other players. */
+    public boolean isHiddenFrom(Player observer, Player target) {
+        return observer != null && target != null && !observer.equals(target)
+                && visModeFor(observer) == VisMode.INVISIBLE;
     }
 
     // -------------------- Slowball --------------------
@@ -758,6 +901,7 @@ public class KitManager implements Listener {
         if (game.getState()!=GameState.LIVE) return;
         long now=System.currentTimeMillis();
         for(Player p:game.getAlivePlayers()) {
+            updateKitNameplate(p);
             UUID id=p.getUniqueId();
             Long body=bodyRushUntil.get(id);
             if(body!=null && body.longValue()>now) {
@@ -972,6 +1116,7 @@ public class KitManager implements Listener {
                 }
             }
         }
+        refreshKitNameplateVisibility();
     }
 
     /** INVISIBILITY amp 1 (level II) = transparent ghost body (see-through). Remove when false. */
@@ -1017,6 +1162,7 @@ public class KitManager implements Listener {
         cryoCooldown.remove(id);
         visMode.remove(id);
         scoreboard.setGhost(id, false);
+        removeKitNameplate(id);
         // Re-render remaining players' views of each other now that this player has left.
         Bukkit.getScheduler().runTaskLater(plugin, new Runnable() {
             @Override public void run() { refreshViews(); }
