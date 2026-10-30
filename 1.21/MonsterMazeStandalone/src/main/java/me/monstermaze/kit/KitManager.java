@@ -470,12 +470,13 @@ public class KitManager implements Listener {
     private void updateKitNameplate(Player player) {
         UUID id = player.getUniqueId();
         KitType kit = getKit(player);
-        boolean created = false;
+        boolean iconCreated = false;
+        boolean countCreated = false;
 
         ItemDisplay icon = kitNameplateIcons.get(id);
         if (icon == null || !icon.isValid()) {
             icon = player.getWorld().spawn(player.getLocation().clone().add(-0.24D, 2.35D, 0.0D), ItemDisplay.class);
-            icon.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.GROUND);
+            icon.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.GUI);
             icon.setBillboard(Display.Billboard.CENTER);
             icon.setViewRange(1.0f);
             icon.setPersistent(false);
@@ -484,10 +485,10 @@ public class KitManager implements Listener {
             icon.setGravity(false);
             icon.setVisibleByDefault(false);
             kitNameplateIcons.put(id, icon);
-            created = true;
+            iconCreated = true;
         }
 
-        if (lastKitNameplateMaterials.get(id) != kit.icon) {
+        if (iconCreated || lastKitNameplateMaterials.get(id) != kit.icon) {
             icon.setItemStack(new ItemStack(kit.icon));
             lastKitNameplateMaterials.put(id, kit.icon);
         }
@@ -508,11 +509,11 @@ public class KitManager implements Listener {
             count.setGravity(false);
             count.setVisibleByDefault(false);
             kitNameplateCounts.put(id, count);
-            created = true;
+            countCreated = true;
         }
 
         String value = getKitAbilityCount(player, kit);
-        if (!value.equals(lastKitNameplateValues.get(id))) {
+        if (countCreated || !value.equals(lastKitNameplateValues.get(id))) {
             NamedTextColor colour = "0".equals(value) ? NamedTextColor.RED : NamedTextColor.YELLOW;
             count.text(Component.text(value, colour).decorate(TextDecoration.BOLD));
             lastKitNameplateValues.put(id, value);
@@ -521,7 +522,7 @@ public class KitManager implements Listener {
         Location base = player.getLocation();
         icon.teleport(base.clone().add(-0.24D, 2.35D, 0.0D));
         count.teleport(base.clone().add(0.20D, 2.35D, 0.0D));
-        if (created) refreshKitNameplateVisibility();
+        if (iconCreated || countCreated) refreshKitNameplateVisibility();
     }
 
     /** The count is read from the actual kit item stack, so spending/refilling is reflected live. */
