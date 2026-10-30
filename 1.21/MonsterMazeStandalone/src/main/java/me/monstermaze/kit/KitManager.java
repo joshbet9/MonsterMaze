@@ -514,9 +514,14 @@ public class KitManager implements Listener {
             countCreated = true;
         }
 
-        String value = getKitAbilityCount(player, kit);
+        String value = getKitNameplateValue(player, kit);
         if (countCreated || !value.equals(lastKitNameplateValues.get(id))) {
-            NamedTextColor colour = "0".equals(value) ? NamedTextColor.RED : NamedTextColor.YELLOW;
+            NamedTextColor colour;
+            if (kit == KitType.SLOWBALL) {
+                colour = "READY".equals(value) ? NamedTextColor.GREEN : NamedTextColor.GOLD;
+            } else {
+                colour = "0".equals(value) ? NamedTextColor.RED : NamedTextColor.YELLOW;
+            }
             count.text(Component.text(value, colour).decorate(TextDecoration.BOLD));
             lastKitNameplateValues.put(id, value);
         }
@@ -527,8 +532,12 @@ public class KitManager implements Listener {
         if (iconCreated || countCreated) refreshKitNameplateVisibility();
     }
 
-    /** The count is read from the actual kit item stack, so spending/refilling is reflected live. */
-    private String getKitAbilityCount(Player player, KitType kit) {
+    /** Return the value shown beside a player's kit icon. */
+    private String getKitNameplateValue(Player player, KitType kit) {
+        if (kit == KitType.SLOWBALL) {
+            return getCryoBlitzCooldownLabel(player);
+        }
+
         ItemStack item;
         Material expected;
         int slot;
@@ -536,10 +545,6 @@ public class KitManager implements Listener {
             case JUMPER:
                 slot = 8;
                 expected = Material.FEATHER;
-                break;
-            case SLOWBALL:
-                slot = 0;
-                expected = Material.SNOWBALL;
                 break;
             case BODY_BUILDER:
                 slot = 0;
@@ -555,6 +560,22 @@ public class KitManager implements Listener {
         }
         item = player.getInventory().getItem(slot);
         return item != null && item.getType() == expected ? String.valueOf(item.getAmount()) : "0";
+    }
+
+    /** Display Cryo Blitz's real cooldown, rounding up so it never shows 0s while unavailable. */
+    private String getCryoBlitzCooldownLabel(Player player) {
+        if (!game.qolEnabled()) return "N/A";
+
+        UUID id = player.getUniqueId();
+        Long lastUse = cryoCooldown.get(id);
+        if (lastUse == null) return "READY";
+
+        long remainingMs = lastUse.longValue() + CRYO_COOLDOWN_MS - System.currentTimeMillis();
+        if (remainingMs <= 0L) {
+            cryoCooldown.remove(id);
+            return "READY";
+        }
+        return ((remainingMs + 999L) / 1000L) + "s";
     }
 
     /** Keep the floating kit badge aligned with each viewer's visible/hidden player setting. */
