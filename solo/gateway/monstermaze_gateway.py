@@ -41,10 +41,28 @@ def parse_protocols(value: str) -> tuple[int, ...]:
     return tuple(int(item.strip()) for item in value.split(",") if item.strip())
 
 
-TARGETS = {
-    "1.8": Target("1.8", (47,), 25565, os.getenv("MM18_MACHINE_ID", "84503ef24605e8"), "1.8.9"),
-    "1.21": Target("1.21", parse_protocols(os.getenv("MM21_PROTOCOLS", "774,775,776")), 25566, os.getenv("MM21_MACHINE_ID", "85d3e1b44dd7e8"), "1.21.11"),
-}
+def target_enabled(name, default=True):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().casefold() not in {"0", "false", "no", "off"}
+
+
+def build_targets():
+    targets = {}
+    if target_enabled("MM18_ENABLED"):
+        targets["1.8"] = Target("1.8", (47,), 25565, os.getenv("MM18_MACHINE_ID", "84503ef24605e8"), "1.8.9")
+    targets["1.21"] = Target(
+        "1.21",
+        parse_protocols(os.getenv("MM21_PROTOCOLS", "774,775,776")),
+        25566,
+        os.getenv("MM21_MACHINE_ID", "85d3e1b44dd7e8"),
+        os.getenv("MM21_VERSION", "1.21.11"),
+    )
+    return targets
+
+
+TARGETS = build_targets()
 START_LOCKS = {key: asyncio.Lock() for key in TARGETS}
 
 
@@ -429,7 +447,8 @@ async def handle_client(reader, writer):
             target.name if target else "unknown",
         )
         if target is None:
-            writer.write(start_disconnect("Unsupported Minecraft version. Please use Minecraft 1.8.9, 1.21.11, 26.1.x, or 26.2."))
+            supported = ", ".join(dict.fromkeys(target.version_name for target in TARGETS.values())) or "none"
+            writer.write(start_disconnect(f"Unsupported Minecraft version. Please use {supported}."))
             await writer.drain()
             return
         if next_state == 1:
