@@ -20,7 +20,25 @@ FLY_APP = os.getenv("FLY_APP", "monstermaze")
 FLY_API_TIMEOUT = float(os.getenv("FLY_API_TIMEOUT", "10"))
 HEARTBEAT_TOKEN = os.getenv("MM_STATUS_HEARTBEAT_TOKEN", "")
 HEARTBEAT_MAX_AGE = float(os.getenv("MM_STATUS_HEARTBEAT_MAX_AGE", "45"))
-TARGETS = {"1.8": {"machine_id": os.getenv("MM18_MACHINE_ID", "84503ef24605e8"), "version": "1.8.9"}, "1.21": {"machine_id": os.getenv("MM21_MACHINE_ID", "85d3e1b44dd7e8"), "version": "1.21.11"}}
+def target_enabled(name, default=True):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().casefold() not in {"0", "false", "no", "off"}
+
+
+def build_targets():
+    targets = {}
+    if target_enabled("MM18_ENABLED"):
+        targets["1.8"] = {"machine_id": os.getenv("MM18_MACHINE_ID", "84503ef24605e8"), "version": "1.8.9"}
+    targets["1.21"] = {
+        "machine_id": os.getenv("MM21_MACHINE_ID", "85d3e1b44dd7e8"),
+        "version": os.getenv("MM21_VERSION", "1.21.11"),
+    }
+    return targets
+
+
+TARGETS = build_targets()
 HEARTBEATS = {}
 HEARTBEATS_LOCK = threading.Lock()
 
