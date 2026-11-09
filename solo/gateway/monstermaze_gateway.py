@@ -66,6 +66,13 @@ TARGETS = build_targets()
 START_LOCKS = {key: asyncio.Lock() for key in TARGETS}
 
 
+def describe_targets():
+    return "; ".join(
+        f"{target.name} protocols={target.protocols} -> {FLY_BACKEND_HOST}:{target.backend_port}"
+        for target in TARGETS.values()
+    )
+
+
 class ProtocolError(Exception):
     pass
 
@@ -474,15 +481,7 @@ async def main():
     server = await asyncio.start_server(handle_client, LISTEN_HOST, LISTEN_PORT)
     addresses = ", ".join(str(sock.getsockname()) for sock in (server.sockets or []))
     LOG.info("Monster Maze wake gateway listening on %s", addresses)
-    LOG.info(
-        "Wake targets: 1.8 protocols=%s -> %s:%s; 1.21 protocols=%s -> %s:%s",
-        TARGETS["1.8"].protocols,
-        FLY_BACKEND_HOST,
-        TARGETS["1.8"].backend_port,
-        TARGETS["1.21"].protocols,
-        FLY_BACKEND_HOST,
-        TARGETS["1.21"].backend_port,
-    )
+    LOG.info("Wake targets: %s", describe_targets() or "none")
     if load_ign_blacklist():
         LOG.info("IGN blacklist configured with %d entries", len(load_ign_blacklist()))
     async with server:
