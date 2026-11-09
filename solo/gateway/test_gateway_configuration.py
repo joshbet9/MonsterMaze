@@ -50,6 +50,20 @@ class GatewayTargetConfigurationTests(unittest.TestCase):
             self.assertEqual(47, gateway.TARGETS["1.8"].protocols[0])
             self.assertEqual("1.21.11", status.TARGETS["1.21"]["version"])
 
+    def test_target_summary_handles_disabled_legacy_route(self):
+        env = {
+            "MM18_ENABLED": "false",
+            "MM21_PROTOCOLS": "777",
+            "MM21_VERSION": "26.3",
+            "FLY_BACKEND_HOST": "monstermaze.fly.dev",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            gateway = self.load_gateway("monstermaze_gateway")
+            self.assertEqual(
+                "1.21 protocols=(777,) -> monstermaze.fly.dev:25566",
+                gateway.describe_targets(),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
