@@ -27,7 +27,14 @@ The current targets are:
 | Minecraft | Protocol | Fly process | Fly public port |
 |---|---:|---|---:|
 | 1.8.9 | 47 | mm18 | 25565 |
-| 1.21.11 | 774 | mm21 | 25566 |
+| 1.21.11 | 774, 775, 776 | mm21 | 25566 |
+
+Target routing is configurable through the environment file. Set
+`MM18_ENABLED=false` to remove the retired 1.8 target from both the gateway and
+status API. For a Minecraft 26.3 backend, set `MM21_PROTOCOLS=777` and
+`MM21_VERSION=26.3`; keep the machine ID in `MM21_MACHINE_ID` aligned with
+the active Fly Machine. The 1.21 defaults preserve the original standalone
+Monster Maze routing.
 
 The protocol numbers are used only for wake routing; the backend receives no
 player gameplay connection from the gateway.
