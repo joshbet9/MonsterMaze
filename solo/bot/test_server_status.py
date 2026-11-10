@@ -41,6 +41,7 @@ class ServerStatusLabelTests(unittest.TestCase):
             asyncio.run(status.notify_state_change(bot, "1.21", "offline", "starting", {"started_by": "Josh"}))
         sent = user.send.await_args.args[0]
         self.assertIn("Testplex 26.3", sent)
+        self.assertIn("started by Josh", sent)
         self.assertNotIn("MonsterMaze 1.21", sent)
 
     def test_unknown_status_is_not_displayed_as_starting(self):
