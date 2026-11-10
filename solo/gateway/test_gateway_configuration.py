@@ -5,7 +5,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -63,6 +63,38 @@ class GatewayTargetConfigurationTests(unittest.TestCase):
                 "1.21 protocols=(777,) -> monstermaze.fly.dev:25566",
                 gateway.describe_targets(),
             )
+
+    def test_status_handshake_never_enters_login_wake_path(self):
+        import asyncio
+        import monstermaze_gateway as gateway
+
+        target = gateway.Target("1.21", (777,), 25566, "test-machine", "26.3")
+        client = type("Client", (), {"write": lambda self, data: None, "drain": lambda self: asyncio.sleep(0), "is_closing": lambda self: False, "close": lambda self: None, "wait_closed": lambda self: asyncio.sleep(0)})()
+        with patch.object(gateway, "read_packet", new=AsyncMock(return_value=(b"handshake", b"payload"))), \\
+             patch.object(gateway, "parse_handshake", return_value=(777, "test", 25565, 1)), \\
+             patch.object(gateway, "target_for_protocol", return_value=target), \\
+             patch.object(gateway, "handle_status", new=AsyncMock()) as handle_status, \\
+             patch.object(gateway, "handle_login", new=AsyncMock()) as handle_login, \\
+             patch.object(gateway, "start_machine", new=AsyncMock()) as start_machine:
+            asyncio.run(gateway.handle_client(None, client))
+        handle_status.assert_awaited_once()
+        handle_login.assert_not_awaited()
+        start_machine.assert_not_awaited()
+
+    def test_login_handshake_enters_identity_checked_login_path(self):
+        import asyncio
+        import monstermaze_gateway as gateway
+
+        target = gateway.Target("1.21", (777,), 25566, "test-machine", "26.3")
+        client = type("Client", (), {"write": lambda self, data: None, "drain": lambda self: asyncio.sleep(0), "is_closing": lambda self: False, "close": lambda self: None, "wait_closed": lambda self: asyncio.sleep(0)})()
+        with patch.object(gateway, "read_packet", new=AsyncMock(return_value=(b"handshake", b"payload"))), \\
+             patch.object(gateway, "parse_handshake", return_value=(777, "test", 25565, 2)), \\
+             patch.object(gateway, "target_for_protocol", return_value=target), \\
+             patch.object(gateway, "handle_status", new=AsyncMock()) as handle_status, \\
+             patch.object(gateway, "handle_login", new=AsyncMock()) as handle_login:
+            asyncio.run(gateway.handle_client(None, client))
+        handle_login.assert_awaited_once()
+        handle_status.assert_not_awaited()
 
 
 if __name__ == "__main__":
