@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from starter_state import get_started_by
+from starter_state import clear_started_by, get_started_by
 
 LOG = logging.getLogger("monstermaze-status")
 HOST = os.getenv("MM_STATUS_HOST", "0.0.0.0")
@@ -68,10 +68,19 @@ def one_status(name, target):
     except Exception as exc:
         LOG.warning("Could not query %s Machine: %s", name, exc)
         return {"name": name, "state": "unknown", "players": None, "version": target["version"]}
-    if state in ("stopped", "suspended"): return {"name": name, "state": "offline", "players": None, "version": target["version"]}
-    if state in ("starting", "restarting") or state != "started": return {"name": name, "state": "starting", "players": None, "version": target["version"], "started_by": get_started_by(name)}
+    # Fly can report destroyed, failed, or transitional states after a machine is
+    # retired. Only an actual startup state is "starting"; all terminal states
+    # are offline and unknown states stay unknown instead of generating alerts.
+    if state in {"created", "stopped", "suspended", "stopping", "destroying", "destroyed", "failed"}:
+        clear_started_by(name)
+        return {"name": name, "state": "offline", "players": None, "version": target["version"]}
+    if state in {"starting", "restarting"}:
+        return {"name": name, "state": "starting", "players": None, "version": target["version"], "started_by": get_started_by(name)}
+    if state != "started":
+        return {"name": name, "state": "unknown", "players": None, "version": target["version"]}
     players = heartbeat_status(name)
-    if players is None: return {"name": name, "state": "starting", "players": None, "version": target["version"], "started_by": get_started_by(name)}
+    if players is None:
+        return {"name": name, "state": "starting", "players": None, "version": target["version"], "started_by": get_started_by(name)}
     return {"name": name, "state": "online", "players": players, "version": target["version"]}
 
 

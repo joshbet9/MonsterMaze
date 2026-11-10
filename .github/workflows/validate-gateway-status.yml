@@ -1,0 +1,37 @@
+name: Validate wake gateway and status API
+
+on:
+  pull_request:
+    paths:
+      - "solo/gateway/**"
+      - "solo/bot/server_status.py"
+      - "solo/bot/test_server_status.py"
+      - ".github/workflows/validate-gateway-status.yml"
+  push:
+    branches: [main]
+    paths:
+      - "solo/gateway/**"
+      - "solo/bot/server_status.py"
+      - "solo/bot/test_server_status.py"
+      - ".github/workflows/validate-gateway-status.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gateway-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test gateway routing and status classification
+        working-directory: solo/gateway
+        run: python -m unittest -v test_gateway_configuration.py test_status_api.py test_starter_state.py
+      - name: Test Discord status labels
+        working-directory: solo/bot
+        run: python -m unittest -v test_server_status.py
+      - name: Compile touched Python modules
+        run: python -m py_compile solo/gateway/status_api.py solo/gateway/starter_state.py solo/gateway/monstermaze_gateway.py solo/bot/server_status.py

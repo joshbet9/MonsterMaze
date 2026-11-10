@@ -129,6 +129,9 @@ jobs:
         run: |
           set -euo pipefail
           grep -q 'source.backup(backup)' ops/oracle/deploy-release.sh
+          grep -q 'STATUS_SERVICE=monstermaze-status.service' ops/oracle/deploy-release.sh
+          grep -q 'restart "$STATUS_SERVICE"' ops/oracle/deploy-release.sh
+          grep -q '127.0.0.1:8765/status' ops/oracle/deploy-release.sh
           grep -q 'PRAGMA quick_check' ops/oracle/deploy-release.sh
           grep -q 'api/v1/mod/leaderboard?source=community' ops/oracle/deploy-release.sh
           grep -q 'api/v1/mod/leaderboard?source=server' ops/oracle/deploy-release.sh

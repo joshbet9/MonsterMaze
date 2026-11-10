@@ -13,11 +13,12 @@ STATUS_URL_DEFAULT = "http://127.0.0.1:8765/status"
 STATUS_INTERVAL_DEFAULT = 15
 STATUS_NOTIFY_USER_ID_DEFAULT = 191446385961336832
 STATUS_NOTIFY_STATES = {"offline", "starting", "online"}
+SERVER_LABELS = {"1.8": "MM18", "1.21": "Testplex 26.3"}
 
 
 def status_text(data):
     rows = []
-    for name, label in (("1.8", "MM18"), ("1.21", "MM21")):
+    for name, label in SERVER_LABELS.items():
         server = data.get("servers", {}).get(name, {})
         state = server.get("state")
         if state == "online":
@@ -26,8 +27,10 @@ def status_text(data):
             rows.append(f"🟢 {label}     {suffix}")
         elif state == "offline":
             rows.append(f"🔴 {label}     Offline")
-        else:
+        elif state == "starting":
             rows.append(f"🟡 {label}     Starting...")
+        else:
+            rows.append(f"⚪ {label}     Status unavailable")
     return "\n".join(rows)
 
 
@@ -110,11 +113,11 @@ async def notify_state_change(bot, server, old_state, new_state, server_data):
         if new_state == "starting":
             starter = server_data.get("started_by")
             suffix = f" — started by {starter}" if starter else ""
-            text = f"{user.mention} 🟡 MonsterMaze {server} is starting{suffix}."
+            text = f"{user.mention} 🟡 {SERVER_LABELS.get(server, server)} is starting{suffix}."
         elif new_state == "online":
-            text = f"{user.mention} 🟢 MonsterMaze {server} is online."
+            text = f"{user.mention} 🟢 {SERVER_LABELS.get(server, server)} is online."
         elif new_state == "offline":
-            text = f"{user.mention} 🔴 MonsterMaze {server} has stopped."
+            text = f"{user.mention} 🔴 {SERVER_LABELS.get(server, server)} is offline."
         else:
             return
         await bot.call(lambda: user.send(text), "server status notification")
