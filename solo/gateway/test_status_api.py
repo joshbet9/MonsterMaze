@@ -19,8 +19,8 @@ class StatusApiStateTests(unittest.TestCase):
     def test_destroyed_machine_is_offline_and_stale_starter_is_cleared(self):
         status = self.load_status_api()
         target = {"machine_id": "retired", "version": "26.3"}
-        with patch.object(status, "machine_state", return_value="destroyed"), \\
-             patch.object(status, "clear_started_by") as clear, \\
+        with patch.object(status, "machine_state", return_value="destroyed"), \
+             patch.object(status, "clear_started_by") as clear, \
              patch.object(status, "get_started_by", return_value="JN_PlayzMC") as get_starter:
             result = status.one_status("1.21", target)
         self.assertEqual("offline", result["state"])
