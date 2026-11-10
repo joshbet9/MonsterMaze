@@ -70,11 +70,11 @@ class GatewayTargetConfigurationTests(unittest.TestCase):
 
         target = gateway.Target("1.21", (777,), 25566, "test-machine", "26.3")
         client = type("Client", (), {"write": lambda self, data: None, "drain": lambda self: asyncio.sleep(0), "is_closing": lambda self: False, "close": lambda self: None, "wait_closed": lambda self: asyncio.sleep(0), "get_extra_info": lambda self, name: ("test-peer", 1234)})()
-        with patch.object(gateway, "read_packet", new=AsyncMock(return_value=(b"handshake", b"payload"))), \\
-             patch.object(gateway, "parse_handshake", return_value=(777, "test", 25565, 1)), \\
-             patch.object(gateway, "target_for_protocol", return_value=target), \\
-             patch.object(gateway, "handle_status", new=AsyncMock()) as handle_status, \\
-             patch.object(gateway, "handle_login", new=AsyncMock()) as handle_login, \\
+        with patch.object(gateway, "read_packet", new=AsyncMock(return_value=(b"handshake", b"payload"))), \
+             patch.object(gateway, "parse_handshake", return_value=(777, "test", 25565, 1)), \
+             patch.object(gateway, "target_for_protocol", return_value=target), \
+             patch.object(gateway, "handle_status", new=AsyncMock()) as handle_status, \
+             patch.object(gateway, "handle_login", new=AsyncMock()) as handle_login, \
              patch.object(gateway, "start_machine", new=AsyncMock()) as start_machine:
             asyncio.run(gateway.handle_client(None, client))
         handle_status.assert_awaited_once()
@@ -87,10 +87,10 @@ class GatewayTargetConfigurationTests(unittest.TestCase):
 
         target = gateway.Target("1.21", (777,), 25566, "test-machine", "26.3")
         client = type("Client", (), {"write": lambda self, data: None, "drain": lambda self: asyncio.sleep(0), "is_closing": lambda self: False, "close": lambda self: None, "wait_closed": lambda self: asyncio.sleep(0), "get_extra_info": lambda self, name: ("test-peer", 1234)})()
-        with patch.object(gateway, "read_packet", new=AsyncMock(return_value=(b"handshake", b"payload"))), \\
-             patch.object(gateway, "parse_handshake", return_value=(777, "test", 25565, 2)), \\
-             patch.object(gateway, "target_for_protocol", return_value=target), \\
-             patch.object(gateway, "handle_status", new=AsyncMock()) as handle_status, \\
+        with patch.object(gateway, "read_packet", new=AsyncMock(return_value=(b"handshake", b"payload"))), \
+             patch.object(gateway, "parse_handshake", return_value=(777, "test", 25565, 2)), \
+             patch.object(gateway, "target_for_protocol", return_value=target), \
+             patch.object(gateway, "handle_status", new=AsyncMock()) as handle_status, \
              patch.object(gateway, "handle_login", new=AsyncMock()) as handle_login:
             asyncio.run(gateway.handle_client(None, client))
         handle_login.assert_awaited_once()
