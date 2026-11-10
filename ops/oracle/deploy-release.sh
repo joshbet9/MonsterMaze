@@ -19,6 +19,7 @@ TARGET="$RELEASES/$RELEASE_TAG"
 CURRENT="$BASE/current"
 TMP="$RELEASES/.${RELEASE_TAG}.tmp.$$"
 SERVICE=monster-bot.service
+STATUS_SERVICE=monstermaze-status.service
 REPO=https://github.com/joshbet9/MonsterMaze.git
 VENV=/home/ubuntu/monster-bot/venv
 
@@ -104,19 +105,36 @@ rollback() {
   if [[ -n "$PREVIOUS" ]]; then
     echo "Rolling back to $PREVIOUS" >&2
     ln -sfn "$PREVIOUS" "$CURRENT"
+    sudo systemctl restart "$STATUS_SERVICE" || true
     sudo systemctl restart "$SERVICE" || true
   fi
 }
 
+if ! sudo systemctl restart "$STATUS_SERVICE"; then
+  echo "Status API restart failed." >&2
+  rollback
+  exit 1
+fi
 if ! sudo systemctl restart "$SERVICE"; then
-  echo "Service restart failed." >&2
+  echo "Discord bot restart failed." >&2
   rollback
   exit 1
 fi
 
 sleep 2
+if ! sudo systemctl is-active --quiet "$STATUS_SERVICE"; then
+  echo "Status API service is not active." >&2
+  rollback
+  exit 1
+fi
 if ! sudo systemctl is-active --quiet "$SERVICE"; then
-  echo "Service is not active." >&2
+  echo "Discord bot service is not active." >&2
+  rollback
+  exit 1
+fi
+
+if ! curl -fsS --max-time 10 http://127.0.0.1:8765/status | python3 -c 'import json,sys; data=json.load(sys.stdin); assert isinstance(data.get("servers"), dict)'; then
+  echo "Status API health check failed." >&2
   rollback
   exit 1
 fi
