@@ -27,8 +27,10 @@ def status_text(data):
             rows.append(f"🟢 {label}     {suffix}")
         elif state == "offline":
             rows.append(f"🔴 {label}     Offline")
-        else:
+        elif state == "starting":
             rows.append(f"🟡 {label}     Starting...")
+        else:
+            rows.append(f"⚪ {label}     Status unavailable")
     return "\n".join(rows)
 
 
@@ -115,7 +117,7 @@ async def notify_state_change(bot, server, old_state, new_state, server_data):
         elif new_state == "online":
             text = f"{user.mention} 🟢 {SERVER_LABELS.get(server, server)} is online."
         elif new_state == "offline":
-            text = f"{user.mention} 🔴 {SERVER_LABELS.get(server, server)} has stopped."
+            text = f"{user.mention} 🔴 {SERVER_LABELS.get(server, server)} is offline."
         else:
             return
         await bot.call(lambda: user.send(text), "server status notification")

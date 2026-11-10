@@ -81,6 +81,30 @@ class GatewayTargetConfigurationTests(unittest.TestCase):
         handle_login.assert_not_awaited()
         start_machine.assert_not_awaited()
 
+    def test_stopped_status_ping_never_starts_machine(self):
+        import asyncio
+        import monstermaze_gateway as gateway
+
+        target = gateway.Target("1.21", (777,), 25566, "test-machine", "26.3")
+
+        class Writer:
+            def __init__(self):
+                self.data = []
+
+            def write(self, data):
+                self.data.append(data)
+
+            async def drain(self):
+                return None
+
+        writer = Writer()
+        with patch.object(gateway, "machine_state", new=AsyncMock(return_value="stopped")), \
+             patch.object(gateway, "static_status", return_value=b"status"), \
+             patch.object(gateway, "start_machine", new=AsyncMock()) as start_machine:
+            asyncio.run(gateway.handle_status(target, None, writer, b"status-ping"))
+        self.assertEqual([b"status"], writer.data)
+        start_machine.assert_not_awaited()
+
     def test_login_handshake_enters_identity_checked_login_path(self):
         import asyncio
         import monstermaze_gateway as gateway
