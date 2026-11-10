@@ -69,7 +69,7 @@ class GatewayTargetConfigurationTests(unittest.TestCase):
         import monstermaze_gateway as gateway
 
         target = gateway.Target("1.21", (777,), 25566, "test-machine", "26.3")
-        client = type("Client", (), {"write": lambda self, data: None, "drain": lambda self: asyncio.sleep(0), "is_closing": lambda self: False, "close": lambda self: None, "wait_closed": lambda self: asyncio.sleep(0)})()
+        client = type("Client", (), {"write": lambda self, data: None, "drain": lambda self: asyncio.sleep(0), "is_closing": lambda self: False, "close": lambda self: None, "wait_closed": lambda self: asyncio.sleep(0), "get_extra_info": lambda self, name: ("test-peer", 1234)})()
         with patch.object(gateway, "read_packet", new=AsyncMock(return_value=(b"handshake", b"payload"))), \\
              patch.object(gateway, "parse_handshake", return_value=(777, "test", 25565, 1)), \\
              patch.object(gateway, "target_for_protocol", return_value=target), \\
@@ -86,7 +86,7 @@ class GatewayTargetConfigurationTests(unittest.TestCase):
         import monstermaze_gateway as gateway
 
         target = gateway.Target("1.21", (777,), 25566, "test-machine", "26.3")
-        client = type("Client", (), {"write": lambda self, data: None, "drain": lambda self: asyncio.sleep(0), "is_closing": lambda self: False, "close": lambda self: None, "wait_closed": lambda self: asyncio.sleep(0)})()
+        client = type("Client", (), {"write": lambda self, data: None, "drain": lambda self: asyncio.sleep(0), "is_closing": lambda self: False, "close": lambda self: None, "wait_closed": lambda self: asyncio.sleep(0), "get_extra_info": lambda self, name: ("test-peer", 1234)})()
         with patch.object(gateway, "read_packet", new=AsyncMock(return_value=(b"handshake", b"payload"))), \\
              patch.object(gateway, "parse_handshake", return_value=(777, "test", 25565, 2)), \\
              patch.object(gateway, "target_for_protocol", return_value=target), \\
