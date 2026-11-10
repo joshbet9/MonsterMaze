@@ -31,9 +31,24 @@ class StatusApiStateTests(unittest.TestCase):
     def test_failed_and_stopping_machines_are_offline(self):
         status = self.load_status_api()
         target = {"machine_id": "retired", "version": "26.3"}
-        for state in ("failed", "stopping", "destroying", "created", "stopped", "suspended"):
+        for state in ("failed", "stopping", "destroying", "created"):
             with self.subTest(state=state), patch.object(status, "machine_state", return_value=state), patch.object(status, "clear_started_by"):
                 self.assertEqual("offline", status.one_status("1.21", target)["state"])
+
+    def test_stopped_and_suspended_preserve_pending_starter_during_wake_race(self):
+        status = self.load_status_api()
+        target = {"machine_id": "starting", "version": "26.3"}
+        for state in ("stopped", "suspended"):
+            with self.subTest(state=state), \
+                 patch.object(status, "machine_state", side_effect=(state, "starting")), \
+                 patch.object(status, "clear_started_by") as clear, \
+                 patch.object(status, "get_started_by", return_value="JN_PlayzMC"):
+                first_poll = status.one_status("1.21", target)
+                second_poll = status.one_status("1.21", target)
+            self.assertEqual("offline", first_poll["state"])
+            self.assertEqual("starting", second_poll["state"])
+            self.assertEqual("JN_PlayzMC", second_poll["started_by"])
+            clear.assert_not_called()
 
     def test_unrecognized_machine_state_is_unknown_not_starting(self):
         status = self.load_status_api()

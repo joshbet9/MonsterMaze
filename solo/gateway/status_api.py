@@ -68,11 +68,13 @@ def one_status(name, target):
     except Exception as exc:
         LOG.warning("Could not query %s Machine: %s", name, exc)
         return {"name": name, "state": "unknown", "players": None, "version": target["version"]}
-    # Fly can report destroyed, failed, or transitional states after a machine is
-    # retired. Only an actual startup state is "starting"; all terminal states
-    # are offline and unknown states stay unknown instead of generating alerts.
+    # Fly can briefly continue reporting stopped/suspended after the gateway's
+    # start request succeeds. Preserve a freshly recorded starter through that
+    # state-propagation window so the Discord "starting" alert can include them.
+    # Retired/failed machines still clear stale attribution.
     if state in {"created", "stopped", "suspended", "stopping", "destroying", "destroyed", "failed"}:
-        clear_started_by(name)
+        if state not in {"stopped", "suspended"}:
+            clear_started_by(name)
         return {"name": name, "state": "offline", "players": None, "version": target["version"]}
     if state in {"starting", "restarting"}:
         return {"name": name, "state": "starting", "players": None, "version": target["version"], "started_by": get_started_by(name)}
