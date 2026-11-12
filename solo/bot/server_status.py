@@ -119,11 +119,13 @@ async def notify_state_change(bot, server, old_state, new_state, server_data):
         elif new_state == "offline":
             text = f"{user.mention} 🔴 {SERVER_LABELS.get(server, server)} is offline."
         else:
-            return
+            return False
         await bot.call(lambda: user.send(text), "server status notification")
         print(f"[server-status] notified user {user_id}: {server} {old_state} -> {new_state}", flush=True)
+        return True
     except discord.HTTPException as exc:
         print(f"[server-status] notification failed for {server}: {exc}", flush=True)
+        return False
 
 
 async def update(bot, cfg):
@@ -151,13 +153,16 @@ async def update(bot, cfg):
             if new_state == "starting" and starter and starter != previous_starter:
                 should_notify = True
             if should_notify:
-                await notify_state_change(
+                delivered = await notify_state_change(
                     bot,
                     server,
                     old_state,
                     new_state,
                     server_data,
                 )
+                if not delivered:
+                    # Keep the old state so the next poll can retry delivery.
+                    continue
             if new_state == "starting":
                 set_previous_starter(server, starter)
             elif new_state == "offline":
