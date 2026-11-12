@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch Monster Maze Fly target configuration
+
+[Path]
+PathChanged=/etc/monstermaze-gateway.env
+Unit=monstermaze-gateway-env-refresh.service
+
+[Install]
+WantedBy=multi-user.target

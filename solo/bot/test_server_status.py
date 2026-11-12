@@ -29,7 +29,7 @@ class ServerStatusLabelTests(unittest.TestCase):
 
     def test_starting_notification_uses_testplex_name(self):
         import asyncio
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock, call, patch
 
         status = load_server_status()
         user = types.SimpleNamespace(mention="@Josh", send=AsyncMock())
@@ -41,6 +41,7 @@ class ServerStatusLabelTests(unittest.TestCase):
             asyncio.run(status.notify_state_change(bot, "1.21", "offline", "starting", {"started_by": "Josh"}))
         sent = user.send.await_args.args[0]
         self.assertIn("Testplex 26.3", sent)
+        self.assertIn("started by Josh", sent)
         self.assertNotIn("MonsterMaze 1.21", sent)
 
     def test_unknown_status_is_not_displayed_as_starting(self):
@@ -48,6 +49,50 @@ class ServerStatusLabelTests(unittest.TestCase):
         content = status.status_text({"servers": {"1.21": {"state": "unknown"}}})
         self.assertIn("Status unavailable", content)
         self.assertNotIn("Starting...", content)
+
+    def test_lifecycle_alert_is_processed_when_status_board_channel_is_missing(self):
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        status = load_server_status()
+        bot = types.SimpleNamespace(channel=lambda _ref: None)
+        data = {"servers": {
+            "1.8": {"state": "offline"},
+            "1.21": {"state": "starting", "started_by": "Josh"},
+        }}
+        with patch.object(status, "fetch_status", new=AsyncMock(return_value=data)), \
+             patch.object(status, "get_previous_states", return_value={"1.8": "offline", "1.21": "offline"}), \
+             patch.object(status, "get_previous_starter", return_value=None), \
+             patch.object(status, "set_previous_starter") as set_starter, \
+             patch.object(status, "set_state") as set_state, \
+             patch.object(status, "notify_state_change", new=AsyncMock(return_value=True)) as notify:
+            asyncio.run(status.update(bot, {}))
+
+        notify.assert_awaited_once_with(bot, "1.21", "offline", "starting", data["servers"]["1.21"])
+        set_starter.assert_any_call("1.21", "Josh")
+        set_state.assert_any_call("1.21", "starting")
+
+    def test_failed_lifecycle_alert_keeps_previous_state_for_retry(self):
+        import asyncio
+        from unittest.mock import AsyncMock, call, patch
+
+        status = load_server_status()
+        bot = types.SimpleNamespace(channel=lambda _ref: None)
+        data = {"servers": {
+            "1.8": {"state": "offline"},
+            "1.21": {"state": "starting", "started_by": "Josh"},
+        }}
+        with patch.object(status, "fetch_status", new=AsyncMock(return_value=data)), \
+             patch.object(status, "get_previous_states", return_value={"1.8": "offline", "1.21": "offline"}), \
+             patch.object(status, "get_previous_starter", return_value=None), \
+             patch.object(status, "set_previous_starter") as set_starter, \
+             patch.object(status, "set_state") as set_state, \
+             patch.object(status, "notify_state_change", new=AsyncMock(return_value=False)) as notify:
+            asyncio.run(status.update(bot, {}))
+
+        notify.assert_awaited_once_with(bot, "1.21", "offline", "starting", data["servers"]["1.21"])
+        self.assertNotIn(call("1.21", "Josh"), set_starter.call_args_list)
+        self.assertNotIn(call("1.21", "starting"), set_state.call_args_list)
 
 
 if __name__ == "__main__":
