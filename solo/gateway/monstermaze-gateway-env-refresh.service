@@ -1,0 +1,6 @@
+[Unit]
+Description=Reload Monster Maze services after gateway configuration changes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart monstermaze-gateway.service monstermaze-status.service

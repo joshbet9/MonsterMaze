@@ -79,10 +79,17 @@ Install the services:
 ```bash
 sudo cp /home/ubuntu/monster-gateway/monstermaze-gateway.service /etc/systemd/system/monstermaze-gateway.service
 sudo cp /home/ubuntu/monster-gateway/monstermaze-status.service /etc/systemd/system/monstermaze-status.service
+sudo cp /home/ubuntu/monster-gateway/monstermaze-gateway-env-refresh.path /etc/systemd/system/monstermaze-gateway-env-refresh.path
+sudo cp /home/ubuntu/monster-gateway/monstermaze-gateway-env-refresh.service /etc/systemd/system/monstermaze-gateway-env-refresh.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now monstermaze-gateway.service monstermaze-status.service
+sudo systemctl enable --now monstermaze-gateway-env-refresh.path
 sudo systemctl status monstermaze-gateway.service monstermaze-status.service
 ```
+
+The environment file supplies the Fly machine IDs to both the wake gateway and
+the status API. The path unit restarts both services after that file changes so
+they cannot retain different machine IDs in their already-loaded environments.
 
 ## Discord server status
 

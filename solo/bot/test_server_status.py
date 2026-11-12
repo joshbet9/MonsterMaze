@@ -50,6 +50,28 @@ class ServerStatusLabelTests(unittest.TestCase):
         self.assertIn("Status unavailable", content)
         self.assertNotIn("Starting...", content)
 
+    def test_lifecycle_alert_is_processed_when_status_board_channel_is_missing(self):
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        status = load_server_status()
+        bot = types.SimpleNamespace(channel=lambda _ref: None)
+        data = {"servers": {
+            "1.8": {"state": "offline"},
+            "1.21": {"state": "starting", "started_by": "Josh"},
+        }}
+        with patch.object(status, "fetch_status", new=AsyncMock(return_value=data)), \
+             patch.object(status, "get_previous_states", return_value={"1.8": "offline", "1.21": "offline"}), \
+             patch.object(status, "get_previous_starter", return_value=None), \
+             patch.object(status, "set_previous_starter") as set_starter, \
+             patch.object(status, "set_state") as set_state, \
+             patch.object(status, "notify_state_change", new=AsyncMock()) as notify:
+            asyncio.run(status.update(bot, {}))
+
+        notify.assert_awaited_once_with(bot, "1.21", "offline", "starting", data["servers"]["1.21"])
+        set_starter.assert_any_call("1.21", "Josh")
+        set_state.assert_any_call("1.21", "starting")
+
 
 if __name__ == "__main__":
     unittest.main()

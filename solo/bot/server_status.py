@@ -129,9 +129,6 @@ async def notify_state_change(bot, server, old_state, new_state, server_data):
 async def update(bot, cfg):
     ref = cfg.get("server_status_channel", STATUS_CHANNEL_DEFAULT)
     channel = bot.channel(ref)
-    if channel is None:
-        print(f"[server-status] channel not found: {ref}", flush=True)
-        return
 
     url = cfg.get("server_status_url", STATUS_URL_DEFAULT)
     try:
@@ -166,6 +163,12 @@ async def update(bot, cfg):
             elif new_state == "offline":
                 set_previous_starter(server, None)
             set_state(server, new_state)
+
+    # Status DMs are independent from the optional status-board message. A
+    # renamed or inaccessible board channel must not suppress start/stop alerts.
+    if channel is None:
+        print(f"[server-status] channel not found: {ref}; lifecycle alerts were still processed", flush=True)
+        return
 
     stored = base.get_board_msg(STATUS_KEY)
     message = None
