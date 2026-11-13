@@ -16,6 +16,8 @@ The bot creates two categories, `Testplex Bug Reports` and `Testplex Ideas`, the
 
 Every report thread mirrors its GitHub description and comments. Human replies in a mapped Discord forum thread are posted as comments on that same GitHub issue. Bot-authored mirrored messages are ignored to prevent loops. Issue edits, state changes, and GitHub comments reconcile immediately through the webhook; an hourly pass recovers missed events. Existing tracker threads remain in the legacy issue index for history.
 
+Each mapped feedback post also carries one Discord forum status tag mirrored from GitHub: `Needs triage`, `Confirmed`, `In progress`, `Fixed`, or `Won't fix`. The forum channel itself already supplies the game and report type (bug or idea), so those are not duplicated as tags. Status tags are created on demand and update when the issue changes. The first post and later GitHub replies use a compact heading, report/reply text, and separate tracker/GitHub/Discord links instead of a raw issue body with embedded sync markers. The bot needs `Manage Channels` to create status tags; if tag management fails, issue intake and message mirroring continue.
+
 The bot must have `Manage Channels` to provision the forum categories and channels, plus permission to create/send messages in forum threads and manage threads. Testers need permission to post in the forum threads. The fine-grained `TESTPLEX_GITHUB_TOKEN` should be restricted to `joshbet9/testplex` with Repository permissions → Issues set to **Read and write**. The bot uses it to read issue bodies/comments and write comments from Discord. Without it, GitHub's lower unauthenticated public API limit stops a full reconciliation.
 
 ## GitHub webhook
