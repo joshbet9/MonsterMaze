@@ -22,6 +22,7 @@ INDEX_INTERVAL_DEFAULT = 3600
 DISCORD_MESSAGE_LIMIT = 1900
 DISCORD_WRITE_LOCK = asyncio.Lock()
 FEEDBACK_DIRECTORY_CACHE = None
+PENDING_FEEDBACK_POSTS = {}
 
 
 def safe_repository_allowlist(value):
@@ -51,7 +52,7 @@ def split_discord_messages(text, limit=DISCORD_MESSAGE_LIMIT):
 def format_release(repository, release):
     """Return every release-note character as one or more Discord messages."""
     title = (release.get("name") or release.get("tag_name") or "New release").strip()
-    lines = [f"📦 **{repository} — {title}**"]
+    lines = [f"ðŸ“¦ **{repository} â€” {title}**"]
     if release.get("tag_name"):
         lines.append(f"Release: `{release['tag_name']}`")
     body = release.get("body") or ""
@@ -66,7 +67,7 @@ def format_release(repository, release):
 
 
 def format_issue_description(issue, kind="Feedback"):
-    heading = f"📝 **{kind} · #{issue['number']} — {issue['title']}**"
+    heading = f"ðŸ“ **{kind} Â· #{issue['number']} â€” {issue['title']}**"
     body = issue.get("body") or ""
     if not body.strip():
         body = "_No description provided._"
@@ -77,9 +78,9 @@ def format_issue_description(issue, kind="Feedback"):
 
 def format_issue_comment(comment):
     author = comment.get("user") or {}
-    heading = f"💬 **{author.get('login') or 'GitHub user'} commented**"
+    heading = f"ðŸ’¬ **{author.get('login') or 'GitHub user'} commented**"
     if comment.get("html_url"):
-        heading += f" · [View on GitHub]({comment['html_url']})"
+        heading += f" Â· [View on GitHub]({comment['html_url']})"
     body = comment.get("body") or ""
     if not body.strip():
         body = "_(empty comment)_"
@@ -91,7 +92,7 @@ def format_issue_comment(comment):
 def format_discord_reply(message, tracker_number):
     """Format a Discord tracker-thread reply as a non-pinging GitHub comment."""
     author = getattr(message.author, "display_name", None) or getattr(message.author, "name", "Discord user")
-    author = str(author).replace("`", "ˋ").replace("\r", " ").replace("\n", " ")
+    author = str(author).replace("`", "Ë‹").replace("\r", " ").replace("\n", " ")
     content = (getattr(message, "content", "") or "").replace("@", "@\u200b").strip()
     attachments = [getattr(item, "url", "") for item in getattr(message, "attachments", [])]
     attachments = [url for url in attachments if url]
@@ -159,6 +160,12 @@ def feedback_kind_from_issue(issue):
     return "bug"
 
 
+def feedback_discord_thread_from_issue(issue):
+    body = issue.get("body") or ""
+    match = re.search(r"<!--\s*testplex-discord-forum-thread:(\d+)\s*-->", body)
+    return int(match.group(1)) if match else None
+
+
 def feedback_game_key(game_name):
     key = re.sub(r"[^a-z0-9]+", "-", str(game_name).casefold()).strip("-")
     return key[:90] or "unknown-game"
@@ -170,10 +177,10 @@ def feedback_forum_key(kind, game_name, tracker):
 
 
 def format_subissue(issue):
-    status = "🟢 Open" if issue.get("state") == "open" else "✅ Closed"
+    status = "ðŸŸ¢ Open" if issue.get("state") == "open" else "âœ… Closed"
     labels = ", ".join(label.get("name", "") for label in issue.get("labels", []) if label.get("name"))
-    suffix = f" · `{labels}`" if labels else ""
-    return f"{status} · [#{issue['number']} {issue['title']}]({issue['html_url']}){suffix}"
+    suffix = f" Â· `{labels}`" if labels else ""
+    return f"{status} Â· [#{issue['number']} {issue['title']}]({issue['html_url']}){suffix}"
 
 
 def initial_state_changed(previous_state, current_state, previous_starter=None, current_starter=None):
@@ -231,6 +238,48 @@ def _github_create_issue_comment_sync(issue_number, body):
 
 async def _github_create_issue_comment(issue_number, body):
     return await asyncio.to_thread(_github_create_issue_comment_sync, issue_number, body)
+
+
+def _github_write_sync(method, path, payload):
+    token = os.getenv("TESTPLEX_GITHUB_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("TESTPLEX_GITHUB_TOKEN is required to create feedback issues")
+    request = urllib.request.Request(
+        GITHUB_API + path,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "Testplex-Discord-Announcements/1",
+            "Content-Type": "application/json",
+        },
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        raise RuntimeError(f"GitHub API returned HTTP {exc.code} for {path}: {detail}") from exc
+
+
+async def _github_create_feedback_issue(title, body, labels):
+    return await asyncio.to_thread(
+        _github_write_sync,
+        "POST",
+        "/issues",
+        {"title": title[:256], "body": body, "labels": labels},
+    )
+
+
+async def _github_add_subissue(parent_number, child_issue_id):
+    return await asyncio.to_thread(
+        _github_write_sync,
+        "POST",
+        f"/issues/{int(parent_number)}/sub_issues",
+        {"sub_issue_id": int(child_issue_id)},
+    )
 
 
 async def _github_json_pages(path, page_size=100):
@@ -428,6 +477,18 @@ def _feedback_forum_id(forum_key):
         conn.close()
 
 
+def _feedback_forum_key_for_channel(channel_id):
+    conn = base.db()
+    try:
+        row = conn.execute(
+            "SELECT forum_key FROM testplex_feedback_forums WHERE discord_channel_id=?",
+            (str(channel_id),),
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
 def _is_feedback_forum(channel_id):
     conn = base.db()
     try:
@@ -605,16 +666,17 @@ async def _delete_issue_discussion(thread, tracker_number, issue_number):
             conn.close()
 
 
-async def _sync_issue_discussion(thread, tracker_number, issue, kind=None):
+async def _sync_issue_discussion(thread, tracker_number, issue, kind=None, include_body=True):
     issue_number = issue["number"]
-    body_key = f"issue:{issue_number}:body"
-    if kind is None:
-        kind = feedback_kind_from_issue(issue)
-    description_kind = "Bug report" if kind == "bug" else "Game idea"
-    await _sync_message_bundle(
-        thread, body_key, tracker_number, issue_number,
-        format_issue_description(issue, description_kind),
-    )
+    if include_body:
+        body_key = f"issue:{issue_number}:body"
+        if kind is None:
+            kind = feedback_kind_from_issue(issue)
+        description_kind = "Bug report" if kind == "bug" else "Game idea"
+        await _sync_message_bundle(
+            thread, body_key, tracker_number, issue_number,
+            format_issue_description(issue, description_kind),
+        )
     comments = await _github_json_pages(f"/issues/{issue_number}/comments?per_page=100")
     current_keys = set()
     for comment in comments:
@@ -653,6 +715,7 @@ async def _ensure_feedback_thread(bot, games, issue, fallback_game=None):
     kind = feedback_kind_from_issue(issue)
     forum_key = feedback_forum_key(kind, game_name, route)
     tracker_number = int(route["issue_number"])
+    source_discord_thread = feedback_discord_thread_from_issue(issue)
     existing = _feedback_thread(issue["number"])
     if existing:
         old_tracker_number, old_forum_key, old_thread_id = existing
@@ -663,7 +726,7 @@ async def _ensure_feedback_thread(bot, games, issue, fallback_game=None):
         if thread is not None and old_forum_key == forum_key:
             if getattr(thread, "archived", False):
                 await thread.edit(archived=False)
-            if getattr(thread, "name", "") != _feedback_thread_name(issue):
+            if source_discord_thread != old_thread_id and getattr(thread, "name", "") != _feedback_thread_name(issue):
                 await thread.edit(name=_feedback_thread_name(issue))
             return thread, tracker_number, kind
         if thread is not None:
@@ -679,6 +742,14 @@ async def _ensure_feedback_thread(bot, games, issue, fallback_game=None):
     forum_id = _feedback_forum_id(forum_key)
     if forum_id is None:
         raise RuntimeError(f"Discord forum {forum_key} has not been created")
+    if source_discord_thread is not None:
+        try:
+            source_thread = bot.get_channel(source_discord_thread) or await bot.fetch_channel(source_discord_thread)
+        except discord.HTTPException:
+            source_thread = None
+        if source_thread is not None and getattr(source_thread, "parent_id", None) == forum_id:
+            _save_feedback_thread(issue["number"], tracker_number, forum_key, source_thread.id)
+            return source_thread, tracker_number, kind
     forum = bot.get_channel(forum_id) or await bot.fetch_channel(forum_id)
     description_kind = "Bug report" if kind == "bug" else "Game idea"
     chunks = format_issue_description(issue, description_kind)
@@ -697,7 +768,17 @@ async def _ensure_feedback_thread(bot, games, issue, fallback_game=None):
 
 async def _sync_feedback_issue(bot, games, issue, fallback_game=None):
     thread, tracker_number, kind = await _ensure_feedback_thread(bot, games, issue, fallback_game)
-    await _sync_issue_discussion(thread, tracker_number, issue, kind)
+    if feedback_discord_thread_from_issue(issue) is not None:
+        try:
+            await _ensure_feedback_issue_parent(issue, tracker_number)
+        except Exception as exc:
+            print(
+                f"[testplex-discord] could not attach Discord-origin issue #{issue.get('number')} "
+                f"under tracker #{tracker_number}; will retry during the next sync: {exc}",
+                flush=True,
+            )
+    include_body = feedback_discord_thread_from_issue(issue) != getattr(thread, "id", None)
+    await _sync_issue_discussion(thread, tracker_number, issue, kind, include_body=include_body)
     if issue.get("state") == "closed" and not getattr(thread, "archived", False):
         await thread.edit(archived=True)
 
@@ -723,7 +804,7 @@ async def _ensure_tracker_thread(bot, cfg, tracker):
         except discord.HTTPException:
             pass
     channel = await _channel(bot, cfg, "testplex_issue_index_channel", "TESTPLEX_ISSUE_INDEX_CHANNEL_ID", DEFAULT_BUG_CHANNEL_ID)
-    thread_name = f"Game Tracker #{tracker['number']} — {tracker['title']}"[:100]
+    thread_name = f"Game Tracker #{tracker['number']} â€” {tracker['title']}"[:100]
     intro = f"GitHub tracker: {tracker['html_url']}\nSub-issues are synchronized below."
     if isinstance(channel, discord.ForumChannel):
         thread, _ = await channel.create_thread(
@@ -871,8 +952,108 @@ async def handle_github_event(bot, cfg, event, payload):
             await sync_all_trackers(bot, cfg)
 
 
+def _feedback_game_for_forum(games, forum_key):
+    kind, separator, slug = forum_key.partition(":")
+    if not separator or kind not in {"bug", "idea"}:
+        return None
+    for selector, tracker in games.items():
+        if str(tracker.get("slug", "")).casefold() != slug.casefold():
+            continue
+        display_name = selector.split(" (", 1)[0]
+        if slug == "shared-global":
+            display_name = "Shared lobby and global systems"
+        return kind, display_name, tracker
+    return None
+
+
+def _discord_thread_url(message):
+    guild_id = getattr(getattr(message, "guild", None), "id", None)
+    channel_id = getattr(getattr(message, "channel", None), "id", None)
+    if not guild_id or not channel_id:
+        return ""
+    return f"https://discord.com/channels/{guild_id}/{channel_id}"
+
+
+def _feedback_issue_body_from_discord(message, kind, game_name, parent_number):
+    thread = message.channel
+    report = (getattr(message, "content", "") or "").replace("@", "@\u200b").strip()
+    attachments = [getattr(item, "url", "") for item in getattr(message, "attachments", [])]
+    attachments = [url for url in attachments if url]
+    lines = [
+        f"<!-- testplex-feedback:type={kind} -->",
+        f"<!-- testplex-discord-forum-thread:{thread.id} -->",
+        f"### Parent tracker\n{game_name}: https://github.com/{GITHUB_REPOSITORY}/issues/{parent_number}",
+        f"### Game\n{game_name}",
+        "### Report",
+        report or "_No details were included in the initial post. Add them in the Discord thread._",
+        "Submitted via the Testplex Discord feedback forum.",
+        f"### Discord thread\n{_discord_thread_url(message)}",
+    ]
+    if attachments:
+        lines.append("### Attachments\n" + "\n".join(attachments))
+    return "\n\n".join(lines)
+
+
+async def _ensure_feedback_issue_parent(issue, tracker_number):
+    children = await _github_json_pages(f"/issues/{int(tracker_number)}/sub_issues?per_page=100")
+    issue_number = int(issue["number"])
+    if any(int(child.get("number", 0)) == issue_number for child in children):
+        return
+    await _github_add_subissue(tracker_number, issue["id"])
+
+
+async def _create_feedback_issue_from_forum_post(bot, message, forum_key):
+    games = await _load_feedback_directory()
+    route = _feedback_game_for_forum(games, forum_key)
+    if route is None:
+        raise RuntimeError(f"Discord forum {forum_key} has no matching game tracker")
+    kind, game_name, tracker = route
+    tracker_number = int(tracker["issue_number"])
+    game_slug = str(tracker.get("slug") or feedback_game_key(game_name))
+    issue_type = "Bug" if kind == "bug" else "Idea"
+    title = re.sub(r"\s+", " ", getattr(message.channel, "name", "Tester feedback")).strip()
+    title = f"[{issue_type}] {game_name}: {title}"
+    labels = ["tester-feedback", "needs-triage", f"game:{game_slug}"]
+    labels.extend(["bug", "tester-bug"] if kind == "bug" else ["enhancement", "tester-idea"])
+    body = _feedback_issue_body_from_discord(message, kind, game_name, tracker_number)
+
+    async with DISCORD_WRITE_LOCK:
+        existing_number = _feedback_issue_for_thread(message.channel.id)
+        if existing_number is not None:
+            issue = await _github_json(f"/issues/{existing_number}")
+            await _ensure_feedback_issue_parent(issue, tracker_number)
+            await message.reply(
+                f"This Discord post is already tracked on GitHub: {issue.get('html_url', '')}",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return True
+
+        issue = await _github_create_feedback_issue(title, body, labels)
+        _save_feedback_thread(issue["number"], tracker_number, forum_key, message.channel.id)
+        linked = True
+        try:
+            await _ensure_feedback_issue_parent(issue, tracker_number)
+        except Exception as exc:
+            linked = False
+            print(
+                f"[testplex-discord] created issue #{issue.get('number')} from forum post, "
+                f"but could not link it under tracker #{tracker_number}: {exc}",
+                flush=True,
+            )
+
+        confirmation = f"Created GitHub {kind} report: {issue.get('html_url', '')}"
+        if not linked:
+            confirmation += "\nThe issue was created, but its tracker link needs maintainer attention."
+        await message.reply(confirmation, allowed_mentions=discord.AllowedMentions.none())
+        print(
+            f"[testplex-discord] created issue #{issue.get('number')} from forum thread {message.channel.id}",
+            flush=True,
+        )
+        return True
+
+
 async def handle_discord_message(bot, message):
-    """Write human replies in mapped feedback threads back to their GitHub issue."""
+    """Create issues from forum starters and mirror human replies to GitHub."""
     author = getattr(message, "author", None)
     if author is None or getattr(author, "bot", False) or getattr(message, "webhook_id", None):
         return False
@@ -893,6 +1074,74 @@ async def handle_discord_message(bot, message):
     parent_id = getattr(channel, "parent_id", None)
     if _is_feedback_forum(parent_id):
         issue_number = _feedback_issue_for_thread(channel.id)
+        # Forum starter events can be redelivered after reconnects. Once the
+        # thread is mapped, the starter is already the GitHub issue body; never
+        # mirror it back as a comment on that same issue.
+        if issue_number is not None and int(getattr(message, "id", 0)) == int(channel.id):
+            return True
+        if issue_number is None:
+            # A Discord forum starter's message ID equals its new thread ID.
+            # Ignore replies in unmapped/legacy threads rather than treating
+            # each reply as a separate GitHub issue.
+            is_starter = int(getattr(message, "id", 0)) == int(getattr(channel, "id", -1))
+            pending = PENDING_FEEDBACK_POSTS.get(channel.id)
+            if not is_starter:
+                if pending is None:
+                    return False
+                try:
+                    issue_number = await asyncio.wait_for(asyncio.shield(pending), timeout=45)
+                except asyncio.TimeoutError:
+                    return False
+                if issue_number is None:
+                    return False
+            elif pending is not None:
+                try:
+                    await asyncio.wait_for(asyncio.shield(pending), timeout=45)
+                except asyncio.TimeoutError:
+                    return False
+                if _feedback_issue_for_thread(channel.id) is not None:
+                    try:
+                        await _create_feedback_issue_from_forum_post(
+                            bot, message, _feedback_forum_key_for_channel(parent_id)
+                        )
+                    except Exception:
+                        pass
+                    return True
+            else:
+                pending = asyncio.get_running_loop().create_future()
+                PENDING_FEEDBACK_POSTS[channel.id] = pending
+                forum_key = _feedback_forum_key_for_channel(parent_id)
+                if forum_key is None:
+                    PENDING_FEEDBACK_POSTS.pop(channel.id, None)
+                    pending.set_result(None)
+                    return False
+                try:
+                    result = await _create_feedback_issue_from_forum_post(bot, message, forum_key)
+                    pending.set_result(_feedback_issue_for_thread(channel.id))
+                    return result
+                except Exception as exc:
+                    pending.set_result(None)
+                    print(
+                        f"[testplex-discord] failed to create issue from forum post {channel.id}: {exc}",
+                        flush=True,
+                    )
+                    try:
+                        await message.reply(
+                            "I couldn't create the GitHub issue. Your post is still here in Discord; please try again later.",
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
+                    except Exception:
+                        pass
+                    return True
+                finally:
+                    if PENDING_FEEDBACK_POSTS.get(channel.id) is pending:
+                        PENDING_FEEDBACK_POSTS.pop(channel.id, None)
+
+            # A reply arrived while the thread's starter was being turned into
+            # an issue. Continue through the normal GitHub-comment path now.
+            forum_key = _feedback_forum_key_for_channel(parent_id)
+            if forum_key is None:
+                return False
     else:
         expected_parent = _configured_id(cfg, "testplex_issue_index_channel", "TESTPLEX_ISSUE_INDEX_CHANNEL_ID", DEFAULT_BUG_CHANNEL_ID)
         if parent_id != expected_parent:
@@ -955,3 +1204,4 @@ def start(bot, cfg):
     task = getattr(bot, "testplex_issue_index_task", None)
     if task is None or task.done():
         bot.testplex_issue_index_task = asyncio.create_task(reconciliation_loop(bot, cfg))
+

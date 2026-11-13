@@ -214,6 +214,220 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
             "Monster Maze (Modern)",
         )
 
+    def test_feedback_discord_thread_marker_is_parsed(self):
+        module = load_module()
+        self.assertEqual(
+            module.feedback_discord_thread_from_issue({
+                "body": "Details\n<!-- testplex-discord-forum-thread:123456789012345678 -->"
+            }),
+            123456789012345678,
+        )
+
+    def test_direct_forum_starter_creates_and_maps_a_github_subissue(self):
+        import asyncio
+        import sqlite3
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            module.base.db = lambda: sqlite3.connect(directory + "/test.db")
+            module._ensure_schema()
+            module._save_feedback_forum("bug:dragon-escape", 456)
+            module._load_feedback_directory = AsyncMock(return_value={
+                "Dragon Escape": {"issue_number": 310, "slug": "dragon-escape"},
+            })
+            create_issue = AsyncMock(return_value={
+                "id": 991,
+                "number": 455,
+                "html_url": "https://github.com/joshbet9/testplex/issues/455",
+            })
+            module._github_create_feedback_issue = create_issue
+            module._ensure_feedback_issue_parent = AsyncMock()
+            message = SimpleNamespace(
+                id=9001,
+                author=SimpleNamespace(id=5, bot=False, display_name="Tester"),
+                webhook_id=None,
+                guild=SimpleNamespace(id=123),
+                channel=SimpleNamespace(id=9001, parent_id=456, name="Builder blocks are unreliable"),
+                content="Builder blocks vanish after placing in water.",
+                attachments=[SimpleNamespace(url="https://cdn.example/image.png")],
+                reply=AsyncMock(),
+            )
+            bot = SimpleNamespace(user=SimpleNamespace(id=999), cfg={"testplex_discord_guild_id": 123})
+
+            self.assertTrue(asyncio.run(module.handle_discord_message(bot, message)))
+            self.assertEqual(module._feedback_issue_for_thread(9001), 455)
+            self.assertEqual(create_issue.await_args.args[0], "[Bug] Dragon Escape: Builder blocks are unreliable")
+            labels = create_issue.await_args.args[2]
+            self.assertIn("game:dragon-escape", labels)
+            self.assertIn("tester-bug", labels)
+            body = create_issue.await_args.args[1]
+            self.assertIn("<!-- testplex-feedback:type=bug -->", body)
+            self.assertIn("<!-- testplex-discord-forum-thread:9001 -->", body)
+            self.assertIn("Parent tracker", body)
+            self.assertIn("https://cdn.example/image.png", body)
+            module._ensure_feedback_issue_parent.assert_awaited_once_with(
+                create_issue.return_value, 310
+            )
+            message.reply.assert_awaited_once()
+
+            module._github_json = AsyncMock(return_value={
+                "number": 455,
+                "html_url": "https://github.com/joshbet9/testplex/issues/455",
+            })
+            self.assertTrue(asyncio.run(module.handle_discord_message(bot, message)))
+            create_issue.assert_awaited_once()
+            module._github_create_issue_comment = AsyncMock()
+            self.assertTrue(asyncio.run(module.handle_discord_message(bot, message)))
+            module._github_create_issue_comment.assert_not_awaited()
+            self.assertEqual(module._ensure_feedback_issue_parent.await_count, 1)
+
+    def test_unmapped_forum_replies_are_not_mistaken_for_new_posts(self):
+        import asyncio
+        import sqlite3
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            module.base.db = lambda: sqlite3.connect(directory + "/test.db")
+            module._ensure_schema()
+            module._save_feedback_forum("idea:hoops", 456)
+            create_issue = AsyncMock()
+            module._github_create_feedback_issue = create_issue
+            message = SimpleNamespace(
+                id=9010,
+                author=SimpleNamespace(id=5, bot=False),
+                webhook_id=None,
+                guild=SimpleNamespace(id=123),
+                channel=SimpleNamespace(id=9001, parent_id=456),
+            )
+            bot = SimpleNamespace(user=SimpleNamespace(id=999), cfg={"testplex_discord_guild_id": 123})
+            self.assertFalse(asyncio.run(module.handle_discord_message(bot, message)))
+            create_issue.assert_not_awaited()
+
+    def test_reply_during_forum_issue_creation_is_queued_until_github_mapping_exists(self):
+        import asyncio
+        import sqlite3
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            module.base.db = lambda: sqlite3.connect(directory + "/test.db")
+            module._ensure_schema()
+            module._save_feedback_forum("bug:dragon-escape", 456)
+            module._load_feedback_directory = AsyncMock(return_value={
+                "Dragon Escape": {"issue_number": 310, "slug": "dragon-escape"},
+            })
+            create_started = asyncio.Event()
+            allow_create_to_finish = asyncio.Event()
+
+            async def create_issue(*_args):
+                create_started.set()
+                await allow_create_to_finish.wait()
+                return {
+                    "id": 991,
+                    "number": 455,
+                    "html_url": "https://github.com/joshbet9/testplex/issues/455",
+                }
+
+            module._github_create_feedback_issue = create_issue
+            module._ensure_feedback_issue_parent = AsyncMock()
+            comment = AsyncMock(return_value={"id": 88, "html_url": "https://github.com/example/comment/88"})
+            module._github_create_issue_comment = comment
+            thread = SimpleNamespace(id=9001, parent_id=456, name="Builder water issue")
+            guild = SimpleNamespace(id=123)
+            starter = SimpleNamespace(
+                id=9001,
+                author=SimpleNamespace(id=5, bot=False, display_name="Tester"),
+                webhook_id=None,
+                guild=guild,
+                channel=thread,
+                content="Builder blocks vanish in water.",
+                attachments=[],
+                reply=AsyncMock(),
+            )
+            reply = SimpleNamespace(
+                id=9002,
+                author=SimpleNamespace(id=6, bot=False, display_name="Second tester"),
+                webhook_id=None,
+                guild=guild,
+                channel=thread,
+                content="I can reproduce this on Through Hell.",
+                attachments=[],
+                reply=AsyncMock(),
+            )
+            bot = SimpleNamespace(user=SimpleNamespace(id=999), cfg={"testplex_discord_guild_id": 123})
+
+            async def exercise():
+                starter_task = asyncio.create_task(module.handle_discord_message(bot, starter))
+                await create_started.wait()
+                reply_task = asyncio.create_task(module.handle_discord_message(bot, reply))
+                await asyncio.sleep(0)
+                self.assertFalse(reply_task.done())
+                allow_create_to_finish.set()
+                self.assertTrue(await starter_task)
+                self.assertTrue(await reply_task)
+
+            asyncio.run(exercise())
+            self.assertEqual(comment.await_args.args[0], 455)
+            self.assertIn("Through Hell", comment.await_args.args[1])
+            self.assertNotIn(9001, module.PENDING_FEEDBACK_POSTS)
+
+    def test_feedback_sync_adopts_the_discord_origin_thread_without_duplicate_post(self):
+        import asyncio
+        import sqlite3
+        import tempfile
+        from types import SimpleNamespace
+
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            module.base.db = lambda: sqlite3.connect(directory + "/test.db")
+            module._ensure_schema()
+            module._save_feedback_forum("bug:dragon-escape", 456)
+            thread = SimpleNamespace(id=9001, parent_id=456, name="Builder blocks are unreliable")
+            bot = SimpleNamespace(
+                get_channel=lambda channel_id: thread if channel_id == 9001 else None,
+                fetch_channel=None,
+            )
+            issue = {
+                "number": 455,
+                "body": "<!-- testplex-feedback:type=bug -->\n<!-- testplex-discord-forum-thread:9001 -->",
+                "labels": [{"name": "game:dragon-escape"}],
+                "title": "[Bug] Dragon Escape: Builder blocks are unreliable",
+            }
+            games = {"Dragon Escape": {"issue_number": 310, "slug": "dragon-escape"}}
+            actual_thread, tracker_number, kind = asyncio.run(
+                module._ensure_feedback_thread(bot, games, issue)
+            )
+            self.assertIs(actual_thread, thread)
+            self.assertEqual((tracker_number, kind), (310, "bug"))
+            self.assertEqual(module._feedback_issue_for_thread(9001), 455)
+
+    def test_discord_origin_issue_body_is_not_echoed_back_into_its_thread(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        module = load_module()
+        thread = SimpleNamespace(id=9001, archived=False)
+        module._ensure_feedback_thread = AsyncMock(return_value=(thread, 310, "bug"))
+        module._ensure_feedback_issue_parent = AsyncMock()
+        module._sync_issue_discussion = AsyncMock()
+        issue = {
+            "number": 455,
+            "body": "<!-- testplex-feedback:type=bug -->\n<!-- testplex-discord-forum-thread:9001 -->",
+            "state": "open",
+        }
+        asyncio.run(module._sync_feedback_issue(None, {}, issue))
+        module._ensure_feedback_issue_parent.assert_awaited_once_with(issue, 310)
+        self.assertFalse(module._sync_issue_discussion.await_args.kwargs["include_body"])
+
     def test_forum_provisioning_covers_each_canonical_game_and_is_idempotent(self):
         import asyncio
         import sqlite3
@@ -361,7 +575,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
             "html_url": "https://github.com/joshbet9/testplex/issues/455",
             "labels": [{"name": "game:monster-maze"}],
         })
-        self.assertIn("🟢 Open", message)
+        self.assertIn("ðŸŸ¢ Open", message)
         self.assertIn("#455 Consolidate Monster Maze", message)
         self.assertIn("game:monster-maze", message)
 
@@ -382,3 +596,4 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
