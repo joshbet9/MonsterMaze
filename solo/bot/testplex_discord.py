@@ -17,20 +17,40 @@ DEFAULT_ACTIVITY_CHANNEL_ID = 1570610748282118234
 DEFAULT_BUG_CHANNEL_ID = 1568187896890925167
 DEFAULT_IDEA_CHANNEL_ID = 1568187934140538900
 INDEX_INTERVAL_DEFAULT = 3600
+DISCORD_MESSAGE_LIMIT = 1900
 
 
 def safe_repository_allowlist(value):
     return frozenset(item.strip().casefold() for item in value.split(",") if item.strip())
 
 
+def split_discord_messages(text, limit=DISCORD_MESSAGE_LIMIT):
+    """Split text into Discord-safe chunks without dropping any characters."""
+    if limit < 1:
+        raise ValueError("message limit must be positive")
+    remaining = str(text or "")
+    if not remaining:
+        return [""]
+    chunks = []
+    while len(remaining) > limit:
+        split_at = remaining.rfind("\n", 0, limit + 1)
+        if split_at <= 0:
+            split_at = limit
+        else:
+            split_at += 1
+        chunks.append(remaining[:split_at])
+        remaining = remaining[split_at:]
+    chunks.append(remaining)
+    return chunks
+
+
 def format_release(repository, release):
+    """Return every release-note character as one or more Discord messages."""
     title = (release.get("name") or release.get("tag_name") or "New release").strip()
-    body = (release.get("body") or "").strip()
-    if len(body) > 1400:
-        body = body[:1397].rstrip() + "..."
     lines = [f"📦 **{repository} — {title}**"]
     if release.get("tag_name"):
         lines.append(f"Release: `{release['tag_name']}`")
+    body = release.get("body") or ""
     if body:
         lines.append(body)
     if release.get("html_url"):
@@ -38,8 +58,26 @@ def format_release(repository, release):
     author = release.get("author", {}).get("login")
     if author:
         lines.append(f"Published by {author}")
-    message = "\n\n".join(lines)
-    return message if len(message) <= 1900 else message[:1897].rstrip() + "..."
+    return split_discord_messages("\n\n".join(lines))
+
+
+def format_issue_description(issue, kind="Feedback"):
+    heading = f"📝 **{kind} · #{issue['number']} — {issue['title']}**"
+    body = (issue.get("body") or "").strip() or "_No description provided._"
+    return split_discord_messages(
+        f"{heading}\n{issue.get('html_url', '')}\n\n{format_subissue(issue)}\n\n{body}"
+    )
+
+
+def format_issue_comment(comment):
+    author = comment.get("user") or {}
+    heading = f"💬 **{author.get('login') or 'GitHub user'} commented**"
+    if comment.get("html_url"):
+        heading += f" · [View on GitHub]({comment['html_url']})"
+    body = (comment.get("body") or "").strip() or "_(empty comment)_"
+    if comment.get("updated_at") and comment.get("created_at") and comment["updated_at"] != comment["created_at"]:
+        heading += " _(edited)_"
+    return split_discord_messages(f"{heading}\n\n{body}")
 
 
 def format_subissue(issue):
@@ -78,6 +116,20 @@ async def _github_json(path):
     return await asyncio.to_thread(_github_json_sync, path)
 
 
+async def _github_json_pages(path, page_size=100):
+    """Fetch every page of a GitHub list endpoint."""
+    results = []
+    separator = "&" if "?" in path else "?"
+    for page in range(1, 101):
+        rows = await _github_json(f"{path}{separator}page={page}")
+        if not isinstance(rows, list):
+            raise RuntimeError(f"GitHub list endpoint returned a non-list for {path}")
+        results.extend(rows)
+        if len(rows) < page_size:
+            return results
+    raise RuntimeError(f"GitHub list endpoint exceeded 100 pages for {path}")
+
+
 def _ensure_schema():
     conn = base.db()
     try:
@@ -92,6 +144,11 @@ def _ensure_schema():
         )
         conn.execute(
             "CREATE TABLE IF NOT EXISTS testplex_release_posts (release_id TEXT PRIMARY KEY)"
+        )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS testplex_discussion_messages ("
+            "item_key TEXT PRIMARY KEY, tracker_issue_number INTEGER NOT NULL, "
+            "issue_number INTEGER NOT NULL, discord_message_ids TEXT NOT NULL)"
         )
         conn.commit()
     finally:
@@ -163,6 +220,111 @@ def _save_subissue_message(issue_number, tracker_number, message_id):
         conn.close()
 
 
+def _discussion_message_ids(item_key):
+    conn = base.db()
+    try:
+        row = conn.execute(
+            "SELECT discord_message_ids FROM testplex_discussion_messages WHERE item_key=?",
+            (item_key,),
+        ).fetchone()
+        return json.loads(row[0]) if row else []
+    finally:
+        conn.close()
+
+
+def _save_discussion_message_ids(item_key, tracker_number, issue_number, message_ids):
+    conn = base.db()
+    try:
+        conn.execute(
+            "INSERT INTO testplex_discussion_messages(item_key, tracker_issue_number, issue_number, discord_message_ids) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT(item_key) DO UPDATE SET "
+            "tracker_issue_number=excluded.tracker_issue_number, issue_number=excluded.issue_number, "
+            "discord_message_ids=excluded.discord_message_ids",
+            (item_key, tracker_number, issue_number, json.dumps([str(value) for value in message_ids])),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+async def _sync_message_bundle(thread, item_key, tracker_number, issue_number, contents):
+    old_ids = _discussion_message_ids(item_key)
+    new_ids = []
+    for index, content in enumerate(contents):
+        message = None
+        if index < len(old_ids):
+            try:
+                message = await thread.fetch_message(int(old_ids[index]))
+            except discord.NotFound:
+                message = None
+        if message is None:
+            message = await thread.send(content, allowed_mentions=discord.AllowedMentions.none())
+        elif message.content != content:
+            await message.edit(content=content, allowed_mentions=discord.AllowedMentions.none())
+        new_ids.append(message.id)
+    for stale_id in old_ids[len(contents):]:
+        try:
+            await thread.get_partial_message(int(stale_id)).delete()
+        except discord.HTTPException:
+            pass
+    _save_discussion_message_ids(item_key, tracker_number, issue_number, new_ids)
+
+
+async def _delete_issue_discussion(thread, tracker_number, issue_number):
+    conn = base.db()
+    try:
+        rows = conn.execute(
+            "SELECT item_key, discord_message_ids FROM testplex_discussion_messages "
+            "WHERE tracker_issue_number=? AND issue_number=?",
+            (tracker_number, issue_number),
+        ).fetchall()
+        for item_key, encoded_ids in rows:
+            for message_id in json.loads(encoded_ids):
+                try:
+                    await thread.get_partial_message(int(message_id)).delete()
+                except discord.HTTPException:
+                    pass
+            conn.execute("DELETE FROM testplex_discussion_messages WHERE item_key=?", (item_key,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+async def _sync_issue_discussion(thread, tracker_number, issue):
+    issue_number = issue["number"]
+    body_key = f"issue:{issue_number}:body"
+    await _sync_message_bundle(
+        thread, body_key, tracker_number, issue_number,
+        format_issue_description(issue, "Game tracker" if issue_number == tracker_number else "Feedback"),
+    )
+    comments = await _github_json_pages(f"/issues/{issue_number}/comments?per_page=100")
+    current_keys = set()
+    for comment in comments:
+        item_key = f"comment:{comment['id']}"
+        current_keys.add(item_key)
+        await _sync_message_bundle(
+            thread, item_key, tracker_number, issue_number, format_issue_comment(comment)
+        )
+    conn = base.db()
+    try:
+        stale = conn.execute(
+            "SELECT item_key, discord_message_ids FROM testplex_discussion_messages "
+            "WHERE tracker_issue_number=? AND issue_number=?",
+            (tracker_number, issue_number),
+        ).fetchall()
+        for item_key, encoded_ids in stale:
+            if item_key.startswith("comment:") and item_key not in current_keys:
+                for message_id in json.loads(encoded_ids):
+                    try:
+                        await thread.get_partial_message(int(message_id)).delete()
+                    except discord.HTTPException:
+                        pass
+                conn.execute("DELETE FROM testplex_discussion_messages WHERE item_key=?", (item_key,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 async def _ensure_tracker_thread(bot, cfg, tracker):
     thread_id = _tracker_thread_id(tracker["number"])
     if thread_id:
@@ -197,7 +359,8 @@ async def _ensure_tracker_thread(bot, cfg, tracker):
 
 async def _sync_tracker(bot, cfg, tracker):
     thread = await _ensure_tracker_thread(bot, cfg, tracker)
-    children = await _github_json(f"/issues/{tracker['number']}/sub_issues?per_page=100")
+    await _sync_issue_discussion(thread, tracker["number"], tracker)
+    children = await _github_json_pages(f"/issues/{tracker['number']}/sub_issues?per_page=100")
     children = sorted(children, key=lambda item: item["number"])
     current_numbers = {child["number"] for child in children}
     for child in children:
@@ -224,6 +387,7 @@ async def _sync_tracker(bot, cfg, tracker):
         elif message.content != content:
             await message.edit(content=content, allowed_mentions=discord.AllowedMentions.none())
         _save_subissue_message(child["number"], tracker["number"], message.id)
+        await _sync_issue_discussion(thread, tracker["number"], child)
 
     conn = base.db()
     try:
@@ -245,12 +409,13 @@ async def _sync_tracker(bot, cfg, tracker):
                 conn.commit()
             finally:
                 conn.close()
+            await _delete_issue_discussion(thread, tracker["number"], issue_number)
 
 
 async def sync_all_trackers(bot, cfg):
     _ensure_schema()
     try:
-        trackers = await _github_json("/issues?state=all&labels=game-tracker&per_page=100")
+        trackers = await _github_json_pages("/issues?state=all&labels=game-tracker&per_page=100")
         for tracker in trackers:
             await _sync_tracker(bot, cfg, tracker)
         print(f"[testplex-discord] synchronized {len(trackers)} game tracker threads", flush=True)
@@ -275,7 +440,8 @@ async def post_release(bot, cfg, release):
     if already_posted:
         return
     channel = await _channel(bot, cfg, "testplex_changelog_channel", "TESTPLEX_CHANGELOG_CHANNEL_ID", DEFAULT_CHANGELOG_CHANNEL_ID)
-    await channel.send(format_release(GITHUB_REPOSITORY, release), allowed_mentions=discord.AllowedMentions.none())
+    for content in format_release(GITHUB_REPOSITORY, release):
+        await channel.send(content, allowed_mentions=discord.AllowedMentions.none())
     conn = base.db()
     try:
         conn.execute("INSERT OR IGNORE INTO testplex_release_posts(release_id) VALUES (?)", (release_id,))
@@ -294,6 +460,8 @@ async def handle_github_event(bot, cfg, event, payload):
     elif event == "issues" and payload.get("action") in {"opened", "closed", "reopened", "edited", "labeled", "unlabeled"}:
         # Allow the native parent/sub-issue relation update to settle before reconciling.
         await asyncio.sleep(1)
+        await sync_all_trackers(bot, cfg)
+    elif event == "issue_comment" and payload.get("action") in {"created", "edited", "deleted"}:
         await sync_all_trackers(bot, cfg)
 
 
