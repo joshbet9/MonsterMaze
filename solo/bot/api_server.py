@@ -1,6 +1,6 @@
 """Small HTTP API used by public Monster Maze servers."""
 from __future__ import annotations
-import json, os, threading
+import hashlib, hmac, json, os, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, parse_qs, urlsplit
 import competitive
@@ -8,15 +8,31 @@ import tournament
 import mod_leaderboards
 import mod_halloween_havoc
 
-DB=INSERT_SUBMISSION=UPSERT_RUN=CREATE_COMPETITION=BOARD_ROWS=COMPETITION_ROWS=REFRESH_BOT=POST_FEED=None
+DB=INSERT_SUBMISSION=UPSERT_RUN=CREATE_COMPETITION=BOARD_ROWS=COMPETITION_ROWS=REFRESH_BOT=POST_FEED=GITHUB_EVENT_HANDLER=None
 ALLOWED_MODES={"1.8":{"original","modern","speed"},"1.21":{"original","modern","classic"}}
 
-def configure(*,db_fn,insert_submission,upsert_run,create_competition,board_rows,competition_rows=None,refresh_bot=None,post_feed=None):
-    global DB,INSERT_SUBMISSION,UPSERT_RUN,CREATE_COMPETITION,BOARD_ROWS,COMPETITION_ROWS,REFRESH_BOT,POST_FEED
-    DB=db_fn;INSERT_SUBMISSION=insert_submission;UPSERT_RUN=upsert_run;CREATE_COMPETITION=create_competition;BOARD_ROWS=board_rows;COMPETITION_ROWS=competition_rows;REFRESH_BOT=refresh_bot;POST_FEED=post_feed
+def configure(*,db_fn,insert_submission,upsert_run,create_competition,board_rows,competition_rows=None,refresh_bot=None,post_feed=None,github_event_handler=None):
+    global DB,INSERT_SUBMISSION,UPSERT_RUN,CREATE_COMPETITION,BOARD_ROWS,COMPETITION_ROWS,REFRESH_BOT,POST_FEED,GITHUB_EVENT_HANDLER
+    DB=db_fn;INSERT_SUBMISSION=insert_submission;UPSERT_RUN=upsert_run;CREATE_COMPETITION=create_competition;BOARD_ROWS=board_rows;COMPETITION_ROWS=competition_rows;REFRESH_BOT=refresh_bot;POST_FEED=post_feed;GITHUB_EVENT_HANDLER=github_event_handler
 
 def token_ok(h):
     expected=os.getenv("MM_API_TOKEN","").strip();return bool(expected) and h.headers.get("Authorization","")=="Bearer "+expected
+
+def verify_github_signature(body,signature,secret):
+    if not secret or not signature.startswith("sha256="):return False
+    expected=hmac.new(secret.encode("utf-8"),body,hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature[7:],expected)
+
+def github_repository_allowed(repository,value=None):
+    configured=value if value is not None else os.getenv("TESTPLEX_GITHUB_REPOSITORIES","joshbet9/testplex")
+    allowed={item.strip().casefold() for item in configured.split(",") if item.strip()}
+    return str(repository or "").casefold() in allowed
+
+GITHUB_WEBHOOK_EVENTS=frozenset({"release","issues","issue_comment"})
+
+
+def github_webhook_event_supported(event):
+    return event in GITHUB_WEBHOOK_EVENTS
 
 def send_json(h,status,payload):
     body=json.dumps(payload,separators=(",",":"),ensure_ascii=False).encode("utf-8");h.send_response(status);h.send_header("Content-Type","application/json; charset=utf-8");h.send_header("Content-Length",str(len(body)));h.send_header("Cache-Control","no-store");h.end_headers();h.wfile.write(body)
@@ -173,6 +189,26 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path=unquote(self.path.split("?",1)[0]).rstrip("/")
+        if path=="/github/webhook":
+            secret=os.getenv("TESTPLEX_GITHUB_WEBHOOK_SECRET","").strip().encode("utf-8")
+            if not secret:send_json(self,503,{"ok":False,"error":"webhook_not_configured"});return
+            try:length=int(self.headers.get("Content-Length","0"))
+            except ValueError:send_json(self,400,{"ok":False,"error":"invalid content length"});return
+            if length<=0:send_json(self,400,{"ok":False,"error":"invalid content length"});return
+            if length>1024*1024:send_json(self,413,{"ok":False,"error":"payload_too_large"});return
+            body=self.rfile.read(length)
+            signature=self.headers.get("X-Hub-Signature-256","")
+            if not verify_github_signature(body,signature,secret.decode("utf-8")):
+                send_json(self,401,{"ok":False,"error":"invalid signature"});return
+            try:payload=json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError,json.JSONDecodeError):send_json(self,400,{"ok":False,"error":"invalid JSON"});return
+            event=self.headers.get("X-GitHub-Event","")
+            repository=payload.get("repository",{}).get("full_name","")
+            if not github_repository_allowed(repository):send_json(self,202,{"ok":True,"ignored":True});return
+            if github_webhook_event_supported(event) and GITHUB_EVENT_HANDLER:
+                try:GITHUB_EVENT_HANDLER(event,payload)
+                except Exception as exc:print(f"[github-webhook] dispatch failed: {exc!r}",flush=True);send_json(self,503,{"ok":False,"error":"dispatch_failed"});return
+            send_json(self,202,{"ok":True,"accepted":event in {"release","issues","issue_comment"}});return
         if path=="/api/v1/mod/runs":
             try:
                 length=int(self.headers.get("Content-Length","0"))

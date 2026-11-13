@@ -8,6 +8,7 @@ import monster_bot_v2 as base
 import server_status
 import game_counts
 import tournament_bot as tournament_impl
+import testplex_discord
 from ign_denylist import handle_denylist
 
 CURRENT_BOT = None
@@ -35,6 +36,13 @@ def post_feed(run):
         future.result(timeout=10)
     except Exception as exc:
         print(f"[api] Discord feed post failed: {exc}", flush=True)
+
+
+def github_event(event, payload):
+    bot = CURRENT_BOT
+    if bot is None or not bot.loop.is_running():
+        raise RuntimeError("Discord bot is not ready to process GitHub events")
+    asyncio.run_coroutine_threadsafe(testplex_discord.handle_github_event(bot, bot.cfg, event, payload), bot.loop)
 
 
 async def _post_feed_async(bot, run):
@@ -88,6 +96,7 @@ class APIMonsterBot(tournament_impl.TournamentBot):
             self.server_status_task = asyncio.create_task(server_status.run(self, self.cfg))
         if not getattr(self, "game_counts_task", None) or self.game_counts_task.done():
             self.game_counts_task = asyncio.create_task(game_counts.run(self, self.cfg))
+        testplex_discord.start(self, self.cfg)
 
     async def on_message(self, message):
         if message.author == self.user:
@@ -112,6 +121,7 @@ def configure_api():
         competition_rows=base.competition_rows,
         refresh_bot=refresh_bot,
         post_feed=post_feed,
+        github_event_handler=github_event,
     )
 
 

@@ -8,7 +8,11 @@ import unittest
 
 
 def load_server_status():
-    discord_stub = types.SimpleNamespace(HTTPException=Exception, NotFound=type("NotFound", (Exception,), {}))
+    discord_stub = types.SimpleNamespace(
+        HTTPException=Exception,
+        NotFound=type("NotFound", (Exception,), {}),
+        AllowedMentions=types.SimpleNamespace(none=lambda: None),
+    )
     bot_stub = types.ModuleType("monster_bot_v2")
     sys.modules["discord"] = discord_stub
     sys.modules["monster_bot_v2"] = bot_stub
@@ -48,6 +52,35 @@ class ServerStatusLabelTests(unittest.TestCase):
         content = status.status_text({"servers": {"1.21": {"state": "unknown"}}})
         self.assertIn("Status unavailable", content)
         self.assertNotIn("Starting...", content)
+
+    def test_activity_message_includes_starter_and_testplex_name(self):
+        status = load_server_status()
+        message = status.activity_text("1.21", "starting", {"started_by": "Josh"})
+        self.assertIn("Testplex 26.3 is starting", message)
+        self.assertIn("started by Josh", message)
+
+    def test_activity_channel_posts_only_to_configured_testplex_guild(self):
+        import asyncio
+        from unittest.mock import AsyncMock
+
+        status = load_server_status()
+        channel = types.SimpleNamespace(
+            guild=types.SimpleNamespace(id=1568187449715196035),
+            send=AsyncMock(),
+        )
+
+        async def call(fn, *_args):
+            return await fn()
+
+        bot = types.SimpleNamespace(
+            channel=lambda _ref: channel,
+            call=AsyncMock(side_effect=call),
+        )
+        asyncio.run(status.notify_activity_channel(
+            bot, {}, "1.21", "starting", {"started_by": "Josh"}
+        ))
+        channel.send.assert_awaited_once()
+        self.assertIn("started by Josh", channel.send.await_args.args[0])
 
 
 if __name__ == "__main__":

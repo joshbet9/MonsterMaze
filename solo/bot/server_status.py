@@ -1,6 +1,7 @@
 """Persistent Discord #server-status updater."""
 import asyncio
 import json
+import os
 import sqlite3
 import urllib.request
 
@@ -39,6 +40,19 @@ def status_states(data):
         name: data.get("servers", {}).get(name, {}).get("state")
         for name in ("1.8", "1.21")
     }
+
+
+def activity_text(server, state, server_data):
+    label = SERVER_LABELS.get(server, server)
+    if state == "starting":
+        starter = server_data.get("started_by")
+        suffix = f" — started by {starter}" if starter else ""
+        return f"🟡 **{label} is starting**{suffix}."
+    if state == "online":
+        return f"🟢 **{label} is online.**"
+    if state == "offline":
+        return f"🔴 **{label} is offline.**"
+    return f"⚪ **{label} status:** {state}."
 
 
 def get_previous_states():
@@ -126,6 +140,33 @@ async def notify_state_change(bot, server, old_state, new_state, server_data):
         print(f"[server-status] notification failed for {server}: {exc}", flush=True)
 
 
+async def notify_activity_channel(bot, cfg, server, new_state, server_data):
+    configured_servers = cfg.get("testplex_activity_servers", ["1.21"])
+    if isinstance(configured_servers, str):
+        configured_servers = [item.strip() for item in configured_servers.split(",") if item.strip()]
+    if server not in configured_servers:
+        return
+    channel_ref = cfg.get("testplex_activity_channel") or os.getenv(
+        "TESTPLEX_ACTIVITY_CHANNEL_ID", "1570610748282118234"
+    )
+    try:
+        channel = bot.channel(channel_ref)
+        if channel is None:
+            raise RuntimeError(f"activity channel not found: {channel_ref}")
+        expected_guild = int(cfg.get("testplex_discord_guild_id") or os.getenv(
+            "TESTPLEX_DISCORD_GUILD_ID", "1568187449715196035"
+        ))
+        if not channel.guild or channel.guild.id != expected_guild:
+            raise RuntimeError(f"activity channel {channel_ref} is not in Testplex guild {expected_guild}")
+        await bot.call(
+            lambda: channel.send(activity_text(server, new_state, server_data),
+                                 allowed_mentions=discord.AllowedMentions.none()),
+            "Testplex server activity",
+        )
+    except (discord.HTTPException, RuntimeError) as exc:
+        print(f"[server-status] activity-channel post failed for {server}: {exc}", flush=True)
+
+
 async def update(bot, cfg):
     ref = cfg.get("server_status_channel", STATUS_CHANNEL_DEFAULT)
     channel = bot.channel(ref)
@@ -161,6 +202,7 @@ async def update(bot, cfg):
                     new_state,
                     server_data,
                 )
+                await notify_activity_channel(bot, cfg, server, new_state, server_data)
             if new_state == "starting":
                 set_previous_starter(server, starter)
             elif new_state == "offline":
