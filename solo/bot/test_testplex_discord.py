@@ -20,7 +20,7 @@ def load_module():
 class TestplexDiscordFormattingTests(unittest.TestCase):
     def test_release_message_includes_tag_notes_link_and_author(self):
         module = load_module()
-        message = "\\n".join(module.format_release("joshbet9/testplex", {
+        message = "\n".join(module.format_release("joshbet9/testplex", {
             "name": "Testplex Update",
             "tag_name": "v1.2.3",
             "body": "Fixed Dragon Escape and improved server stability.",
@@ -58,6 +58,21 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         })
         self.assertTrue(all(len(message) <= 1900 for message in messages))
         self.assertIn(comment, "".join(messages))
+
+    def test_issue_comment_webhook_requests_thread_reconciliation(self):
+        import asyncio
+        from unittest.mock import AsyncMock
+
+        module = load_module()
+        module.sync_all_trackers = AsyncMock()
+        asyncio.run(module.handle_github_event(None, {}, "issue_comment", {
+            "repository": {"full_name": "joshbet9/testplex"},
+            "action": "created",
+            "issue": {"number": 455},
+            "comment": {"id": 123},
+        }))
+        module.sync_all_trackers.assert_awaited_once()
+
 
     def test_subissue_message_tracks_state_and_game_label(self):
         module = load_module()
