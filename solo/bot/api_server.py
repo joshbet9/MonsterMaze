@@ -199,10 +199,10 @@ class Handler(BaseHTTPRequestHandler):
             event=self.headers.get("X-GitHub-Event","")
             repository=payload.get("repository",{}).get("full_name","")
             if not github_repository_allowed(repository):send_json(self,202,{"ok":True,"ignored":True});return
-            if event in {"release","issues"} and GITHUB_EVENT_HANDLER:
+            if event in {"release","issues","issue_comment"} and GITHUB_EVENT_HANDLER:
                 try:GITHUB_EVENT_HANDLER(event,payload)
                 except Exception as exc:print(f"[github-webhook] dispatch failed: {exc!r}",flush=True);send_json(self,503,{"ok":False,"error":"dispatch_failed"});return
-            send_json(self,202,{"ok":True,"accepted":event in {"release","issues"}});return
+            send_json(self,202,{"ok":True,"accepted":event in {"release","issues","issue_comment"}});return
         if path=="/api/v1/mod/runs":
             try:
                 length=int(self.headers.get("Content-Length","0"))
