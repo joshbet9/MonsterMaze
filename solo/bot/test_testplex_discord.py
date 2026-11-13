@@ -145,6 +145,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         module._ensure_feedback_issue_parent = AsyncMock()
         module._sync_issue_discussion = AsyncMock()
         module._sync_message_bundle = AsyncMock()
+        module._normalize_feedback_status = AsyncMock(return_value=issue)
         module.feedback_game_from_issue = lambda issue, games: "Dragon Escape"
 
         asyncio.run(module._sync_feedback_issue(SimpleNamespace(), {}, issue))
@@ -766,6 +767,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
             "body": "<!-- testplex-feedback:type=bug -->\n<!-- testplex-discord-forum-thread:9001 -->",
             "state": "open",
         }
+        module._normalize_feedback_status = AsyncMock(return_value=issue)
         asyncio.run(module._sync_feedback_issue(None, {}, issue))
         module._ensure_feedback_issue_parent.assert_awaited_once_with(issue, 310)
         self.assertFalse(module._sync_issue_discussion.await_args.kwargs["include_body"])
