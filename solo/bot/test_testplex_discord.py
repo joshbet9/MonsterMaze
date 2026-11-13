@@ -672,6 +672,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
                     "html_url": "https://github.com/joshbet9/testplex/issues/455",
                 }
 
+            module._ensure_feedback_status_labels = AsyncMock(return_value={"submitted": "submitted"})
             module._github_create_feedback_issue = create_issue
             module._ensure_feedback_issue_parent = AsyncMock()
             comment = AsyncMock(return_value={"id": 88, "html_url": "https://github.com/example/comment/88"})
