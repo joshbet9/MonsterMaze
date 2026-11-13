@@ -139,8 +139,21 @@ if ! curl -fsS --max-time 10 http://127.0.0.1:8765/status | python3 -c 'import j
   exit 1
 fi
 
-if ! sudo bash -c 'source /etc/monstermaze-api.env && curl -fsS --max-time 10 -H "Authorization: Bearer $MM_API_TOKEN" http://127.0.0.1:8090/api/v1/mmr/player/00000000-0000-0000-0000-000000000000/next/1.8 >/dev/null'; then
+MMR_READY=0
+for attempt in {1..30}; do
+  if sudo bash -c 'source /etc/monstermaze-api.env && curl -fsS --max-time 3 -H "Authorization: Bearer $MM_API_TOKEN" http://127.0.0.1:8090/api/v1/mmr/player/00000000-0000-0000-0000-000000000000/next/1.8 >/dev/null' 2>/dev/null; then
+    MMR_READY=1
+    break
+  fi
+  if ! sudo systemctl is-active --quiet "$SERVICE"; then
+    break
+  fi
+  sleep 1
+done
+if [[ "$MMR_READY" != "1" ]]; then
   echo "Authenticated MMR API health check failed." >&2
+  sudo systemctl status "$SERVICE" --no-pager >&2 || true
+  sudo journalctl -u "$SERVICE" -n 80 --no-pager >&2 || true
   rollback
   exit 1
 fi
