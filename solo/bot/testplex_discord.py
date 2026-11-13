@@ -63,7 +63,9 @@ def format_release(repository, release):
 
 def format_issue_description(issue, kind="Feedback"):
     heading = f"📝 **{kind} · #{issue['number']} — {issue['title']}**"
-    body = (issue.get("body") or "").strip() or "_No description provided._"
+    body = issue.get("body") or ""
+    if not body.strip():
+        body = "_No description provided._"
     return split_discord_messages(
         f"{heading}\n{issue.get('html_url', '')}\n\n{format_subissue(issue)}\n\n{body}"
     )
@@ -74,7 +76,9 @@ def format_issue_comment(comment):
     heading = f"💬 **{author.get('login') or 'GitHub user'} commented**"
     if comment.get("html_url"):
         heading += f" · [View on GitHub]({comment['html_url']})"
-    body = (comment.get("body") or "").strip() or "_(empty comment)_"
+    body = comment.get("body") or ""
+    if not body.strip():
+        body = "_(empty comment)_"
     if comment.get("updated_at") and comment.get("created_at") and comment["updated_at"] != comment["created_at"]:
         heading += " _(edited)_"
     return split_discord_messages(f"{heading}\n\n{body}")
