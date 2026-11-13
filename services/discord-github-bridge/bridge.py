@@ -21,6 +21,7 @@ GITHUB_REPOSITORY = os.environ["GITHUB_REPOSITORY"]
 GITHUB_WEBHOOK_SECRET = os.environ["GITHUB_WEBHOOK_SECRET"].encode()
 BUG_CHANNEL_ID = int(os.environ["DISCORD_BUG_CHANNEL_ID"])
 IDEA_CHANNEL_ID = int(os.environ["DISCORD_IDEA_CHANNEL_ID"])
+DESTINATION_GUILD_ID = int(os.getenv("DISCORD_DESTINATION_GUILD_ID", "0"))
 CHANGELOG_REPOSITORY = os.getenv("CHANGELOG_REPOSITORY", "joshbet9/testplex")
 TRACKER_REPOSITORY = os.getenv("TRACKER_REPOSITORY", "joshbet9/testplex")
 WEBHOOK_REPOSITORIES = repository_allowlist(os.getenv(
@@ -129,7 +130,11 @@ async def github_repository_request(repository, method, path):
 async def discord_channel(channel_id):
     if not channel_id:
         return None
-    return bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+    channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+    guild = getattr(channel, "guild", None)
+    if DESTINATION_GUILD_ID and (guild is None or guild.id != DESTINATION_GUILD_ID):
+        raise RuntimeError(f"Discord channel {channel_id} is not in the configured destination guild")
+    return channel
 
 
 async def post_release(release, repository):

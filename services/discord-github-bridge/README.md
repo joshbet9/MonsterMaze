@@ -48,10 +48,10 @@ Optional:
 - `DATABASE_PATH` (default `data/bridge.sqlite3`)
 - `CHANGELOG_REPOSITORY` and `TRACKER_REPOSITORY` (default `joshbet9/testplex`)
 - `WEBHOOK_REPOSITORIES` (comma-separated repository allowlist for signed webhook delivery)
-- `DISCORD_CHANGELOG_CHANNEL_ID`, `DISCORD_ACTIVITY_CHANNEL_ID`, `DISCORD_ISSUE_INDEX_CHANNEL_ID`
+- `DISCORD_DESTINATION_GUILD_ID`, `DISCORD_CHANGELOG_CHANNEL_ID`, `DISCORD_ACTIVITY_CHANNEL_ID`, `DISCORD_ISSUE_INDEX_CHANNEL_ID`
 - `SERVER_STATUS_URL`, `SERVER_STATUS_INTERVAL`, `SERVER_ACTIVITY_SERVERS`
 
-The GitHub token should have the minimum issue read/write permissions on the configured repositories. Configure a GitHub webhook with the shared secret for `issues`, `issue_comment`, and `release` events on every repository in `WEBHOOK_REPOSITORIES`. The Discord bot must be invited to the target guild and have permission to send messages, create public threads, send messages in threads, and manage threads in the configured channels. Channel IDs should be set explicitly so names duplicated across Discord servers cannot route announcements incorrectly.
+The GitHub token should have the minimum issue read/write permissions on the configured repositories. Configure a GitHub webhook with the shared secret for `issues`, `issue_comment`, and `release` events on every repository in `WEBHOOK_REPOSITORIES`. The Discord bot must be invited to the target guild and have permission to send messages, create public threads, send messages in threads, and manage threads in the configured channels. Set the destination guild ID and channel IDs explicitly; the bridge rejects configured announcement channels that belong to another guild.
 
 ## Deployment
 
