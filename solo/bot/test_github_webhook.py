@@ -19,6 +19,12 @@ class GitHubWebhookSecurityTests(unittest.TestCase):
         self.assertFalse(api_server.verify_github_signature(body, "sha256=bad", "secret"))
         self.assertFalse(api_server.verify_github_signature(body, "sha256=00", ""))
 
+    def test_issue_comment_is_an_accepted_webhook_event(self):
+        self.assertTrue(api_server.github_webhook_event_supported("issues"))
+        self.assertTrue(api_server.github_webhook_event_supported("issue_comment"))
+        self.assertTrue(api_server.github_webhook_event_supported("release"))
+        self.assertFalse(api_server.github_webhook_event_supported("push"))
+
     def test_webhook_repository_allowlist_is_case_insensitive(self):
         self.assertTrue(api_server.github_repository_allowed("JoshBet9/Testplex", "joshbet9/testplex"))
         self.assertFalse(api_server.github_repository_allowed("attacker/testplex", "joshbet9/testplex"))
