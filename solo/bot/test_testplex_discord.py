@@ -106,7 +106,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         }, "Bug report")
         message = "\n".join(messages)
         self.assertIn("🐛 **Bug report #457", message)
-        self.assertIn("Needs triage", message)
+        self.assertIn("Submitted", message)
         self.assertIn("**Report**", message)
         self.assertIn("Spectators can finish the race.", message)
         self.assertIn("**Tracker:** [Dragon Escape]", message)
@@ -122,7 +122,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
             "labels": [{"name": "needs-triage"}],
         }, "bug", "Dragon Escape", 310)
         self.assertIn("🐛 **Bug report filed · Dragon Escape**", receipt)
-        self.assertIn("`Needs triage`", receipt)
+        self.assertIn("`Submitted`", receipt)
         self.assertIn("[GitHub issue #457]", receipt)
         self.assertIn("[Game tracker #310]", receipt)
 
@@ -153,15 +153,17 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         self.assertEqual(args[0], thread)
         self.assertEqual(args[1], "issue:457:label-controls")
         self.assertIn("!implemented", args[4][0])
-        self.assertIn("ready for testing", args[4][0])
+        self.assertIn("waiting-tester", args[4][0])
 
     def test_feedback_status_maps_to_discord_forum_subcategory(self):
         module = load_module()
-        self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "needs-triage"}]}), "Needs triage")
+        self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "submitted"}]}), "Submitted")
+        self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "needs-triage"}]}), "Submitted")
         self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "in-progress"}]}), "In progress")
-        self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "implemented"}]}), "Implemented")
-        self.assertEqual(module._feedback_status_tag({"state": "closed", "labels": [{"name": "wontfix"}]}), "Won't fix")
-        self.assertEqual(module._feedback_status_tag({"state": "closed", "labels": []}), "Fixed")
+        self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "implemented"}]}), "Waiting tester")
+        self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "resolved"}]}), "Resolved")
+        self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "deployed"}]}), "Deployed")
+        self.assertEqual(module._feedback_status_tag({"state": "closed", "labels": []}), "Resolved")
 
     def test_implemented_label_command_updates_github_and_discord_status(self):
         import asyncio
@@ -169,18 +171,22 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         from unittest.mock import AsyncMock, Mock
 
         module = load_module()
-        module._github_feedback_labels = AsyncMock(return_value={
-            "needs-triage": "needs-triage",
-            "implemented": "implemented",
+        module._ensure_feedback_status_labels = AsyncMock(return_value={
+            "submitted": "submitted", "in-progress": "in-progress",
+            "waiting-tester": "waiting-tester", "resolved": "resolved", "deployed": "deployed",
         })
         module._github_write_sync = Mock()
         updated_issue = {
             "number": 457,
             "html_url": "https://github.com/joshbet9/testplex/issues/457",
             "state": "open",
-            "labels": [{"name": "implemented"}],
+            "labels": [{"name": "waiting-tester"}],
         }
-        module._github_json = AsyncMock(return_value=updated_issue)
+        existing_issue = {
+            "number": 457,
+            "labels": [{"name": "submitted"}, {"name": "implemented"}],
+        }
+        module._github_json = AsyncMock(side_effect=[existing_issue, updated_issue])
         module._sync_feedback_thread_tags = AsyncMock()
         message = SimpleNamespace(
             content="!implemented",
@@ -190,15 +196,73 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         bot = SimpleNamespace()
 
         self.assertTrue(asyncio.run(module._handle_feedback_label_command(bot, message, 457)))
-        self.assertEqual(module._github_write_sync.call_count, 2)
+        self.assertEqual(module._github_write_sync.call_count, 3)
         self.assertEqual(module._github_write_sync.call_args_list[0].args[:2], (
             "POST", "/issues/457/labels",
         ))
         self.assertEqual(module._github_write_sync.call_args_list[1].args[:2], (
-            "DELETE", "/issues/457/labels/needs-triage",
+            "DELETE", "/issues/457/labels/submitted",
+        ))
+        self.assertEqual(module._github_write_sync.call_args_list[2].args[:2], (
+            "DELETE", "/issues/457/labels/implemented",
         ))
         module._sync_feedback_thread_tags.assert_awaited_once_with(bot, updated_issue, message.channel)
-        self.assertIn("Marked implemented", message.reply.await_args.args[0])
+        self.assertIn("Waiting tester", message.reply.await_args.args[0])
+
+    def test_status_command_archives_discord_thread_only_when_deployed(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        module = load_module()
+        updated_issue = {
+            "number": 457,
+            "html_url": "https://github.com/joshbet9/testplex/issues/457",
+            "state": "open",
+            "labels": [{"name": "deployed"}],
+        }
+        module._github_set_feedback_status = AsyncMock(return_value=updated_issue)
+        module._sync_feedback_thread_tags = AsyncMock()
+        channel = SimpleNamespace(id=123, archived=False, edit=AsyncMock())
+        message = SimpleNamespace(
+            content="!status deployed",
+            channel=channel,
+            reply=AsyncMock(),
+        )
+
+        self.assertTrue(asyncio.run(module._handle_feedback_label_command(SimpleNamespace(), message, 457)))
+        module._github_set_feedback_status.assert_awaited_once_with(457, "deployed")
+        channel.edit.assert_awaited_once_with(archived=True)
+        self.assertIn("Deployed", message.reply.await_args.args[0])
+
+    def test_legacy_feedback_status_migrates_to_clean_lifecycle_label(self):
+        import asyncio
+        from unittest.mock import AsyncMock
+
+        module = load_module()
+        updated = {"number": 457, "state": "open", "labels": [{"name": "waiting-tester"}]}
+        module._github_set_feedback_status = AsyncMock(return_value=updated)
+        legacy = {"number": 457, "state": "open", "labels": [{"name": "implemented"}]}
+        result = asyncio.run(module._normalize_feedback_status(legacy))
+        module._github_set_feedback_status.assert_awaited_once_with(457, "waiting-tester")
+        self.assertEqual(result, updated)
+
+    def test_unused_legacy_status_labels_are_deleted_but_labels_in_use_are_kept(self):
+        import asyncio
+        from unittest.mock import AsyncMock, Mock
+
+        module = load_module()
+        module.LEGACY_STATUS_LABEL_CLEANUP_COMPLETE = False
+        module.LEGACY_FEEDBACK_STATUS_LABELS = {"fixed", "needs-triage"}
+        module._github_feedback_labels = AsyncMock(return_value={
+            "fixed": "fixed", "needs-triage": "needs-triage",
+        })
+        module._github_json_pages = AsyncMock(side_effect=[[], [{"number": 99}]])
+        module._github_write_sync = Mock()
+
+        asyncio.run(module._cleanup_unused_legacy_status_labels())
+        module._github_write_sync.assert_called_once_with("DELETE", "/labels/fixed", {})
+        self.assertTrue(module.LEGACY_STATUS_LABEL_CLEANUP_COMPLETE)
 
     def test_tester_can_apply_or_remove_an_exact_existing_github_label(self):
         import asyncio
@@ -281,7 +345,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
             bot = SimpleNamespace(get_channel=lambda channel_id: forum if channel_id == 456 else None)
             issue = {"number": 457, "state": "open", "labels": [{"name": "needs-triage"}]}
             asyncio.run(module._sync_feedback_thread_tags(bot, issue, thread))
-            self.assertEqual([tag.name for tag in thread.applied_tags], ["Needs triage"])
+            self.assertEqual([tag.name for tag in thread.applied_tags], ["Submitted"])
             self.assertEqual(len(forum.created), 1)
             asyncio.run(module._sync_feedback_thread_tags(bot, issue, thread))
             self.assertEqual(len(forum.created), 1)
@@ -506,6 +570,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
                 "html_url": "https://github.com/joshbet9/testplex/issues/455",
             })
             module._github_create_feedback_issue = create_issue
+            module._ensure_feedback_status_labels = AsyncMock(return_value={"submitted": "submitted"})
             module._ensure_feedback_issue_parent = AsyncMock()
             message = SimpleNamespace(
                 id=9001,
@@ -528,6 +593,8 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
             self.assertEqual(module._feedback_issue_for_thread(9001), 455)
             self.assertEqual(create_issue.await_args.args[0], "[Bug] Dragon Escape: Builder blocks are unreliable")
             labels = create_issue.await_args.args[2]
+            self.assertIn("submitted", labels)
+            self.assertNotIn("needs-triage", labels)
             self.assertIn("game:dragon-escape", labels)
             self.assertIn("tester-bug", labels)
             body = create_issue.await_args.args[1]
