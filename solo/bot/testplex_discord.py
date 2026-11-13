@@ -993,6 +993,14 @@ async def _sync_feedback_issue(bot, games, issue, fallback_game=None):
             )
     include_body = feedback_discord_thread_from_issue(issue) != getattr(thread, "id", None)
     await _sync_issue_discussion(thread, tracker_number, issue, kind, include_body=include_body)
+    if not include_body:
+        await _sync_message_bundle(
+            thread,
+            f"issue:{issue['number']}:label-controls",
+            tracker_number,
+            issue["number"],
+            [format_feedback_label_controls(issue, tracker_number, feedback_game_from_issue(issue, games))],
+        )
     if issue.get("state") == "closed" and not getattr(thread, "archived", False):
         await thread.edit(archived=True)
 
@@ -1278,11 +1286,21 @@ def format_feedback_receipt(issue, kind, game_name, tracker_number, linked=True)
         f"Status: `{status}`",
         f"[GitHub issue #{issue_number}]({issue.get('html_url', '')}) · "
         f"[Game tracker #{tracker_number}](https://github.com/{GITHUB_REPOSITORY}/issues/{tracker_number})",
-        "Labels: `!labels` · `!label <name>` · `!unlabel <name>` · `!implemented`",
     ]
     if not linked:
         lines.extend(["", "The issue was created, but its tracker link needs maintainer attention."])
     return "\n".join(lines)
+
+
+def format_feedback_label_controls(issue, tracker_number, game_name):
+    status = _feedback_status_tag(issue)
+    return "\n".join([
+        f"🏷️ **Issue #{issue.get('number', '?')} · {game_name} · {status}**",
+        "Use `!labels` to list GitHub labels, `!label <name>` to add one, or `!unlabel <name>` to remove one.",
+        "Use `!implemented` when the fix is in and ready for testing; this does not close the issue.",
+        f"[GitHub issue]({issue.get('html_url', '')}) · "
+        f"[Game tracker #{tracker_number}](https://github.com/{GITHUB_REPOSITORY}/issues/{tracker_number})",
+    ])
 
 
 async def _ensure_feedback_issue_parent(issue, tracker_number):
@@ -1337,6 +1355,17 @@ async def _create_feedback_issue_from_forum_post(bot, message, forum_key):
                 flush=True,
             )
 
+        await _sync_message_bundle(
+            message.channel,
+            f"issue:{issue['number']}:label-controls",
+            tracker_number,
+            issue["number"],
+            [format_feedback_label_controls(
+                {**issue, "labels": issue.get("labels") or [{"name": label} for label in labels], "state": "open"},
+                tracker_number,
+                game_name,
+            )],
+        )
         confirmation = format_feedback_receipt(
             {**issue, "labels": issue.get("labels") or [{"name": label} for label in labels]},
             kind,
