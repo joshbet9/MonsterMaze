@@ -59,6 +59,64 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         self.assertTrue(all(len(message) <= 1900 for message in messages))
         self.assertIn(comment, "".join(messages))
 
+    def test_github_lists_are_fully_paginated(self):
+        import asyncio
+
+        module = load_module()
+        calls = []
+
+        async def fake_github_json(path):
+            calls.append(path)
+            return [1, 2] if "page=1" in path else [3]
+
+        module._github_json = fake_github_json
+        values = asyncio.run(module._github_json_pages("/issues?per_page=2", page_size=2))
+        self.assertEqual(values, [1, 2, 3])
+        self.assertEqual(len(calls), 2)
+
+    def test_discussion_messages_are_updated_and_extra_chunks_removed(self):
+        import asyncio
+        import sqlite3
+        import tempfile
+
+        module = load_module()
+        class Message:
+            def __init__(self, message_id, content):
+                self.id, self.content, self.deleted = message_id, content, False
+            async def edit(self, *, content, allowed_mentions=None):
+                self.content = content
+            async def delete(self):
+                self.deleted = True
+
+        class Thread:
+            def __init__(self):
+                self.messages = {}
+                self.next_id = 1
+            async def send(self, content, allowed_mentions=None):
+                message = Message(self.next_id, content)
+                self.next_id += 1
+                self.messages[message.id] = message
+                return message
+            async def fetch_message(self, message_id):
+                message = self.messages.get(message_id)
+                if message is None or message.deleted:
+                    raise module.discord.NotFound()
+                return message
+            def get_partial_message(self, message_id):
+                return self.messages[message_id]
+
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = directory + "/test.db"
+            module.base.db = lambda: sqlite3.connect(db_path)
+            module._ensure_schema()
+            thread = Thread()
+            asyncio.run(module._sync_message_bundle(thread, "comment:9", 455, 456, ["first", "second"]))
+            first_id, second_id = [int(value) for value in module._discussion_message_ids("comment:9")]
+            asyncio.run(module._sync_message_bundle(thread, "comment:9", 455, 456, ["edited"]))
+            self.assertEqual(thread.messages[first_id].content, "edited")
+            self.assertTrue(thread.messages[second_id].deleted)
+            self.assertEqual(module._discussion_message_ids("comment:9"), [str(first_id)])
+
     def test_issue_comment_webhook_requests_thread_reconciliation(self):
         import asyncio
         from unittest.mock import AsyncMock
