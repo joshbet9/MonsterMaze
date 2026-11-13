@@ -35,7 +35,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
 
     def test_long_release_notes_are_chunked_without_truncation(self):
         module = load_module()
-        body = ("Release change line.\\n" * 500) + ("x" * 2100)
+        body = ("Release change line.\n" * 500) + ("x" * 2100)
         messages = module.format_release("joshbet9/testplex", {"body": body})
         self.assertGreater(len(messages), 1)
         self.assertTrue(all(len(message) <= 1900 for message in messages))
@@ -43,7 +43,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
 
     def test_issue_descriptions_and_comments_keep_full_feedback(self):
         module = load_module()
-        description = "reproduction details\\n" * 250
+        description = "reproduction details\n" * 250
         messages = module.format_issue_description({
             "number": 455, "title": "Map failure", "state": "open",
             "html_url": "https://github.com/joshbet9/testplex/issues/455",
@@ -51,7 +51,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         })
         self.assertTrue(all(len(message) <= 1900 for message in messages))
         self.assertIn(description, "".join(messages))
-        comment = "Additional tester discussion\\n" * 200
+        comment = "Additional tester discussion\n" * 200
         messages = module.format_issue_comment({
             "user": {"login": "tester"}, "html_url": "https://github.com/joshbet9/testplex/issues/455#issuecomment-1",
             "body": comment,
