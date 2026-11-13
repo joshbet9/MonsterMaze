@@ -590,7 +590,12 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
             module._ensure_feedback_issue_parent = AsyncMock()
             comment = AsyncMock(return_value={"id": 88, "html_url": "https://github.com/example/comment/88"})
             module._github_create_issue_comment = comment
-            thread = SimpleNamespace(id=9001, parent_id=456, name="Builder water issue")
+            thread = SimpleNamespace(
+                id=9001,
+                parent_id=456,
+                name="Builder water issue",
+                send=AsyncMock(return_value=SimpleNamespace(id=9003, content="")),
+            )
             guild = SimpleNamespace(id=123)
             starter = SimpleNamespace(
                 id=9001,
@@ -669,6 +674,8 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         module._ensure_feedback_thread = AsyncMock(return_value=(thread, 310, "bug"))
         module._ensure_feedback_issue_parent = AsyncMock()
         module._sync_issue_discussion = AsyncMock()
+        module._sync_message_bundle = AsyncMock()
+        module.feedback_game_from_issue = lambda _issue, _games: "Dragon Escape"
         issue = {
             "number": 455,
             "body": "<!-- testplex-feedback:type=bug -->\n<!-- testplex-discord-forum-thread:9001 -->",
@@ -677,6 +684,11 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         asyncio.run(module._sync_feedback_issue(None, {}, issue))
         module._ensure_feedback_issue_parent.assert_awaited_once_with(issue, 310)
         self.assertFalse(module._sync_issue_discussion.await_args.kwargs["include_body"])
+        module._sync_message_bundle.assert_awaited_once()
+        self.assertEqual(
+            module._sync_message_bundle.await_args.args[1],
+            "issue:455:label-controls",
+        )
 
     def test_forum_provisioning_covers_each_canonical_game_and_is_idempotent(self):
         import asyncio
