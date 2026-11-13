@@ -20,23 +20,44 @@ def load_module():
 class TestplexDiscordFormattingTests(unittest.TestCase):
     def test_release_message_includes_tag_notes_link_and_author(self):
         module = load_module()
-        message = module.format_release("joshbet9/testplex", {
+        message = "\\n".join(module.format_release("joshbet9/testplex", {
             "name": "Testplex Update",
             "tag_name": "v1.2.3",
             "body": "Fixed Dragon Escape and improved server stability.",
             "html_url": "https://github.com/joshbet9/testplex/releases/tag/v1.2.3",
             "author": {"login": "Josh"},
-        })
+        }))
         self.assertIn("Testplex Update", message)
         self.assertIn("v1.2.3", message)
         self.assertIn("Dragon Escape", message)
         self.assertIn("github.com/joshbet9/testplex/releases/tag/v1.2.3", message)
         self.assertIn("Published by Josh", message)
 
-    def test_release_message_stays_below_discord_limit(self):
+    def test_long_release_notes_are_chunked_without_truncation(self):
         module = load_module()
-        message = module.format_release("joshbet9/testplex", {"body": "x" * 5000})
-        self.assertLessEqual(len(message), 1900)
+        body = ("Release change line.\\n" * 500) + ("x" * 2100)
+        messages = module.format_release("joshbet9/testplex", {"body": body})
+        self.assertGreater(len(messages), 1)
+        self.assertTrue(all(len(message) <= 1900 for message in messages))
+        self.assertIn(body, "".join(messages))
+
+    def test_issue_descriptions_and_comments_keep_full_feedback(self):
+        module = load_module()
+        description = "reproduction details\\n" * 250
+        messages = module.format_issue_description({
+            "number": 455, "title": "Map failure", "state": "open",
+            "html_url": "https://github.com/joshbet9/testplex/issues/455",
+            "labels": [{"name": "game:dragon-escape"}], "body": description,
+        })
+        self.assertTrue(all(len(message) <= 1900 for message in messages))
+        self.assertIn(description, "".join(messages))
+        comment = "Additional tester discussion\\n" * 200
+        messages = module.format_issue_comment({
+            "user": {"login": "tester"}, "html_url": "https://github.com/joshbet9/testplex/issues/455#issuecomment-1",
+            "body": comment,
+        })
+        self.assertTrue(all(len(message) <= 1900 for message in messages))
+        self.assertIn(comment, "".join(messages))
 
     def test_subissue_message_tracks_state_and_game_label(self):
         module = load_module()
