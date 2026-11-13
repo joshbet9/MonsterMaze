@@ -96,12 +96,106 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         self.assertNotIn("testplex-discord-forum-thread", message)
         self.assertNotIn("Submitted via the Testplex", message)
 
+    def test_new_forum_issue_receipt_is_scannable_and_has_label_controls(self):
+        module = load_module()
+        receipt = module.format_feedback_receipt({
+            "number": 457,
+            "html_url": "https://github.com/joshbet9/testplex/issues/457",
+            "labels": [{"name": "needs-triage"}],
+        }, "bug", "Dragon Escape", 310)
+        self.assertIn("🐛 **Bug report filed · Dragon Escape**", receipt)
+        self.assertIn("`Needs triage`", receipt)
+        self.assertIn("[GitHub issue #457]", receipt)
+        self.assertIn("[Game tracker #310]", receipt)
+        self.assertIn("`!implemented`", receipt)
+
     def test_feedback_status_maps_to_discord_forum_subcategory(self):
         module = load_module()
         self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "needs-triage"}]}), "Needs triage")
         self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "in-progress"}]}), "In progress")
+        self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "implemented"}]}), "Implemented")
         self.assertEqual(module._feedback_status_tag({"state": "closed", "labels": [{"name": "wontfix"}]}), "Won't fix")
         self.assertEqual(module._feedback_status_tag({"state": "closed", "labels": []}), "Fixed")
+
+    def test_implemented_label_command_updates_github_and_discord_status(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, Mock
+
+        module = load_module()
+        module._github_feedback_labels = AsyncMock(return_value={
+            "needs-triage": "needs-triage",
+            "implemented": "implemented",
+        })
+        module._github_write_sync = Mock()
+        updated_issue = {
+            "number": 457,
+            "html_url": "https://github.com/joshbet9/testplex/issues/457",
+            "state": "open",
+            "labels": [{"name": "implemented"}],
+        }
+        module._github_json = AsyncMock(return_value=updated_issue)
+        module._sync_feedback_thread_tags = AsyncMock()
+        message = SimpleNamespace(
+            content="!implemented",
+            channel=SimpleNamespace(id=123, send=AsyncMock()),
+            reply=AsyncMock(),
+        )
+        bot = SimpleNamespace()
+
+        self.assertTrue(asyncio.run(module._handle_feedback_label_command(bot, message, 457)))
+        self.assertEqual(module._github_write_sync.call_count, 2)
+        self.assertEqual(module._github_write_sync.call_args_list[0].args[:2], (
+            "POST", "/issues/457/labels",
+        ))
+        self.assertEqual(module._github_write_sync.call_args_list[1].args[:2], (
+            "DELETE", "/issues/457/labels/needs-triage",
+        ))
+        module._sync_feedback_thread_tags.assert_awaited_once_with(bot, updated_issue, message.channel)
+        self.assertIn("Marked implemented", message.reply.await_args.args[0])
+
+    def test_tester_can_apply_or_remove_an_exact_existing_github_label(self):
+        import asyncio
+        from unittest.mock import AsyncMock, Mock
+
+        module = load_module()
+        module._github_feedback_labels = AsyncMock(return_value={"priority: high": "Priority: High"})
+        module._github_write_sync = Mock()
+        module._github_json = AsyncMock(return_value={"number": 457, "labels": []})
+
+        asyncio.run(module._github_change_feedback_label(457, "priority: high", False))
+        self.assertEqual(module._github_write_sync.call_args.args[:2], (
+            "DELETE", "/issues/457/labels/Priority%3A%20High",
+        ))
+
+    def test_label_commands_are_recognized_without_mirroring_them_as_comments(self):
+        import asyncio
+        import sqlite3
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            module.base.db = lambda: sqlite3.connect(directory + "/test.db")
+            module._ensure_schema()
+            module._save_feedback_forum("bug:dragon-escape", 456)
+            module._save_feedback_thread(457, 310, "bug:dragon-escape", 9001)
+            module._handle_feedback_label_command = AsyncMock(return_value=True)
+            module._github_create_issue_comment = AsyncMock()
+            message = SimpleNamespace(
+                id=9002,
+                author=SimpleNamespace(id=5, bot=False),
+                webhook_id=None,
+                guild=SimpleNamespace(id=123),
+                channel=SimpleNamespace(id=9001, parent_id=456),
+                content="!label needs-triage",
+            )
+            bot = SimpleNamespace(user=SimpleNamespace(id=999), cfg={"testplex_discord_guild_id": 123})
+
+            self.assertTrue(asyncio.run(module.handle_discord_message(bot, message)))
+            module._handle_feedback_label_command.assert_awaited_once_with(bot, message, 457)
+            module._github_create_issue_comment.assert_not_awaited()
 
     def test_feedback_status_tag_is_applied_and_repeated_sync_is_idempotent(self):
         import asyncio
