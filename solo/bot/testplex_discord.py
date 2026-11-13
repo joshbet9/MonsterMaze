@@ -278,16 +278,20 @@ async def _delete_issue_discussion(thread, tracker_number, issue_number):
             "WHERE tracker_issue_number=? AND issue_number=?",
             (tracker_number, issue_number),
         ).fetchall()
-        for item_key, encoded_ids in rows:
-            for message_id in json.loads(encoded_ids):
-                try:
-                    await thread.get_partial_message(int(message_id)).delete()
-                except discord.HTTPException:
-                    pass
-            conn.execute("DELETE FROM testplex_discussion_messages WHERE item_key=?", (item_key,))
-        conn.commit()
     finally:
         conn.close()
+    for item_key, encoded_ids in rows:
+        for message_id in json.loads(encoded_ids):
+            try:
+                await thread.get_partial_message(int(message_id)).delete()
+            except discord.HTTPException:
+                pass
+        conn = base.db()
+        try:
+            conn.execute("DELETE FROM testplex_discussion_messages WHERE item_key=?", (item_key,))
+            conn.commit()
+        finally:
+            conn.close()
 
 
 async def _sync_issue_discussion(thread, tracker_number, issue):
