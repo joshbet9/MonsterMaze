@@ -186,6 +186,34 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
             module.feedback_forum_key("idea", "Monster Maze (Modern)", games["Monster Maze (Modern)"]),
         )
 
+    def test_feedback_routing_uses_game_label_when_display_field_is_not_a_selector(self):
+        module = load_module()
+        games = {
+            "Monster Maze (Modern)": {"issue_number": 320, "slug": "monster-maze"},
+            "Shared / Global": {"issue_number": 321, "slug": "shared-global"},
+        }
+        issue = {
+            "number": 405,
+            "body": "### Game\nShared lobby and global systems\n\n### Report\nCollision is enabled.",
+            "labels": [{"name": "game:shared-global"}],
+        }
+        self.assertEqual(module.feedback_game_from_issue(issue, games), "Shared / Global")
+
+    def test_feedback_routing_falls_back_to_parent_tracker_for_unmapped_optional_field(self):
+        module = load_module()
+        games = {
+            "Monster Maze (Modern)": {"issue_number": 320, "slug": "monster-maze"},
+        }
+        issue = {
+            "number": 389,
+            "body": "### Game\nMonster Maze\n\n### Report\nMap did not load.",
+            "labels": [{"name": "bug"}],
+        }
+        self.assertEqual(
+            module.feedback_game_from_issue(issue, games, "Monster Maze (Modern)"),
+            "Monster Maze (Modern)",
+        )
+
     def test_forum_provisioning_covers_each_canonical_game_and_is_idempotent(self):
         import asyncio
         import sqlite3

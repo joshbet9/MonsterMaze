@@ -117,10 +117,35 @@ def is_discord_mirrored_comment(comment):
     return "<!-- testplex-discord-message:" in body
 
 
-def feedback_game_from_issue(issue):
+def feedback_game_from_issue(issue, games=None, fallback_game=None):
+    """Resolve a report to a configured selector, including optional Game fields."""
     body = issue.get("body") or ""
     match = re.search(r"^###\s+Game\s*\r?\n+([^\r\n]+)", body, re.MULTILINE)
-    return match.group(1).strip() if match else None
+    selected_name = match.group(1).strip() if match else None
+    if games:
+        labels = {
+            str(label.get("name", "")).casefold()
+            for label in issue.get("labels", [])
+            if isinstance(label, dict)
+        }
+        game_slug = next((label[5:] for label in labels if label.startswith("game:")), None)
+        if game_slug:
+            for name, tracker in games.items():
+                if str(tracker.get("slug", "")).casefold() == game_slug:
+                    return name
+
+        if selected_name:
+            if selected_name in games:
+                return selected_name
+            selected_key = selected_name.casefold()
+            match_name = next((name for name in games if name.casefold() == selected_key), None)
+            if match_name:
+                return match_name
+
+        if fallback_game in games:
+            return fallback_game
+        return None
+    return selected_name
 
 
 def feedback_kind_from_issue(issue):
@@ -621,10 +646,10 @@ async def _sync_issue_discussion(thread, tracker_number, issue, kind=None):
 
 
 async def _ensure_feedback_thread(bot, games, issue, fallback_game=None):
-    game_name = feedback_game_from_issue(issue) or fallback_game
+    game_name = feedback_game_from_issue(issue, games, fallback_game)
     route = games.get(game_name) if game_name else None
     if route is None:
-        raise RuntimeError(f"feedback issue #{issue['number']} has no configured Game field")
+        raise RuntimeError(f"feedback issue #{issue['number']} has no matching game label, field, or tracker")
     kind = feedback_kind_from_issue(issue)
     forum_key = feedback_forum_key(kind, game_name, route)
     tracker_number = int(route["issue_number"])
