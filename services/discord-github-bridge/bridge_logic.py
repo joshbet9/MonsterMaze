@@ -40,8 +40,8 @@ def format_release(repository, release):
     tag = release.get("tag_name", "")
     url = release.get("html_url", "")
     body = (release.get("body") or "").strip()
-    if len(body) > 3000:
-        body = body[:2997].rstrip() + "..."
+    if len(body) > 1400:
+        body = body[:1397].rstrip() + "..."
     lines = [f"📦 **{repository} — {title}**"]
     if tag:
         lines.append(f"Release: `{tag}`")
@@ -52,7 +52,8 @@ def format_release(repository, release):
     author = release.get("author", {}).get("login")
     if author:
         lines.append(f"Published by {author}")
-    return "\n\n".join(lines)
+    message = "\n\n".join(lines)
+    return message if len(message) <= 1900 else message[:1897].rstrip() + "..."
 
 
 def format_subissue(issue):

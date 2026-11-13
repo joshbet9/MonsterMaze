@@ -38,7 +38,7 @@ class BridgeLogicTests(unittest.TestCase):
         self.assertIn("https://example.test/release", message)
         self.assertIn("Published by Josh", message)
         long_message = format_release("repo", {"body": "x" * 4000})
-        self.assertLessEqual(len(long_message), 3100)
+        self.assertLessEqual(len(long_message), 1900)
 
     def test_subissue_message_shows_status_title_and_labels(self):
         message = format_subissue({
