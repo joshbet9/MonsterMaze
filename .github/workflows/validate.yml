@@ -259,8 +259,8 @@ jobs:
         if: always()
         run: rm -rf docker/build-context
 
-  discord-github-bridge:
-    name: Validate Discord GitHub bridge
+  testplex-discord-integration:
+    name: Validate Testplex Discord integration
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -269,21 +269,21 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Compile bridge
-        run: python -m py_compile services/discord-github-bridge/bridge.py services/discord-github-bridge/bridge_logic.py
-      - name: Test bridge formatting and transition logic
-        working-directory: services/discord-github-bridge
-        run: python -m unittest -v test_bridge_logic.py
-      - name: Validate dependency file
+      - name: Install existing bot dependencies
+        run: python -m pip install -r solo/bot/requirements.txt
+      - name: Test Discord announcements, issue index, status, and webhook security
+        working-directory: solo/bot
+        run: python -m unittest -v test_testplex_discord.py test_github_webhook.py test_server_status.py
+      - name: Compile integrated bot paths
+        run: python -m py_compile solo/bot/api_server.py solo/bot/monster_bot.py solo/bot/server_status.py solo/bot/testplex_discord.py
+      - name: Validate bot integration configuration and documentation
         shell: bash
         run: |
           set -euo pipefail
-          grep -q '^discord\.py==' services/discord-github-bridge/requirements.txt
-          grep -q '^aiohttp==' services/discord-github-bridge/requirements.txt
-          test -f services/discord-github-bridge/Dockerfile
-          test -f services/discord-github-bridge/.env.example
-          test -f services/discord-github-bridge/bridge_logic.py
-          test -f services/discord-github-bridge/test_bridge_logic.py
+          grep -q 'testplex_discord.start' solo/bot/monster_bot.py
+          grep -q 'TESTPLEX_GITHUB_WEBHOOK_SECRET' solo/bot/api_server.py
+          grep -q 'testplex_issue_index_channel' solo/bot/config.example.json
+          test -f solo/bot/TESTPLEX-DISCORD.md
 
   release-package-1-8:
     name: Validate release packaging 1.8

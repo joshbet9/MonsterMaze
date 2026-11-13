@@ -16,6 +16,8 @@ Do not put the token in Git.
 
 The API listens to `0.0.0.0` on port `8090` by default. Put it behind HTTPS before exposing it to public game servers.
 
+The same API listener accepts signed GitHub `issues` and `release` events at `POST /github/webhook` when `TESTPLEX_GITHUB_WEBHOOK_SECRET` is configured. The handler only dispatches repositories in `TESTPLEX_GITHUB_REPOSITORIES` (default `joshbet9/testplex`). See [Testplex Discord setup](TESTPLEX-DISCORD.md) for channel configuration and permissions.
+
 ## Endpoints
 
 ## JNP Mod (public, client-reported) endpoints
