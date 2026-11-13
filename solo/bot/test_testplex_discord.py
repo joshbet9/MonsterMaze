@@ -96,7 +96,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         self.assertNotIn("testplex-discord-forum-thread", message)
         self.assertNotIn("Submitted via the Testplex", message)
 
-    def test_new_forum_issue_receipt_is_scannable_and_has_label_controls(self):
+    def test_new_forum_issue_receipt_is_scannable(self):
         module = load_module()
         receipt = module.format_feedback_receipt({
             "number": 457,
@@ -107,7 +107,35 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         self.assertIn("`Needs triage`", receipt)
         self.assertIn("[GitHub issue #457]", receipt)
         self.assertIn("[Game tracker #310]", receipt)
-        self.assertIn("`!implemented`", receipt)
+
+    def test_feedback_label_controls_are_visible_on_existing_issue_threads(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        module = load_module()
+        issue = {
+            "number": 457,
+            "html_url": "https://github.com/joshbet9/testplex/issues/457",
+            "state": "open",
+            "labels": [{"name": "needs-triage"}],
+            "body": "<!-- testplex-feedback:type=bug -->\n<!-- testplex-discord-forum-thread:9001 -->",
+        }
+        thread = SimpleNamespace(id=9001, archived=False)
+        module._ensure_feedback_thread = AsyncMock(return_value=(thread, 310, "bug"))
+        module._sync_feedback_thread_tags = AsyncMock()
+        module._ensure_feedback_issue_parent = AsyncMock()
+        module._sync_issue_discussion = AsyncMock()
+        module._sync_message_bundle = AsyncMock()
+        module.feedback_game_from_issue = lambda issue, games: "Dragon Escape"
+
+        asyncio.run(module._sync_feedback_issue(SimpleNamespace(), {}, issue))
+        module._sync_message_bundle.assert_awaited_once()
+        args = module._sync_message_bundle.await_args.args
+        self.assertEqual(args[0], thread)
+        self.assertEqual(args[1], "issue:457:label-controls")
+        self.assertIn("!implemented", args[4][0])
+        self.assertIn("ready for testing", args[4][0])
 
     def test_feedback_status_maps_to_discord_forum_subcategory(self):
         module = load_module()
@@ -466,7 +494,12 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
                 author=SimpleNamespace(id=5, bot=False, display_name="Tester"),
                 webhook_id=None,
                 guild=SimpleNamespace(id=123),
-                channel=SimpleNamespace(id=9001, parent_id=456, name="Builder blocks are unreliable"),
+                channel=SimpleNamespace(
+                    id=9001,
+                    parent_id=456,
+                    name="Builder blocks are unreliable",
+                    send=AsyncMock(return_value=SimpleNamespace(id=9003, content="")),
+                ),
                 content="Builder blocks vanish after placing in water.",
                 attachments=[SimpleNamespace(url="https://cdn.example/image.png")],
                 reply=AsyncMock(),
@@ -484,6 +517,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
             self.assertIn("<!-- testplex-discord-forum-thread:9001 -->", body)
             self.assertIn("Parent tracker", body)
             self.assertIn("https://cdn.example/image.png", body)
+            self.assertIn("!implemented", message.channel.send.await_args.args[0])
             module._ensure_feedback_issue_parent.assert_awaited_once_with(
                 create_issue.return_value, 310
             )
