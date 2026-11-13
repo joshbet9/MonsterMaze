@@ -476,7 +476,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         module._sync_feedback_event_issue.assert_awaited_once_with(None, {}, issue)
         module.sync_all_trackers.assert_not_awaited()
 
-    def test_discord_reply_format_is_linked_and_does_not_ping_github_users(self):
+    def test_discord_reply_format_is_conversational_and_does_not_ping_github_users(self):
         from types import SimpleNamespace
 
         module = load_module()
@@ -490,7 +490,7 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         )
         body = module.format_discord_reply(message, 314)
         self.assertIn("tester", body)
-        self.assertIn("https://discord.com/channels/111/222/123456", body)
+        self.assertNotIn("https://discord.com/channels/111/222/123456", body)
         self.assertIn("@\u200bjosh", body)
         self.assertIn("<!-- testplex-discord-message:314:222:123456 -->", body)
         self.assertTrue(module.is_discord_mirrored_comment({"body": body}))
