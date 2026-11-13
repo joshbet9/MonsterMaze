@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import discord
@@ -23,6 +24,8 @@ DISCORD_MESSAGE_LIMIT = 1900
 DISCORD_WRITE_LOCK = asyncio.Lock()
 FEEDBACK_DIRECTORY_CACHE = None
 PENDING_FEEDBACK_POSTS = {}
+FEEDBACK_STATUS_TAGS = ("Needs triage", "Confirmed", "In progress", "Implemented", "Fixed", "Won't fix")
+FEEDBACK_FORUM_TAG_CACHE = {}
 
 
 def safe_repository_allowlist(value):
@@ -38,7 +41,9 @@ def split_discord_messages(text, limit=DISCORD_MESSAGE_LIMIT):
         return [""]
     chunks = []
     while len(remaining) > limit:
-        split_at = remaining.rfind("\n", 0, limit + 1)
+        # Keep the newline itself inside the chunk without letting a newline
+        # at index `limit` produce a message of `limit + 1` characters.
+        split_at = remaining.rfind("\n", 0, limit)
         if split_at <= 0:
             split_at = limit
         else:
@@ -67,26 +72,94 @@ def format_release(repository, release):
 
 
 def format_issue_description(issue, kind="Feedback"):
-    heading = f"ðŸ“ **{kind} Â· #{issue['number']} â€” {issue['title']}**"
-    body = issue.get("body") or ""
-    if not body.strip():
-        body = "_No description provided._"
-    return split_discord_messages(
-        f"{heading}\n{issue.get('html_url', '')}\n\n{format_subissue(issue)}\n\n{body}"
-    )
+    labels = {str(label.get("name", "")).casefold() for label in issue.get("labels", [])}
+    state = "Closed" if issue.get("state") == "closed" else "Open"
+    status = _feedback_status_tag(issue)
+    if status != "Needs triage" or state == "Open" and "needs-triage" in labels:
+        state += f" · {status}"
+
+    sections = _feedback_body_sections(issue.get("body") or "")
+    game = sections.get("game", "")
+    report = sections.get("report", "")
+    parent = sections.get("parent tracker", "")
+    discord_link = sections.get("discord thread", "")
+    attachments = sections.get("attachments", "")
+    if not report:
+        report = sections.get("details", "") or re.sub(
+            r"<!--.*?-->", "", str(issue.get("body") or ""), flags=re.DOTALL
+        ).strip()
+    if not report:
+        report = "_No description provided._"
+
+    lines = [
+        f"{_feedback_kind_emoji(kind)} **{kind} #{issue['number']} — {issue.get('title', 'Tester feedback')}**",
+        f"`{state}`" + (f" · `{game}`" if game else ""),
+        "",
+        "**Report**",
+        report.strip(),
+    ]
+    if parent:
+        parent_url = re.search(r"https://github\.com/[^\s)]+", parent)
+        parent_name = parent.split(":", 1)[0].strip() if ":" in parent else "Game tracker"
+        lines.extend(["", f"**Tracker:** [{parent_name}]({parent_url.group(0)})" if parent_url else f"**Tracker:** {parent_name}"])
+    links = []
+    if issue.get("html_url"):
+        links.append(f"[GitHub issue]({issue['html_url']})")
+    discord_url = re.search(r"https://discord\.com/channels/[^\s)]+", discord_link)
+    if discord_url:
+        links.append(f"[Discord thread]({discord_url.group(0)})")
+    if links:
+        lines.extend(["", " · ".join(links)])
+    if attachments:
+        lines.extend(["", "**Attachments**", attachments.strip()])
+    lines.extend([
+        "",
+        "**Labels:** `!labels` · `!label <name>` · `!unlabel <name>` · `!implemented`",
+    ])
+    return split_discord_messages("\n".join(lines))
+
+
+def _feedback_kind_emoji(kind):
+    return "🐛" if str(kind).casefold() in {"bug", "bug report"} else "💡"
+
+
+def _feedback_body_sections(body):
+    """Extract the readable sections from feedback issues, omitting sync markers."""
+    cleaned = re.sub(r"<!--.*?-->", "", str(body or ""), flags=re.DOTALL).strip()
+    sections = {}
+    current = "details"
+    collected = {current: []}
+    for line in cleaned.splitlines():
+        heading = re.match(r"^#{1,6}\s+(.+?)\s*$", line)
+        if heading:
+            current = re.sub(r"\s+", " ", heading.group(1)).strip().casefold()
+            collected.setdefault(current, [])
+        else:
+            collected.setdefault(current, []).append(line)
+    for name, lines in collected.items():
+        value = "\n".join(lines).strip()
+        if value:
+            sections[name] = value
+    if sections.get("report"):
+        sections["report"] = re.sub(
+            r"\n*Submitted via the Testplex Discord feedback forum\.?\s*$", "", sections["report"]
+        ).strip()
+    return sections
 
 
 def format_issue_comment(comment):
     author = comment.get("user") or {}
-    heading = f"ðŸ’¬ **{author.get('login') or 'GitHub user'} commented**"
-    if comment.get("html_url"):
-        heading += f" Â· [View on GitHub]({comment['html_url']})"
+    heading = f"💬 **GitHub reply · {author.get('login') or 'GitHub user'}**"
     body = comment.get("body") or ""
     if not body.strip():
         body = "_(empty comment)_"
     if comment.get("updated_at") and comment.get("created_at") and comment["updated_at"] != comment["created_at"]:
-        heading += " _(edited)_"
-    return split_discord_messages(f"{heading}\n\n{body}")
+        heading += " · _(edited)_"
+    lines = [heading]
+    if comment.get("html_url"):
+        lines.append(f"[View on GitHub]({comment['html_url']})")
+    lines.extend(["", body])
+    return split_discord_messages("\n".join(lines))
 
 
 def format_discord_reply(message, tracker_number):
@@ -280,6 +353,60 @@ async def _github_add_subissue(parent_number, child_issue_id):
         f"/issues/{int(parent_number)}/sub_issues",
         {"sub_issue_id": int(child_issue_id)},
     )
+
+
+async def _github_feedback_labels():
+    labels = await _github_json_pages("/labels?per_page=100")
+    return {str(item.get("name", "")).casefold(): str(item.get("name", "")) for item in labels}
+
+
+async def _github_change_feedback_label(issue_number, label, add):
+    labels = await _github_feedback_labels()
+    canonical = labels.get(label.casefold())
+    if canonical is None and label.casefold() == "implemented" and add:
+        canonical = "implemented"
+        try:
+            await asyncio.to_thread(
+                _github_write_sync,
+                "POST",
+                "/labels",
+                {
+                    "name": canonical,
+                    "color": "5319e7",
+                    "description": "A tester or maintainer marked this issue implemented; awaiting verification.",
+                },
+            )
+        except RuntimeError as exc:
+            # A concurrent tester may have created the shared label first.
+            if "HTTP 422" not in str(exc):
+                raise
+    if canonical is None:
+        return None
+
+    if add:
+        await asyncio.to_thread(
+            _github_write_sync,
+            "POST",
+            f"/issues/{int(issue_number)}/labels",
+            {"labels": [canonical]},
+        )
+        if canonical.casefold() == "implemented":
+            triage = labels.get("needs-triage")
+            if triage:
+                await asyncio.to_thread(
+                    _github_write_sync,
+                    "DELETE",
+                    f"/issues/{int(issue_number)}/labels/{urllib.parse.quote(triage, safe='')}",
+                    {},
+                )
+    else:
+        await asyncio.to_thread(
+            _github_write_sync,
+            "DELETE",
+            f"/issues/{int(issue_number)}/labels/{urllib.parse.quote(canonical, safe='')}",
+            {},
+        )
+    return await _github_json(f"/issues/{int(issue_number)}")
 
 
 async def _github_json_pages(path, page_size=100):
@@ -766,8 +893,95 @@ async def _ensure_feedback_thread(bot, games, issue, fallback_game=None):
     return thread, tracker_number, kind
 
 
+def _feedback_status_tag(issue):
+    labels = {str(label.get("name", "")).casefold() for label in issue.get("labels", [])}
+    if issue.get("state") == "closed":
+        if labels.intersection({"wontfix", "won't fix", "not-planned", "not planned"}):
+            return "Won't fix"
+        return "Fixed"
+    if "implemented" in labels:
+        return "Implemented"
+    if "needs-triage" in labels:
+        return "Needs triage"
+    if labels.intersection({"in-progress", "status:in-progress"}):
+        return "In progress"
+    if labels.intersection({"confirmed", "bug-confirmed"}):
+        return "Confirmed"
+    # New reports are always filed with needs-triage, but retain a sensible
+    # forum label if GitHub temporarily returns an incomplete label payload.
+    return "Needs triage"
+
+
+async def _sync_feedback_thread_tags(bot, issue, thread):
+    """Mirror the GitHub triage state to one visible Discord forum tag."""
+    parent_id = getattr(thread, "parent_id", None)
+    if not parent_id or not _is_feedback_forum(parent_id):
+        return
+    get_channel = getattr(bot, "get_channel", None)
+    forum = get_channel(parent_id) if get_channel is not None else None
+    if forum is None:
+        fetch_channel = getattr(bot, "fetch_channel", None)
+        if fetch_channel is None:
+            return
+        try:
+            forum = await fetch_channel(parent_id)
+        except discord.HTTPException:
+            return
+    if not isinstance(forum, discord.ForumChannel):
+        return
+
+    target_name = _feedback_status_tag(issue)
+    tags = list(getattr(forum, "available_tags", ()))
+    cache = FEEDBACK_FORUM_TAG_CACHE.setdefault(int(forum.id), {})
+    tag = next((item for item in tags if item.name.casefold() == target_name.casefold()), None)
+    tag = tag or cache.get(target_name.casefold())
+    if tag is None:
+        if len(tags) >= 20:
+            print(
+                f"[testplex-discord] forum {forum.id} has no room for status tag {target_name!r}",
+                flush=True,
+            )
+            return
+        try:
+            tag = await forum.create_tag(
+                name=target_name,
+                reason="Mirror Testplex GitHub feedback triage status",
+            )
+        except discord.HTTPException as exc:
+            print(
+                f"[testplex-discord] could not create forum status tag {target_name!r} "
+                f"in {forum.id}: {exc}",
+                flush=True,
+            )
+            return
+    cache[target_name.casefold()] = tag
+
+    existing = list(getattr(thread, "applied_tags", ()))
+    managed_names = {name.casefold() for name in FEEDBACK_STATUS_TAGS}
+    kept = [item for item in existing if getattr(item, "name", "").casefold() not in managed_names]
+    if len(kept) >= 5:
+        print(
+            f"[testplex-discord] issue #{issue.get('number')} already has five non-status forum tags; "
+            "leaving its existing tags unchanged",
+            flush=True,
+        )
+        return
+    new_tags = kept + [tag]
+    if {getattr(item, "id", None) for item in existing} == {getattr(item, "id", None) for item in new_tags}:
+        return
+    try:
+        await thread.edit(applied_tags=new_tags)
+    except discord.HTTPException as exc:
+        print(
+            f"[testplex-discord] could not apply forum status tag {target_name!r} "
+            f"to issue #{issue.get('number')}: {exc}",
+            flush=True,
+        )
+
+
 async def _sync_feedback_issue(bot, games, issue, fallback_game=None):
     thread, tracker_number, kind = await _ensure_feedback_thread(bot, games, issue, fallback_game)
+    await _sync_feedback_thread_tags(bot, issue, thread)
     if feedback_discord_thread_from_issue(issue) is not None:
         try:
             await _ensure_feedback_issue_parent(issue, tracker_number)
@@ -791,6 +1005,64 @@ async def _sync_feedback_event_issue(bot, cfg, issue):
     await _ensure_feedback_forums(bot, cfg, games)
     await _sync_feedback_issue(bot, games, issue, feedback_game_from_issue(issue))
     return True
+
+
+async def _handle_feedback_label_command(bot, message, issue_number):
+    """Let testers manage labels from the mapped issue's Discord thread."""
+    content = str(getattr(message, "content", "") or "").strip()
+    match = re.fullmatch(r"!(labels|label|unlabel|implemented)(?:\s+(.+))?", content, re.IGNORECASE)
+    if match is None:
+        return False
+
+    command = match.group(1).casefold()
+    requested = (match.group(2) or "").strip()
+    if command in {"label", "unlabel"} and not requested:
+        await message.reply(
+            "Use `!labels` to list repository labels, then `!label <name>` or `!unlabel <name>`. "
+            "Use `!implemented` when the issue has been implemented and is ready for verification.",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        return True
+
+    try:
+        if command == "labels":
+            labels = await _github_feedback_labels()
+            content = "**GitHub labels**\n" + "\n".join(f"• `{name}`" for name in sorted(labels.values(), key=str.casefold))
+            chunks = split_discord_messages(content)
+            await message.reply(chunks[0], allowed_mentions=discord.AllowedMentions.none())
+            for chunk in chunks[1:]:
+                await message.channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
+            return True
+
+        add = command != "unlabel"
+        label = "implemented" if command == "implemented" else requested
+        updated_issue = await _github_change_feedback_label(issue_number, label, add)
+        if updated_issue is None:
+            await message.reply(
+                f"I couldn't find the GitHub label `{label}`. Use `!labels` to see the available labels.",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return True
+
+        await _sync_feedback_thread_tags(bot, updated_issue, message.channel)
+        action = "Marked implemented; awaiting verification" if command == "implemented" else (
+            f"Added GitHub label `{label}`" if add else f"Removed GitHub label `{label}`"
+        )
+        await message.reply(
+            f"{action} on [issue #{issue_number}]({updated_issue.get('html_url', '')}).",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        return True
+    except Exception as exc:
+        print(
+            f"[testplex-discord] label command failed for issue #{issue_number}: {exc}",
+            flush=True,
+        )
+        await message.reply(
+            "I couldn't update the GitHub labels. The issue is unchanged; please try again later.",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        return True
 
 
 async def _ensure_tracker_thread(bot, cfg, tracker):
@@ -994,6 +1266,25 @@ def _feedback_issue_body_from_discord(message, kind, game_name, parent_number):
     return "\n\n".join(lines)
 
 
+def format_feedback_receipt(issue, kind, game_name, tracker_number, linked=True):
+    issue_number = issue.get("number", "?")
+    icon = "🐛" if kind == "bug" else "💡"
+    status = _feedback_status_tag({
+        "state": issue.get("state") or "open",
+        "labels": issue.get("labels") or [],
+    })
+    lines = [
+        f"{icon} **{kind.title()} report filed · {game_name}**",
+        f"Status: `{status}`",
+        f"[GitHub issue #{issue_number}]({issue.get('html_url', '')}) · "
+        f"[Game tracker #{tracker_number}](https://github.com/{GITHUB_REPOSITORY}/issues/{tracker_number})",
+        "Labels: `!labels` · `!label <name>` · `!unlabel <name>` · `!implemented`",
+    ]
+    if not linked:
+        lines.extend(["", "The issue was created, but its tracker link needs maintainer attention."])
+    return "\n".join(lines)
+
+
 async def _ensure_feedback_issue_parent(issue, tracker_number):
     children = await _github_json_pages(f"/issues/{int(tracker_number)}/sub_issues?per_page=100")
     issue_number = int(issue["number"])
@@ -1030,6 +1321,11 @@ async def _create_feedback_issue_from_forum_post(bot, message, forum_key):
 
         issue = await _github_create_feedback_issue(title, body, labels)
         _save_feedback_thread(issue["number"], tracker_number, forum_key, message.channel.id)
+        await _sync_feedback_thread_tags(
+            bot,
+            {**issue, "labels": [{"name": label} for label in labels], "state": "open"},
+            message.channel,
+        )
         linked = True
         try:
             await _ensure_feedback_issue_parent(issue, tracker_number)
@@ -1041,9 +1337,13 @@ async def _create_feedback_issue_from_forum_post(bot, message, forum_key):
                 flush=True,
             )
 
-        confirmation = f"Created GitHub {kind} report: {issue.get('html_url', '')}"
-        if not linked:
-            confirmation += "\nThe issue was created, but its tracker link needs maintainer attention."
+        confirmation = format_feedback_receipt(
+            {**issue, "labels": issue.get("labels") or [{"name": label} for label in labels]},
+            kind,
+            game_name,
+            tracker_number,
+            linked,
+        )
         await message.reply(confirmation, allowed_mentions=discord.AllowedMentions.none())
         print(
             f"[testplex-discord] created issue #{issue.get('number')} from forum thread {message.channel.id}",
@@ -1149,6 +1449,8 @@ async def handle_discord_message(bot, message):
         issue_number = _tracker_for_thread(channel.id)
     if issue_number is None:
         return False
+    if _is_feedback_forum(parent_id) and await _handle_feedback_label_command(bot, message, issue_number):
+        return True
     if _synced_github_comment(message.id):
         return True
     body = format_discord_reply(message, issue_number)

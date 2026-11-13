@@ -43,6 +43,13 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         self.assertTrue(all(len(message) <= 1900 for message in messages))
         self.assertIn(body, "".join(messages))
 
+    def test_message_split_keeps_exact_limit_chunks_and_all_characters(self):
+        module = load_module()
+        text = ("x" * 1900) + "\nremainder"
+        messages = module.split_discord_messages(text, limit=1900)
+        self.assertTrue(all(len(message) <= 1900 for message in messages))
+        self.assertEqual("".join(messages), text)
+
     def test_issue_descriptions_and_comments_keep_full_feedback(self):
         module = load_module()
         description = "reproduction details\n" * 250
@@ -60,6 +67,215 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         })
         self.assertTrue(all(len(message) <= 1900 for message in messages))
         self.assertIn(comment, "".join(messages))
+
+    def test_feedback_issue_summary_is_structured_and_removes_internal_markers(self):
+        module = load_module()
+        messages = module.format_issue_description({
+            "number": 457,
+            "title": "[Bug] Dragon Escape: Spectators can finish the race",
+            "state": "open",
+            "labels": [{"name": "needs-triage"}, {"name": "game:dragon-escape"}],
+            "html_url": "https://github.com/joshbet9/testplex/issues/457",
+            "body": (
+                "<!-- testplex-feedback:type=bug -->\n"
+                "<!-- testplex-discord-forum-thread:123456789 -->\n"
+                "### Game\nDragon Escape\n\n"
+                "### Report\nSpectators can finish the race.\n\n"
+                "Submitted via the Testplex Discord feedback forum.\n\n"
+                "### Parent tracker\nDragon Escape: https://github.com/joshbet9/testplex/issues/310\n\n"
+                "### Discord thread\nhttps://discord.com/channels/1/123456789"
+            ),
+        }, "Bug report")
+        message = "\n".join(messages)
+        self.assertIn("🐛 **Bug report #457", message)
+        self.assertIn("Needs triage", message)
+        self.assertIn("**Report**", message)
+        self.assertIn("Spectators can finish the race.", message)
+        self.assertIn("**Tracker:** [Dragon Escape]", message)
+        self.assertIn("[Discord thread](https://discord.com/channels/1/123456789)", message)
+        self.assertNotIn("testplex-discord-forum-thread", message)
+        self.assertNotIn("Submitted via the Testplex", message)
+
+    def test_new_forum_issue_receipt_is_scannable_and_has_label_controls(self):
+        module = load_module()
+        receipt = module.format_feedback_receipt({
+            "number": 457,
+            "html_url": "https://github.com/joshbet9/testplex/issues/457",
+            "labels": [{"name": "needs-triage"}],
+        }, "bug", "Dragon Escape", 310)
+        self.assertIn("🐛 **Bug report filed · Dragon Escape**", receipt)
+        self.assertIn("`Needs triage`", receipt)
+        self.assertIn("[GitHub issue #457]", receipt)
+        self.assertIn("[Game tracker #310]", receipt)
+        self.assertIn("`!implemented`", receipt)
+
+    def test_feedback_status_maps_to_discord_forum_subcategory(self):
+        module = load_module()
+        self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "needs-triage"}]}), "Needs triage")
+        self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "in-progress"}]}), "In progress")
+        self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "implemented"}]}), "Implemented")
+        self.assertEqual(module._feedback_status_tag({"state": "closed", "labels": [{"name": "wontfix"}]}), "Won't fix")
+        self.assertEqual(module._feedback_status_tag({"state": "closed", "labels": []}), "Fixed")
+
+    def test_implemented_label_command_updates_github_and_discord_status(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, Mock
+
+        module = load_module()
+        module._github_feedback_labels = AsyncMock(return_value={
+            "needs-triage": "needs-triage",
+            "implemented": "implemented",
+        })
+        module._github_write_sync = Mock()
+        updated_issue = {
+            "number": 457,
+            "html_url": "https://github.com/joshbet9/testplex/issues/457",
+            "state": "open",
+            "labels": [{"name": "implemented"}],
+        }
+        module._github_json = AsyncMock(return_value=updated_issue)
+        module._sync_feedback_thread_tags = AsyncMock()
+        message = SimpleNamespace(
+            content="!implemented",
+            channel=SimpleNamespace(id=123, send=AsyncMock()),
+            reply=AsyncMock(),
+        )
+        bot = SimpleNamespace()
+
+        self.assertTrue(asyncio.run(module._handle_feedback_label_command(bot, message, 457)))
+        self.assertEqual(module._github_write_sync.call_count, 2)
+        self.assertEqual(module._github_write_sync.call_args_list[0].args[:2], (
+            "POST", "/issues/457/labels",
+        ))
+        self.assertEqual(module._github_write_sync.call_args_list[1].args[:2], (
+            "DELETE", "/issues/457/labels/needs-triage",
+        ))
+        module._sync_feedback_thread_tags.assert_awaited_once_with(bot, updated_issue, message.channel)
+        self.assertIn("Marked implemented", message.reply.await_args.args[0])
+
+    def test_tester_can_apply_or_remove_an_exact_existing_github_label(self):
+        import asyncio
+        from unittest.mock import AsyncMock, Mock
+
+        module = load_module()
+        module._github_feedback_labels = AsyncMock(return_value={"priority: high": "Priority: High"})
+        module._github_write_sync = Mock()
+        module._github_json = AsyncMock(return_value={"number": 457, "labels": []})
+
+        asyncio.run(module._github_change_feedback_label(457, "priority: high", False))
+        self.assertEqual(module._github_write_sync.call_args.args[:2], (
+            "DELETE", "/issues/457/labels/Priority%3A%20High",
+        ))
+
+    def test_label_commands_are_recognized_without_mirroring_them_as_comments(self):
+        import asyncio
+        import sqlite3
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            module.base.db = lambda: sqlite3.connect(directory + "/test.db")
+            module._ensure_schema()
+            module._save_feedback_forum("bug:dragon-escape", 456)
+            module._save_feedback_thread(457, 310, "bug:dragon-escape", 9001)
+            module._handle_feedback_label_command = AsyncMock(return_value=True)
+            module._github_create_issue_comment = AsyncMock()
+            message = SimpleNamespace(
+                id=9002,
+                author=SimpleNamespace(id=5, bot=False),
+                webhook_id=None,
+                guild=SimpleNamespace(id=123),
+                channel=SimpleNamespace(id=9001, parent_id=456),
+                content="!label needs-triage",
+            )
+            bot = SimpleNamespace(user=SimpleNamespace(id=999), cfg={"testplex_discord_guild_id": 123})
+
+            self.assertTrue(asyncio.run(module.handle_discord_message(bot, message)))
+            module._handle_feedback_label_command.assert_awaited_once_with(bot, message, 457)
+            module._github_create_issue_comment.assert_not_awaited()
+
+    def test_feedback_status_tag_is_applied_and_repeated_sync_is_idempotent(self):
+        import asyncio
+        import sqlite3
+        import tempfile
+        from types import SimpleNamespace
+
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            module.base.db = lambda: sqlite3.connect(directory + "/test.db")
+            module._ensure_schema()
+            module._save_feedback_forum("bug:dragon-escape", 456)
+
+            class Forum(module.discord.ForumChannel):
+                def __init__(self):
+                    self.id = 456
+                    self.available_tags = []
+                    self.created = []
+
+                async def create_tag(self, *, name, reason=None):
+                    tag = SimpleNamespace(id=len(self.created) + 1, name=name)
+                    self.available_tags.append(tag)
+                    self.created.append(tag)
+                    return tag
+
+            class Thread:
+                def __init__(self):
+                    self.parent_id = 456
+                    self.applied_tags = []
+                    self.edits = 0
+
+                async def edit(self, *, applied_tags):
+                    self.applied_tags = list(applied_tags)
+                    self.edits += 1
+
+            forum, thread = Forum(), Thread()
+            bot = SimpleNamespace(get_channel=lambda channel_id: forum if channel_id == 456 else None)
+            issue = {"number": 457, "state": "open", "labels": [{"name": "needs-triage"}]}
+            asyncio.run(module._sync_feedback_thread_tags(bot, issue, thread))
+            self.assertEqual([tag.name for tag in thread.applied_tags], ["Needs triage"])
+            self.assertEqual(len(forum.created), 1)
+            asyncio.run(module._sync_feedback_thread_tags(bot, issue, thread))
+            self.assertEqual(len(forum.created), 1)
+            self.assertEqual(thread.edits, 1)
+
+    def test_feedback_status_tag_does_not_overflow_discord_tag_limit(self):
+        import asyncio
+        import sqlite3
+        import tempfile
+        from types import SimpleNamespace
+
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            module.base.db = lambda: sqlite3.connect(directory + "/test.db")
+            module._ensure_schema()
+            module._save_feedback_forum("bug:dragon-escape", 456)
+
+            class Forum(module.discord.ForumChannel):
+                id = 456
+                available_tags = []
+
+                async def create_tag(self, *, name, reason=None):
+                    return SimpleNamespace(id=99, name=name)
+
+            class Thread:
+                parent_id = 456
+
+                def __init__(self):
+                    self.applied_tags = [SimpleNamespace(id=i, name=f"Custom {i}") for i in range(5)]
+                    self.edits = 0
+
+                async def edit(self, *, applied_tags):
+                    self.edits += 1
+
+            thread = Thread()
+            bot = SimpleNamespace(get_channel=lambda channel_id: Forum())
+            issue = {"number": 458, "state": "open", "labels": [{"name": "needs-triage"}]}
+            asyncio.run(module._sync_feedback_thread_tags(bot, issue, thread))
+            self.assertEqual(thread.edits, 0)
+            self.assertEqual(len(thread.applied_tags), 5)
 
     def test_github_lists_are_fully_paginated(self):
         import asyncio
