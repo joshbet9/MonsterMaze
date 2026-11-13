@@ -153,7 +153,7 @@ def format_issue_comment(comment):
     lines = [heading]
     if comment.get("html_url"):
         lines.append(f"[View on GitHub]({comment['html_url']})")
-    lines.extend(["", body.strip()])
+    lines.extend(["", body])
     return split_discord_messages("\n".join(lines))
 
 
