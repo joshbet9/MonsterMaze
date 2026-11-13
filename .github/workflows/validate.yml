@@ -270,7 +270,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile bridge
-        run: python -m py_compile services/discord-github-bridge/bridge.py
+        run: python -m py_compile services/discord-github-bridge/bridge.py services/discord-github-bridge/bridge_logic.py
+      - name: Test bridge formatting and transition logic
+        working-directory: services/discord-github-bridge
+        run: python -m unittest -v test_bridge_logic.py
       - name: Validate dependency file
         shell: bash
         run: |
@@ -279,6 +282,8 @@ jobs:
           grep -q '^aiohttp==' services/discord-github-bridge/requirements.txt
           test -f services/discord-github-bridge/Dockerfile
           test -f services/discord-github-bridge/.env.example
+          test -f services/discord-github-bridge/bridge_logic.py
+          test -f services/discord-github-bridge/test_bridge_logic.py
 
   release-package-1-8:
     name: Validate release packaging 1.8
