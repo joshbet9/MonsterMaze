@@ -149,16 +149,13 @@ def _feedback_body_sections(body):
 
 def format_issue_comment(comment):
     author = comment.get("user") or {}
-    heading = f"💬 **GitHub reply · {author.get('login') or 'GitHub user'}**"
+    heading = f"**{author.get('login') or 'GitHub user'}**"
     body = comment.get("body") or ""
     if not body.strip():
         body = "_(empty comment)_"
     if comment.get("updated_at") and comment.get("created_at") and comment["updated_at"] != comment["created_at"]:
-        heading += " · _(edited)_"
-    lines = [heading]
-    if comment.get("html_url"):
-        lines.append(f"[View on GitHub]({comment['html_url']})")
-    lines.extend(["", body])
+        heading += " _(edited)_"
+    lines = [heading, "", body]
     return split_discord_messages("\n".join(lines))
 
 
@@ -171,13 +168,7 @@ def format_discord_reply(message, tracker_number):
     attachments = [url for url in attachments if url]
     if not content and not attachments:
         return None
-    lines = [f"**Discord reply from** `{author}`"]
-    guild_id = getattr(getattr(message, "guild", None), "id", None)
-    channel_id = getattr(getattr(message, "channel", None), "id", None)
-    message_id = getattr(message, "id", None)
-    if guild_id and channel_id and message_id:
-        lines.append(f"[View in Discord](https://discord.com/channels/{guild_id}/{channel_id}/{message_id})")
-    lines.append("")
+    lines = [f"**{author}**", ""]
     if content:
         lines.append(content)
     for url in attachments:
@@ -999,7 +990,7 @@ async def _sync_feedback_issue(bot, games, issue, fallback_game=None):
             f"issue:{issue['number']}:label-controls",
             tracker_number,
             issue["number"],
-            [format_feedback_label_controls(issue, tracker_number, feedback_game_from_issue(issue, games))],
+            [format_feedback_label_controls(issue, feedback_game_from_issue(issue, games))],
         )
     if issue.get("state") == "closed" and not getattr(thread, "archived", False):
         await thread.edit(archived=True)
@@ -1292,14 +1283,12 @@ def format_feedback_receipt(issue, kind, game_name, tracker_number, linked=True)
     return "\n".join(lines)
 
 
-def format_feedback_label_controls(issue, tracker_number, game_name):
+def format_feedback_label_controls(issue, game_name):
     status = _feedback_status_tag(issue)
     return "\n".join([
         f"🏷️ **Issue #{issue.get('number', '?')} · {game_name} · {status}**",
         "Use `!labels` to list GitHub labels, `!label <name>` to add one, or `!unlabel <name>` to remove one.",
         "Use `!implemented` when the fix is in and ready for testing; this does not close the issue.",
-        f"[GitHub issue]({issue.get('html_url', '')}) · "
-        f"[Game tracker #{tracker_number}](https://github.com/{GITHUB_REPOSITORY}/issues/{tracker_number})",
     ])
 
 
@@ -1362,7 +1351,6 @@ async def _create_feedback_issue_from_forum_post(bot, message, forum_key):
             issue["number"],
             [format_feedback_label_controls(
                 {**issue, "labels": issue.get("labels") or [{"name": label} for label in labels], "state": "open"},
-                tracker_number,
                 game_name,
             )],
         )

@@ -68,6 +68,24 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         self.assertTrue(all(len(message) <= 1900 for message in messages))
         self.assertIn(comment, "".join(messages))
 
+    def test_discussion_replies_are_conversational_without_repeated_links(self):
+        module = load_module()
+        reply = "\n".join(module.format_issue_comment({
+            "user": {"login": "tester"},
+            "html_url": "https://github.com/joshbet9/testplex/issues/457#issuecomment-1",
+            "body": "I can reproduce this on Blue Orchid.",
+        }))
+        controls = module.format_feedback_label_controls({
+            "number": 457,
+            "html_url": "https://github.com/joshbet9/testplex/issues/457",
+            "state": "open",
+            "labels": [{"name": "needs-triage"}],
+        }, "Dragon Escape")
+        self.assertIn("**tester**", reply)
+        self.assertIn("I can reproduce this on Blue Orchid.", reply)
+        self.assertNotIn("github.com", reply)
+        self.assertNotIn("github.com", controls)
+
     def test_feedback_issue_summary_is_structured_and_removes_internal_markers(self):
         module = load_module()
         messages = module.format_issue_description({
