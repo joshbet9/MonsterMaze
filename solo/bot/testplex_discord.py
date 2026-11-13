@@ -177,6 +177,8 @@ def format_discord_reply(message, tracker_number):
     """Format a Discord tracker-thread reply as a non-pinging GitHub comment."""
     author = getattr(message.author, "display_name", None) or getattr(message.author, "name", "Discord user")
     author = str(author).replace("`", "Ë‹").replace("\r", " ").replace("\n", " ")
+    channel_id = getattr(getattr(message, "channel", None), "id", "unknown")
+    message_id = getattr(message, "id", "unknown")
     content = (getattr(message, "content", "") or "").replace("@", "@\u200b").strip()
     attachments = [getattr(item, "url", "") for item in getattr(message, "attachments", [])]
     attachments = [url for url in attachments if url]
