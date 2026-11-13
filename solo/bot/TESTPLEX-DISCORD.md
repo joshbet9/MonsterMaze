@@ -1,4 +1,4 @@
-# Testplex Discord announcements and issue index
+# Testplex Discord announcements and game feedback forums
 
 The existing `monster-bot.service` process handles Testplex Discord publishing so the same bot account is not connected by a second process.
 
@@ -9,13 +9,14 @@ The bot defaults to the Testplex guild and channels supplied for this deployment
 - Guild: `1568187449715196035`
 - Changelog: `1570610726903611503`
 - Server activity: `1570610748282118234`
-- Game tracker issue index: `1568187896890925167` (Bug Report channel)
-- Bug reports: `1568187896890925167`
-- Idea submissions: `1568187934140538900` (reserved in configuration; this integration does not yet create GitHub issues from Discord submissions)
+- Legacy issue index: `1568187896890925167` (Bug Report channel)
+- Legacy idea channel: `1568187934140538900`
 
-These values can be overridden in `config.json` or with `TESTPLEX_DISCORD_GUILD_ID`, `TESTPLEX_CHANGELOG_CHANNEL_ID`, `TESTPLEX_ACTIVITY_CHANNEL_ID`, and `TESTPLEX_ISSUE_INDEX_CHANNEL_ID`. The bot checks that announcement channels belong to the configured guild. The bot must be invited to that guild and have permission to send messages, create public threads, send messages in threads, and manage threads.
+The bot creates two categories, `Testplex Bug Reports` and `Testplex Ideas`, then creates one forum for each canonical game slug in each category. Selector variants that share a slug (including Monster Maze's legacy mode labels) share the same pair of forums. Each GitHub feedback sub-issue is a forum post/thread in the matching game/type forum. The bot derives the game and report type from the GitHub Issue Form fields and the canonical tracker catalog, not from which tracker parents happen to have a label.
 
-The issue index creates one persistent thread per GitHub issue labeled `game-tracker`. Each native GitHub sub-issue appears as a linked entry, and the thread mirrors the tracker and sub-issue descriptions plus every GitHub comment. Edits, new comments, deleted comments, and sub-issue state changes reconcile into Discord; an hourly pass recovers missed events. Long feedback is split across Discord messages without truncating its text. The bot requires GitHub Issues read access for `joshbet9/testplex`; set `TESTPLEX_GITHUB_TOKEN` in the Oracle service environment for the authenticated API rate limit. Without it, GitHub's lower unauthenticated public API rate limit applies.
+Every report thread mirrors its GitHub description and comments. Human replies in a mapped Discord forum thread are posted as comments on that same GitHub issue. Bot-authored mirrored messages are ignored to prevent loops. Issue edits, state changes, and GitHub comments reconcile immediately through the webhook; an hourly pass recovers missed events. Existing tracker threads remain in the legacy issue index for history.
+
+The bot must have `Manage Channels` to provision the forum categories and channels, plus permission to create/send messages in forum threads and manage threads. Testers need permission to post in the forum threads. The fine-grained `TESTPLEX_GITHUB_TOKEN` should be restricted to `joshbet9/testplex` with Repository permissions → Issues set to **Read and write**. The bot uses it to read issue bodies/comments and write comments from Discord. Without it, GitHub's lower unauthenticated public API limit stops a full reconciliation.
 
 ## GitHub webhook
 

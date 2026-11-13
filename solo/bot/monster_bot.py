@@ -108,6 +108,10 @@ class APIMonsterBot(tournament_impl.TournamentBot):
         if text.lower().startswith("!blacklist "):
             await handle_denylist(self, message, text[len("!blacklist"):].strip().split())
             return
+        try:
+            await testplex_discord.handle_discord_message(self, message)
+        except Exception as exc:
+            print(f"[testplex-discord] Discord reply handler failed: {exc}", flush=True)
         await super().on_message(message)
 
 
