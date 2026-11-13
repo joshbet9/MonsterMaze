@@ -40,7 +40,9 @@ def split_discord_messages(text, limit=DISCORD_MESSAGE_LIMIT):
         return [""]
     chunks = []
     while len(remaining) > limit:
-        split_at = remaining.rfind("\n", 0, limit + 1)
+        # Keep the newline itself inside the chunk without letting a newline
+        # at index `limit` produce a message of `limit + 1` characters.
+        split_at = remaining.rfind("\n", 0, limit)
         if split_at <= 0:
             split_at = limit
         else:

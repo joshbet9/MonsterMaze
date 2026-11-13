@@ -43,6 +43,13 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         self.assertTrue(all(len(message) <= 1900 for message in messages))
         self.assertIn(body, "".join(messages))
 
+    def test_message_split_keeps_exact_limit_chunks_and_all_characters(self):
+        module = load_module()
+        text = ("x" * 1900) + "\nremainder"
+        messages = module.split_discord_messages(text, limit=1900)
+        self.assertTrue(all(len(message) <= 1900 for message in messages))
+        self.assertEqual("".join(messages), text)
+
     def test_issue_descriptions_and_comments_keep_full_feedback(self):
         module = load_module()
         description = "reproduction details\n" * 250
