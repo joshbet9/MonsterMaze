@@ -9,6 +9,7 @@ def load_module():
     discord_stub = types.SimpleNamespace(
         HTTPException=Exception,
         NotFound=type("NotFound", (Exception,), {}),
+        AllowedMentions=types.SimpleNamespace(none=lambda: None),
     )
     base_stub = types.ModuleType("monster_bot_v2")
     sys.modules["discord"] = discord_stub
