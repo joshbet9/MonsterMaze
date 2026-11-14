@@ -71,8 +71,10 @@ def split_discord_messages(text, limit=DISCORD_MESSAGE_LIMIT):
 
 
 def format_release(repository, release):
-    """Return every release-note character as one or more Discord messages."""
+    """Format Testplex changes by game and retain the existing other-repo format."""
     title = (release.get("name") or release.get("tag_name") or "New release").strip()
+    if repository.casefold() == "joshbet9/testplex":
+        return _format_testplex_release(title, release)
     lines = [f"ðŸ“¦ **{repository} â€” {title}**"]
     if release.get("tag_name"):
         lines.append(f"Release: `{release['tag_name']}`")
@@ -85,6 +87,47 @@ def format_release(repository, release):
     if author:
         lines.append(f"Published by {author}")
     return split_discord_messages("\n\n".join(lines))
+
+
+def _format_testplex_release(title, release):
+    body = release.get("body") or ""
+    in_changes = False
+    changes = []
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if re.match(r"^#{2,6}\s+changes for testers\s*$", line, re.IGNORECASE):
+            in_changes = True
+            continue
+        if in_changes and re.match(r"^#{2,6}\s+", line):
+            break
+        if not in_changes or not line.startswith("-"):
+            continue
+        match = re.match(r"^-\s*\*\*(.+?):\*\*\s*(.+)$", line)
+        if match:
+            game, detail = match.groups()
+        else:
+            game, detail = "General", line.lstrip("- ")
+
+        # Release bodies often cite every issue and PR in parentheses. Keep
+        # the change itself and omit issue/PR references from Discord output.
+        detail = re.sub(r"\[([^\]]*)\]\(https?://[^)]+\)", r"\1", detail)
+        detail = re.sub(r"\s*\((?:#\d+|PR #\d+)[^)]*\)", "", detail)
+        detail = re.sub(r"https?://\S+", "", detail)
+        detail = re.sub(r"\s+", " ", detail).strip(" ;,.")
+        if detail:
+            changes.append((game.strip(), detail))
+
+    if not changes:
+        return [f"**Testplex 26.3 · {title}**\nNo per-game change list was included in this release."]
+
+    grouped = {}
+    for game, detail in changes:
+        grouped.setdefault(game, []).append(detail)
+    lines = [f"**Testplex 26.3 · {title}**"]
+    for game, details in grouped.items():
+        lines.append(f"\n**{game}**")
+        lines.extend(f"• {detail}" for detail in details)
+    return split_discord_messages("\n".join(lines))
 
 
 def format_issue_description(issue, kind="Feedback"):

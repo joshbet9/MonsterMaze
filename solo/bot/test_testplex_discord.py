@@ -22,7 +22,7 @@ def load_module():
 class TestplexDiscordFormattingTests(unittest.TestCase):
     def test_release_message_includes_tag_notes_link_and_author(self):
         module = load_module()
-        message = "\n".join(module.format_release("joshbet9/testplex", {
+        message = "\n".join(module.format_release("joshbet9/MonsterMaze", {
             "name": "Testplex Update",
             "tag_name": "v1.2.3",
             "body": "Fixed Dragon Escape and improved server stability.",
@@ -35,10 +35,36 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         self.assertIn("github.com/joshbet9/testplex/releases/tag/v1.2.3", message)
         self.assertIn("Published by Josh", message)
 
+    def test_testplex_release_is_grouped_by_game_without_issue_or_pr_links(self):
+        module = load_module()
+        message = "\n".join(module.format_release("joshbet9/testplex", {
+            "name": "Testplex Modern 26.3 tester update",
+            "tag_name": "testplex-modern-26.3-2026-11-14",
+            "body": (
+                "## Testplex Modern 26.3 tester update\n\n"
+                "### Changes for testers\n\n"
+                "- **Dragon Escape:** Fixed Builder placements ([#369](https://github.com/a/issues/369), "
+                "[PR #504](https://github.com/a/pull/504)).\n"
+                "- **Dragons:** Improved dragon targeting ([#404](https://github.com/a/issues/404)).\n\n"
+                "### Verification and staging\n\n- Tests passed."
+            ),
+            "html_url": "https://github.com/joshbet9/testplex/releases/tag/release",
+            "author": {"login": "Josh"},
+        }))
+        self.assertIn("**Dragon Escape**", message)
+        self.assertIn("**Dragons**", message)
+        self.assertIn("Fixed Builder placements", message)
+        self.assertIn("Improved dragon targeting", message)
+        self.assertNotIn("github.com", message)
+        self.assertNotIn("#369", message)
+        self.assertNotIn("PR #504", message)
+        self.assertNotIn("Verification and staging", message)
+        self.assertNotIn("Published by", message)
+
     def test_long_release_notes_are_chunked_without_truncation(self):
         module = load_module()
         body = ("Release change line.\n" * 500) + ("x" * 2100)
-        messages = module.format_release("joshbet9/testplex", {"body": body})
+        messages = module.format_release("joshbet9/MonsterMaze", {"body": body})
         self.assertGreater(len(messages), 1)
         self.assertTrue(all(len(message) <= 1900 for message in messages))
         self.assertIn(body, "".join(messages))
