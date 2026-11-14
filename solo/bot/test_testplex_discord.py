@@ -156,6 +156,58 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         self.assertIn("!implemented", args[4][0])
         self.assertIn("waiting-tester", args[4][0])
 
+    def test_closed_resolved_issue_archives_discord_thread(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        module = load_module()
+        issue = {
+            "number": 459,
+            "html_url": "https://github.com/joshbet9/testplex/issues/459",
+            "state": "closed",
+            "labels": [{"name": "resolved"}],
+            "body": "<!-- testplex-feedback:type=bug -->",
+        }
+        thread = SimpleNamespace(id=9001, archived=False, edit=AsyncMock())
+        module._ensure_feedback_thread = AsyncMock(return_value=(thread, 310, "bug"))
+        module._normalize_feedback_status = AsyncMock(return_value=issue)
+        module._sync_feedback_thread_tags = AsyncMock()
+        module._ensure_feedback_issue_parent = AsyncMock()
+        module._sync_issue_discussion = AsyncMock()
+        module._sync_message_bundle = AsyncMock()
+        module.feedback_game_from_issue = lambda issue, games: "Dragon Escape"
+
+        asyncio.run(module._sync_feedback_issue(SimpleNamespace(), {}, issue))
+
+        thread.edit.assert_awaited_once_with(archived=True)
+
+    def test_open_resolved_issue_stays_unarchived_for_tester_confirmation(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        module = load_module()
+        issue = {
+            "number": 457,
+            "html_url": "https://github.com/joshbet9/testplex/issues/457",
+            "state": "open",
+            "labels": [{"name": "resolved"}],
+            "body": "<!-- testplex-feedback:type=bug -->",
+        }
+        thread = SimpleNamespace(id=9001, archived=False, edit=AsyncMock())
+        module._ensure_feedback_thread = AsyncMock(return_value=(thread, 310, "bug"))
+        module._normalize_feedback_status = AsyncMock(return_value=issue)
+        module._sync_feedback_thread_tags = AsyncMock()
+        module._ensure_feedback_issue_parent = AsyncMock()
+        module._sync_issue_discussion = AsyncMock()
+        module._sync_message_bundle = AsyncMock()
+        module.feedback_game_from_issue = lambda issue, games: "Dragon Escape"
+
+        asyncio.run(module._sync_feedback_issue(SimpleNamespace(), {}, issue))
+
+        thread.edit.assert_not_awaited()
+
     def test_feedback_status_maps_to_discord_forum_subcategory(self):
         module = load_module()
         self.assertEqual(module._feedback_status_tag({"state": "open", "labels": [{"name": "submitted"}]}), "Submitted")
