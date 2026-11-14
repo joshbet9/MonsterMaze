@@ -1096,7 +1096,11 @@ async def _sync_feedback_issue(bot, games, issue, fallback_game=None):
             issue["number"],
             [format_feedback_label_controls(issue, feedback_game_from_issue(issue, games))],
         )
-    if _feedback_status_tag(issue) == "Deployed" and not getattr(thread, "archived", False):
+    # Closed GitHub issues represent resolved or consolidated reports. Keep
+    # their Discord threads archived just like deployed reports; an open
+    # issue marked Resolved remains available for tester confirmation.
+    should_archive = issue.get("state") == "closed" or _feedback_status_tag(issue) == "Deployed"
+    if should_archive and not getattr(thread, "archived", False):
         await thread.edit(archived=True)
 
 
