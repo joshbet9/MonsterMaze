@@ -10,6 +10,7 @@ import game_counts
 import tournament_bot as tournament_impl
 import testplex_discord
 from ign_denylist import handle_denylist
+from github_event_dispatch import observe_background_future
 
 CURRENT_BOT = None
 
@@ -42,7 +43,10 @@ def github_event(event, payload):
     bot = CURRENT_BOT
     if bot is None or not bot.loop.is_running():
         raise RuntimeError("Discord bot is not ready to process GitHub events")
-    asyncio.run_coroutine_threadsafe(testplex_discord.handle_github_event(bot, bot.cfg, event, payload), bot.loop)
+    future = asyncio.run_coroutine_threadsafe(
+        testplex_discord.handle_github_event(bot, bot.cfg, event, payload), bot.loop
+    )
+    observe_background_future(future, event)
 
 
 async def _post_feed_async(bot, run):
