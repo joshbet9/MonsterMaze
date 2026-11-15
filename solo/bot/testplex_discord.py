@@ -1149,7 +1149,12 @@ async def _sync_feedback_issue(bot, games, issue, fallback_game=None):
 
 async def _sync_feedback_event_issue(bot, cfg, issue):
     body = issue.get("body") or ""
-    if not re.search(r"<!--\s*testplex-feedback:type=(bug|idea)\s*-->", body):
+    issue_number = issue.get("number")
+    has_feedback_marker = re.search(r"<!--\s*testplex-feedback:type=(bug|idea)\s*-->", body)
+    # Older owner-created reports may predate the feedback marker but already
+    # have an explicit Discord thread mapping. Keep those mapped discussions in
+    # sync when a GitHub comment or label event arrives.
+    if not issue_number or (not has_feedback_marker and not _feedback_thread(issue_number)):
         return False
     games = await _load_feedback_directory()
     await _ensure_feedback_forums(bot, cfg, games)

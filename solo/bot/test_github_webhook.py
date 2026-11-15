@@ -4,6 +4,7 @@ import hmac
 import unittest
 
 import api_server
+from github_event_dispatch import observe_background_future
 
 
 class GitHubWebhookSecurityTests(unittest.TestCase):
@@ -28,6 +29,28 @@ class GitHubWebhookSecurityTests(unittest.TestCase):
     def test_webhook_repository_allowlist_is_case_insensitive(self):
         self.assertTrue(api_server.github_repository_allowed("JoshBet9/Testplex", "joshbet9/testplex"))
         self.assertFalse(api_server.github_repository_allowed("attacker/testplex", "joshbet9/testplex"))
+
+    def test_background_webhook_failure_is_logged(self):
+        from concurrent.futures import Future
+
+        messages = []
+        future = Future()
+        observe_background_future(future, "issue_comment", lambda message, **kwargs: messages.append(message))
+        future.set_exception(RuntimeError("Discord thread is archived"))
+
+        self.assertEqual(len(messages), 1)
+        self.assertIn("issue_comment", messages[0])
+        self.assertIn("Discord thread is archived", messages[0])
+
+    def test_successful_background_webhook_is_not_logged(self):
+        from concurrent.futures import Future
+
+        messages = []
+        future = Future()
+        observe_background_future(future, "release", lambda message, **kwargs: messages.append(message))
+        future.set_result(None)
+
+        self.assertEqual(messages, [])
 
 
 if __name__ == "__main__":

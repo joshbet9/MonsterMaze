@@ -526,10 +526,11 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
 
     def test_issue_comment_webhook_requests_thread_reconciliation(self):
         import asyncio
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, Mock
 
         module = load_module()
         module.sync_all_trackers = AsyncMock()
+        module._feedback_thread = Mock(return_value=None)
         asyncio.run(module.handle_github_event(None, {}, "issue_comment", {
             "repository": {"full_name": "joshbet9/testplex"},
             "action": "created",
@@ -553,6 +554,39 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         }))
         module._sync_feedback_event_issue.assert_awaited_once_with(None, {}, issue)
         module.sync_all_trackers.assert_not_awaited()
+
+    def test_mapped_legacy_issue_without_feedback_marker_is_reconciled(self):
+        import asyncio
+        from unittest.mock import AsyncMock, Mock
+
+        module = load_module()
+        module._feedback_thread = Mock(return_value=(336, "bug:shared-global", 9001))
+        module._load_feedback_directory = AsyncMock(return_value={})
+        module._ensure_feedback_forums = AsyncMock()
+        module.feedback_game_from_issue = Mock(return_value="Shared lobby and global systems")
+        module._sync_feedback_issue = AsyncMock()
+        issue = {"number": 413, "body": "legacy owner-created report"}
+
+        reconciled = asyncio.run(module._sync_feedback_event_issue(None, {}, issue))
+
+        self.assertTrue(reconciled)
+        module._sync_feedback_issue.assert_awaited_once_with(
+            None, {}, issue, "Shared lobby and global systems"
+        )
+
+    def test_unmapped_non_feedback_issue_still_uses_tracker_fallback(self):
+        import asyncio
+        from unittest.mock import AsyncMock, Mock
+
+        module = load_module()
+        module._feedback_thread = Mock(return_value=None)
+        module._load_feedback_directory = AsyncMock()
+        issue = {"number": 900, "body": "ordinary issue without feedback marker"}
+
+        reconciled = asyncio.run(module._sync_feedback_event_issue(None, {}, issue))
+
+        self.assertFalse(reconciled)
+        module._load_feedback_directory.assert_not_awaited()
 
     def test_discord_reply_format_is_conversational_and_does_not_ping_github_users(self):
         from types import SimpleNamespace
