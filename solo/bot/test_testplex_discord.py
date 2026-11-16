@@ -539,6 +539,33 @@ class TestplexDiscordFormattingTests(unittest.TestCase):
         }))
         module.sync_all_trackers.assert_awaited_once()
 
+    def test_feedback_issue_reconciliation_is_serialized_per_issue(self):
+        import asyncio
+
+        module = load_module()
+        module.FEEDBACK_ISSUE_SYNC_LOCKS.clear()
+        active = 0
+        maximum_active = 0
+
+        async def reconcile(*args):
+            nonlocal active, maximum_active
+            active += 1
+            maximum_active = max(maximum_active, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+
+        module._sync_feedback_issue_locked = reconcile
+
+        async def run():
+            issue = {"number": 643}
+            await asyncio.gather(
+                module._sync_feedback_issue(None, {}, issue),
+                module._sync_feedback_issue(None, {}, issue),
+            )
+
+        asyncio.run(run())
+        self.assertEqual(maximum_active, 1)
+
     def test_feedback_webhook_syncs_only_the_changed_issue(self):
         import asyncio
         from unittest.mock import AsyncMock

@@ -34,6 +34,9 @@ jobs:
       - name: Test JNP Mod community run admin safeguards
         working-directory: solo/bot
         run: python -m unittest -v test_admin_mod_runs.py
+      - name: Test Testplex Discord issue synchronization
+        working-directory: solo/bot
+        run: python -m unittest -v test_testplex_discord.py
 
   build-1-8:
     name: Build Minecraft 1.8.8

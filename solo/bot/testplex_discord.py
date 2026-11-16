@@ -42,6 +42,7 @@ FEEDBACK_FORUM_TAG_CACHE = {}
 FEEDBACK_STATUS_LABELS_READY = False
 FEEDBACK_STATUS_LABELS_LOCK = asyncio.Lock()
 LEGACY_STATUS_LABEL_CLEANUP_COMPLETE = False
+FEEDBACK_ISSUE_SYNC_LOCKS = {}
 
 
 def safe_repository_allowlist(value):
@@ -1112,6 +1113,14 @@ async def _sync_feedback_thread_tags(bot, issue, thread):
 
 
 async def _sync_feedback_issue(bot, games, issue, fallback_game=None):
+    """Serialize reconciliation for one issue so duplicate webhooks cannot double-post."""
+    issue_number = int(issue["number"])
+    lock = FEEDBACK_ISSUE_SYNC_LOCKS.setdefault(issue_number, asyncio.Lock())
+    async with lock:
+        await _sync_feedback_issue_locked(bot, games, issue, fallback_game)
+
+
+async def _sync_feedback_issue_locked(bot, games, issue, fallback_game=None):
     thread, tracker_number, kind = await _ensure_feedback_thread(bot, games, issue, fallback_game)
     issue = await _normalize_feedback_status(issue)
     if _feedback_status_tag(issue) != "Deployed" and getattr(thread, "archived", False):
