@@ -9,6 +9,7 @@ import me.monstermaze.maze.MazeGenerator;
 import me.monstermaze.stats.StatTracker;
 import me.monstermaze.stats.LeaderboardBoard;
 import me.monstermaze.util.GameScoreboard;
+import me.monstermaze.util.PlayerFeedback;
 import me.monstermaze.util.TextUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -48,6 +49,7 @@ public class GameManager implements Listener {
     private final StatTracker stats;
     private final GameScoreboard scoreboard = new GameScoreboard();
     private final LeaderboardBoard leaderboardBoard;
+    private final PlayerFeedback feedback;
 
     private GameState state = GameState.IDLE;
     private Location center;
@@ -88,6 +90,7 @@ public class GameManager implements Listener {
         this.kitManager = new KitManager(plugin, this, scoreboard);
         this.stats = new StatTracker(this, plugin);
         this.leaderboardBoard = new LeaderboardBoard(plugin);
+        this.feedback = new PlayerFeedback(plugin, this);
         Bukkit.getPluginManager().registerEvents(this, plugin);
         new ArenaListener(plugin, this);
     }
@@ -399,6 +402,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
             roundPlayers.addAll(Bukkit.getOnlinePlayers());
         }
         scoreboard.clear(roundPlayers);
+        feedback.clear();
 
         for (Player p : roundPlayers) {
             p.setExp(0); p.setLevel(0);
@@ -585,6 +589,12 @@ public void startGame(Location preferCenter, int requestedPattern) {
                     firstClaimedThisPhase = true;
                     Bukkit.getPluginManager().callEvent(new FirstToSafepadEvent(p));
                     broadcast(ChatColor.GREEN + p.getName() + ChatColor.YELLOW + " reached the Safe Pad first!");
+                    // Keep the first player's existing level-up cue; add a softer broadcast ding for everyone in the arena.
+                    for (Player listener : Bukkit.getOnlinePlayers()) {
+                        if (listener.getWorld() == p.getWorld()) {
+                            listener.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 0.45f, 1.8f);
+                        }
+                    }
                     int decreased = Math.max(6, 16 - (curSafe - 1));
                     phaseTimer = Math.min(decreased, phaseTimer);
                     for (Player other : getAlivePlayers()) {
@@ -596,6 +606,7 @@ public void startGame(Location preferCenter, int requestedPattern) {
                     p.sendMessage(ChatColor.YELLOW + "You made it to the Safe Pad!");
                 }
                 kitManager.onReachedPad(p, first);
+                feedback.showPadReward(p, first);
             }
         }
 
